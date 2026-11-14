@@ -7,6 +7,10 @@ fields to learn which crop rotations actually improve soil, and recommend climat
 Open the map, click a field, and see its real 2008–2024 crop history, soil organic matter, slope, and
 the top three rotation plans from a simple rule-based planner.
 
+**Satellite greenness (optional add-on):** for every field and year, how green the field got and how
+much of the year it had green cover, measured from Landsat through Google Earth Engine. It shows up
+as a "Satellite" section under the crop history.
+
 ```
 pipeline/   data scripts; run_all.py builds data/fields.parquet from public USDA / USGS data
 api/        FastAPI backend (main.py) + rotation planner (planner.py)
@@ -30,6 +34,7 @@ schema.md   the data contract for data/fields.parquet
 ```bash
 make setup      # creates .venv, installs Python packages, runs npm install in web/
 make pipeline   # builds data/fields.parquet from real data  (same as: .venv/bin/python pipeline/run_all.py)
+make satellite  # optional: builds data/field_satellite.parquet (needs an Earth Engine login, see below)
 make dev        # starts the API on :8010 and the web app on :5173 — Ctrl-C stops both
 ```
 
@@ -106,20 +111,83 @@ Besides `data/fields.parquet` the run writes two side files that are not part of
 `data/fields_provenance.json` (sources, counts, timings) and `data/fields_source_ids.csv`
 (`field_id` → Crop Sequence Boundaries id).
 
+## Satellite greenness (optional)
+
+`make satellite` (same as `.venv/bin/python pipeline/satellite.py`) builds
+`data/field_satellite.parquet`: one row per field per year, 2008–2024.
+
+| column | meaning |
+|--------|---------|
+| `ndvi_peak` | peak greenness: the 90th percentile of NDVI over clear Landsat views from 1 March to 31 October, averaged over the field |
+| `cover_frac` | green cover: the share (0–1) of the year's clear views in which the ground was green (NDVI at least 0.3) |
+| `n_obs` | how many clear views the year had, on average per pixel |
+
+It is a side file with its own contract in `pipeline/satellite_schema.py`; `schema.md` and
+`data/fields.parquet` are unchanged. Without it the app still works and the panel says the satellite
+data has not been built.
+
+One-time setup (free for noncommercial use, no payment details):
+
+```bash
+# 1. Register a Google Cloud project for Earth Engine: https://code.earthengine.google.com/register
+.venv/bin/earthengine authenticate --scopes=https://www.googleapis.com/auth/earthengine
+.venv/bin/earthengine set_project <project-id>      # or: export EE_PROJECT=<project-id>
+```
+
+The first full run takes about 18 minutes and uses about 13 of the free tier's 150 compute-hours
+(EECU-hours) per month. Every result is cached in `data/raw/gee/`, so a rerun takes about a second
+and makes no Earth Engine requests. Only the field outlines are sent to Earth Engine.
+
+```bash
+.venv/bin/python pipeline/satellite.py --max-fields 50 --years 2015-2016 --out /tmp/test.parquet   # quick test
+.venv/bin/python pipeline/satellite.py --force                                                     # ignore the cache
+```
+
+How it is computed: Landsat 5, 7, 8 and 9 surface reflectance at 30 m, with clouds, shadows and snow
+masked out. Scenes from the same day count as one view. Landsat 8 and 9 are adjusted to match
+Landsat 7 (Roy et al. 2016) so the years are comparable.
+
+What the current build shows, averaged by that year's crop:
+
+| crop | peak greenness | green cover |
+|------|----------------|-------------|
+| alfalfa | 0.79 | 0.76 |
+| soybeans | 0.81 | 0.39 |
+| corn | 0.72 | 0.40 |
+| sorghum | 0.66 | 0.38 |
+| winter wheat | 0.59 | 0.39 |
+| grass/pasture | 0.50 | 0.39 |
+| fallow | 0.33 | 0.18 |
+
+Known limits:
+
+- **2012 is thin.** Only Landsat 7 was flying, so fields have about 15 clear views instead of 35–49,
+  and that year's numbers are noisier. 2020 and 2021 have about 23–26 (Landsat 8 only; Landsat 7 is
+  left out from 2020 because its orbit drifted to an earlier time of day).
+- **Sensor changes leave a small step.** Bare fields read about 0.03–0.04 higher from 2013 on, and
+  the greenest fields about 0.02–0.03 lower from 2020 on. That is smaller than normal year-to-year
+  change, but be careful reading a long trend on one field across 2012/2013 or 2019/2020.
+  Comparing fields within the same year is not affected.
+
 ## The API
 
 Base URL `http://127.0.0.1:8010` (interactive docs at `/docs`).
 
 | endpoint | returns |
 |----------|---------|
-| `GET /health` | which data file is loaded and how many fields |
+| `GET /health` | which data file is loaded, how many fields, and whether satellite data is loaded |
 | `GET /fields` | GeoJSON FeatureCollection of all fields (`field_id`, `area_ha`, simplified outline) |
 | `GET /field/{id}` | one field: outline, `crop_history` as an object, organic matter, slope, area, and stats (distinct crops, longest same-crop streak, % of years in corn) |
 | `GET /field/{id}/plans` | the planner's top 3 four-year rotations with soil / water / money / overall scores and a one-line reason |
+| `GET /field/{id}/satellite` | per-year `ndvi_peak`, `cover_frac` and `n_obs`, plus averages and the trend per decade; `"available": false` with a reason if the satellite file has not been built |
 
 On startup the API loads `data/fields.parquet` if it exists, otherwise `data/fields_fake.parquet`,
 logs which one, and validates it against `schema.md`; a file that does not match stops the server
 with a readable list of problems. Set `FIELDS_PATH=/some/file.parquet` to load a specific file.
+
+The satellite file is optional: `data/field_satellite.parquet` is loaded when the real fields file
+is in use (`SATELLITE_PATH=/some/file.parquet` overrides). If it is missing or invalid the server
+logs one line and runs without it.
 
 The planner lives in `api/planner.py` behind one function, `rank_plans(field) -> list[Plan]`.
 To try a smarter model, write a function with that signature and pass it to `create_app(planner=...)`
