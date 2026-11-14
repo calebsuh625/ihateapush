@@ -1,5 +1,5 @@
 PY := .venv/bin/python
-API_PORT ?= 8000
+API_PORT ?= 8010
 WEB_PORT ?= 5173
 
 .PHONY: help setup fake pipeline validate api web dev test
@@ -39,13 +39,13 @@ api: data/fields_fake.parquet
 	$(PY) -m uvicorn api.main:app --reload --port $(API_PORT)
 
 web:
-	npm --prefix web run dev -- --port $(WEB_PORT) --strictPort
+	API_PORT=$(API_PORT) npm --prefix web run dev -- --port $(WEB_PORT) --strictPort
 
 # Both servers in one terminal; Ctrl-C stops both.
 dev: data/fields_fake.parquet
 	@trap 'kill 0' INT TERM EXIT; \
 	$(PY) -m uvicorn api.main:app --reload --port $(API_PORT) & \
-	npm --prefix web run dev -- --port $(WEB_PORT) --strictPort & \
+	API_PORT=$(API_PORT) npm --prefix web run dev -- --port $(WEB_PORT) --strictPort & \
 	wait
 
 test:
