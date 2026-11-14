@@ -29,6 +29,8 @@ export interface Health {
   source: string;
   is_fake: boolean;
   field_count: number;
+  /** true when the optional satellite side file is loaded */
+  satellite?: boolean;
 }
 
 export interface Streak {
@@ -80,4 +82,33 @@ export interface Plan {
 export interface FieldPlans {
   field_id: string;
   plans: Plan[];
+}
+
+export interface SatelliteYear {
+  year: number;
+  /** peak greenness (NDVI), about 0..1; null when no clear view */
+  ndvi_peak: number | null;
+  /** share 0..1 of clear views in which the field was green; null when no clear view */
+  cover_frac: number | null;
+  /** mean clear views per pixel that year */
+  n_obs: number;
+}
+
+export interface SatelliteSummary {
+  ndvi_peak_mean: number | null;
+  cover_frac_mean: number | null;
+  /** least-squares slope of ndvi_peak per decade; null with fewer than 5 years of data */
+  ndvi_peak_trend_per_decade: number | null;
+}
+
+/** GET /field/{field_id}/satellite */
+export interface FieldSatellite {
+  field_id: string;
+  available: boolean;
+  /** only when available is false */
+  reason?: "not_built" | "no_data_for_field";
+  source: string;
+  /** ascending; empty when unavailable */
+  years: SatelliteYear[];
+  summary: SatelliteSummary;
 }

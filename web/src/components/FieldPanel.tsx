@@ -6,11 +6,14 @@ import { useResource } from "../hooks/useResource";
 import type { Resource } from "../hooks/useResource";
 import { formatOneDecimal, formatPercent, hectaresToAcres, plural } from "../lib/format";
 import { organicMatterClass, slopeClass } from "../thresholds";
-import type { FieldDetail, FieldPlans, Streak } from "../types";
+import type { FieldDetail, FieldPlans, FieldSatellite, Streak } from "../types";
 import { PlanCard } from "./PlanCard";
+import { SatelliteChart } from "./Satellite";
 import { Timeline } from "./Timeline";
 
 const EN_DASH = "–";
+/** Height of the loaded satellite block at the 424 px panel (chart, summary, note). */
+const SATELLITE_SKELETON_HEIGHT = 253;
 
 interface FieldPanelProps {
   fieldId: string;
@@ -23,6 +26,8 @@ export function FieldPanel({ fieldId, areaHa, onClose }: FieldPanelProps) {
   // Two independent requests, started together; each can fail and be retried on its own.
   const [detail, retryDetail] = useResource(fieldId, api.field);
   const [plans, retryPlans] = useResource(fieldId, api.plans);
+  // A third, optional one: the satellite numbers. Its failure stays inside its own section.
+  const [satellite, retrySatellite] = useResource(fieldId, api.satellite);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -71,7 +76,7 @@ export function FieldPanel({ fieldId, areaHa, onClose }: FieldPanelProps) {
       </header>
 
       <div className="panel-body" ref={bodyRef} aria-busy={state === "loading"}>
-        <DetailSections detail={detail} onRetry={retryDetail} />
+        <DetailSections detail={detail} onRetry={retryDetail} satellite={satellite} onRetrySatellite={retrySatellite} />
         {!unknownField && <PlansSection plans={plans} onRetry={retryPlans} />}
       </div>
     </aside>
@@ -82,7 +87,14 @@ export function FieldPanel({ fieldId, areaHa, onClose }: FieldPanelProps) {
 // Crop history + soil (GET /field/{id})
 // ---------------------------------------------------------------------------------------------
 
-function DetailSections({ detail, onRetry }: { detail: Resource<FieldDetail>; onRetry: () => void }) {
+interface DetailSectionsProps {
+  detail: Resource<FieldDetail>;
+  onRetry: () => void;
+  satellite: Resource<FieldSatellite>;
+  onRetrySatellite: () => void;
+}
+
+function DetailSections({ detail, onRetry, satellite, onRetrySatellite }: DetailSectionsProps) {
   if (detail.status === "error") {
     return (
       <Section title="Crop history and soil" id="section-detail">
@@ -110,6 +122,7 @@ function DetailSections({ detail, onRetry }: { detail: Resource<FieldDetail>; on
           </div>
           <LoadingNote what="crop history" />
         </Section>
+        <SatelliteSection history={null} satellite={satellite} onRetry={onRetrySatellite} />
         <Section title="Soil and terrain" id="section-soil">
           <div className="tiles skeleton-block" aria-hidden="true">
             <div className="skeleton" style={{ height: 93 }} />
@@ -170,6 +183,8 @@ function DetailSections({ detail, onRetry }: { detail: Resource<FieldDetail>; on
         </dl>
       </Section>
 
+      <SatelliteSection history={field.crop_history} satellite={satellite} onRetry={onRetrySatellite} />
+
       <Section title="Soil and terrain" id="section-soil">
         <div className="tiles">
           <SoilTile
@@ -191,6 +206,54 @@ function DetailSections({ detail, onRetry }: { detail: Resource<FieldDetail>; on
         </div>
       </Section>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Satellite (GET /field/{id}/satellite) — optional, fails on its own
+// ---------------------------------------------------------------------------------------------
+
+const UNAVAILABLE_TEXT = {
+  not_built: "Satellite data has not been built yet (make satellite).",
+  no_data_for_field: "No satellite data for this field.",
+} as const;
+
+/** `history` is null while the crop history is still loading (the chart needs it to line up). */
+function SatelliteSection({
+  history,
+  satellite,
+  onRetry,
+}: {
+  history: Record<string, string> | null;
+  satellite: Resource<FieldSatellite>;
+  onRetry: () => void;
+}) {
+  const waiting = satellite.status === "loading" || (satellite.status === "ready" && satellite.data.available && history === null);
+  const state = waiting ? "loading" : satellite.status === "error" ? "error" : "ready";
+  const data = satellite.status === "ready" ? satellite.data : null;
+  return (
+    <Section title="Satellite" id="section-satellite" meta="Landsat · yearly">
+      <div data-testid="satellite" data-state={state} data-available={data ? String(data.available) : undefined}>
+        {waiting && (
+          <>
+            {/* Same height as the loaded chart + summary + note, so nothing jumps. */}
+            <div className="skeleton-block" aria-hidden="true">
+              <div className="skeleton" style={{ height: SATELLITE_SKELETON_HEIGHT }} />
+            </div>
+            <LoadingNote what="satellite numbers" />
+          </>
+        )}
+        {satellite.status === "error" && (
+          <ErrorNote title="Could not load satellite data" message={satellite.message} onRetry={onRetry} />
+        )}
+        {data && !data.available && (
+          <p className="muted" data-testid="sat-unavailable">
+            {UNAVAILABLE_TEXT[data.reason ?? "no_data_for_field"]}
+          </p>
+        )}
+        {data && data.available && history !== null && <SatelliteChart history={history} satellite={data} />}
+      </div>
+    </Section>
   );
 }
 

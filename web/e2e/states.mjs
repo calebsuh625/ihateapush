@@ -79,6 +79,22 @@ function awkwardPlans(fieldId) {
   };
 }
 
+/** Satellite numbers for the awkward field: a null year, a missing year inside the range, a low and a 100% year. */
+function awkwardSatellite(fieldId) {
+  const years = [];
+  for (let year = 2008; year <= 2024; year++) {
+    if (year === 2011 || year === 2012 || year === 2021 || year === 2016) continue; // no rows (2016 has a crop but no satellite row)
+    const nulled = year === 2014;
+    years.push({
+      year,
+      ndvi_peak: nulled ? null : year === 2019 ? 0.05 : Math.min(1, 0.3 + 0.04 * (year - 2008)),
+      cover_frac: nulled ? null : year === 2019 ? 1 : 0.2 + 0.03 * (year - 2008),
+      n_obs: nulled ? 0 : 1 + (year % 5) * 3.3,
+    });
+  }
+  return { field_id: fieldId, available: true, source: "test", years, summary: { ndvi_peak_mean: 0.55, cover_frac_mean: 0.38, ndvi_peak_trend_per_decade: -0.031 } };
+}
+
 async function main() {
   await mkdir(SHOTS, { recursive: true });
   const browser = await chromium.launch();
@@ -182,6 +198,44 @@ async function main() {
     await page.unroute(isApi(`/field/${idA}`));
     await page.unroute(isApi(`/field/${idA}/plans`));
 
+    // ---- 2b. satellite: fails on its own (own error + Retry), and the unavailable messages -----
+    let satMode = "fail";
+    await page.route(isApi(`/field/${idA}/satellite`), async (route) => {
+      await sleep(600);
+      if (satMode === "fail") await route.fulfill({ status: 500, contentType: "application/json", body: '{"detail":"Internal Server Error"}' });
+      else if (satMode === "not_built" || satMode === "no_data_for_field") {
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify({ field_id: idA, available: false, reason: satMode, years: [], summary: { ndvi_peak_mean: null, cover_frac_mean: null, ndvi_peak_trend_per_decade: null } }) });
+      } else await route.continue();
+    });
+    await page.keyboard.press("Escape");
+    await page.evaluate((id) => (window.location.hash = id), idA);
+    await panelState(idA, "loading").catch(() => {}); // may already be ready: only the satellite is slow
+    await page.waitForSelector('[data-testid="satellite"][data-state="loading"]');
+    const satBox = await page.locator("#section-satellite").locator("xpath=ancestor::section").boundingBox();
+    check(satBox.height > 120, `satellite skeleton is only ${satBox.height}px tall`);
+    await panelState(idA, "ready"); // the rest of the panel is ready while the satellite part failed
+    await page.waitForSelector('[data-testid="satellite"][data-state="error"]');
+    equal(await page.locator('[data-testid="plan-card"]').count(), 3, "plan cards while the satellite failed");
+    check((await page.locator('[data-testid="timeline-cell"]').count()) > 0, "timeline while the satellite failed");
+    const satError = page.locator('[data-testid="satellite"] [data-testid="error-note"]');
+    equal(await page.locator('[data-testid="error-note"]').count(), 1, "error notes with only the satellite failing");
+    check((await satError.textContent()).includes("Could not load satellite data"), "satellite error title");
+    const satErrShot = await shot("state-satellite-error.png");
+    satMode = "not_built";
+    await satError.locator("button").click();
+    await page.waitForSelector('[data-testid="satellite"][data-state="ready"]');
+    equal((await page.textContent('[data-testid="sat-unavailable"]')).trim(), "Satellite data has not been built yet (make satellite).", "not_built message");
+    equal(await page.locator('[data-testid="error-note"]').count(), 0, "error notes after retrying the satellite");
+    equal(await page.locator('[data-testid="sat-peak-col"]').count(), 0, "bars shown for an unbuilt satellite file");
+    const notBuiltShot = await shot("state-satellite-not-built.png");
+    satMode = "no_data_for_field";
+    await page.keyboard.press("Escape");
+    await page.evaluate((id) => (window.location.hash = id), idA);
+    await page.waitForSelector('[data-testid="satellite"][data-state="ready"]');
+    equal((await page.textContent('[data-testid="sat-unavailable"]')).trim(), "No satellite data for this field.", "no_data_for_field message");
+    await page.unroute(isApi(`/field/${idA}/satellite`));
+    log(`  ✓ satellite failed alone (rest of the panel fine), Retry works, both unavailable messages → ${satErrShot}, ${notBuiltShot}`);
+
     // ---- 3. a field id in the URL that does not exist ----------------------------------------
     await page.evaluate(() => (window.location.hash = "KS-999999"));
     await panelState("KS-999999", "error");
@@ -198,6 +252,7 @@ async function main() {
     const awkward = awkwardField(idB);
     await page.route(isApi(`/field/${idB}`), (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(awkward) }));
     await page.route(isApi(`/field/${idB}/plans`), (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(awkwardPlans(idB)) }));
+    await page.route(isApi(`/field/${idB}/satellite`), (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(awkwardSatellite(idB)) }));
     await page.evaluate((id) => (window.location.hash = id), idB);
     await panelState(idB, "ready");
     equal(await page.locator('[data-testid="timeline-cell"]').count(), 17, "awkward field: year cells");
@@ -210,6 +265,40 @@ async function main() {
     equal(legend.length, 9, "awkward field: legend entries (8 crops + no data)");
     equal(legend[legend.length - 1], "No data3 years", "awkward field: last legend entry");
     equal((await page.locator('[data-testid="plan-overall"]').allTextContents()).join(" "), "0.67 0.49 0.40", "awkward field: overall scores (halves round up)");
+    // satellite rows line up with the 17 timeline cells; null / missing years differ; tooltip + keyboard
+    await page.waitForSelector('[data-testid="satellite"][data-state="ready"]');
+    const peakStates = await page.locator('[data-testid="sat-peak-col"]').evaluateAll((nodes) => nodes.map((n) => n.dataset.state));
+    equal(peakStates.length, 17, "awkward field: satellite columns");
+    equal(peakStates.filter((x) => x === "gap").length, 4, "awkward field: satellite gaps");
+    equal(peakStates.filter((x) => x === "null").length, 1, 'awkward field: satellite "no data" mark');
+    const satAlign = await page.evaluate(() => {
+      const a = [...document.querySelectorAll('[data-testid="timeline-cell"]')].map((n) => n.getBoundingClientRect());
+      const b = [...document.querySelectorAll('[data-testid="sat-peak-col"]')].map((n) => n.getBoundingClientRect());
+      return a.map((r, i) => Math.max(Math.abs(r.x - b[i].x), Math.abs(r.width - b[i].width)));
+    });
+    check(Math.max(...satAlign) <= 1, `awkward field: satellite columns are off the timeline by ${Math.max(...satAlign)}px`);
+    equal(await page.locator('[data-testid="sat-summary"]').textContent().then((t) => /falling \(−0\.03 per decade\)/.test(t)), true, "awkward field: trend in words");
+    const satPanel = await page.locator('[data-testid="panel"]').boundingBox();
+    const satTips = [[0, "2008 · double crop: winter wheat/sorghum · peak greenness 0.30 · green 20% of clear views · 11 views"], [3, "2011 · no crop on record · no satellite data"], [8, "2016 · double crop: winter wheat/sorghum · no satellite data"], [6, "2014 · fallow · peak greenness: no data · green cover: no data · 0 views"]];
+    for (const [index, expected] of satTips) {
+      await page.locator('[data-testid="sat-peak-col"]').nth(index).hover();
+      const tipText = (await page.textContent('[data-testid="sat-tip"]')).trim();
+      equal(tipText, expected, `awkward field: satellite tooltip for column ${index}`);
+      const tip = await page.locator('[data-testid="sat-tip"]').boundingBox();
+      check(tip.x >= satPanel.x - 0.5 && tip.x + tip.width <= satPanel.x + satPanel.width + 0.5, `satellite tooltip ${index} leaves the panel (${JSON.stringify(tip)})`);
+    }
+    await page.locator('[data-testid="sat-cover-col"]').nth(16).hover();
+    check((await page.textContent('[data-testid="sat-tip"]')).startsWith("2024 · "), "awkward field: tooltip on the last cover column");
+    const satTipShot = await shot("state-satellite-tooltip.png");
+    await page.mouse.move(5, 5);
+    await page.focus('[data-testid="sat-chart"]');
+    check((await page.textContent('[data-testid="sat-tip"]')).startsWith("2024 · "), "keyboard: focus shows the latest satellite year");
+    await page.keyboard.press("Home");
+    check((await page.textContent('[data-testid="sat-tip"]')).startsWith("2008 · "), "keyboard: Home on the satellite chart");
+    await page.keyboard.press("ArrowRight");
+    check((await page.textContent('[data-testid="sat-tip"]')).startsWith("2009 · "), "keyboard: ArrowRight on the satellite chart");
+    equal(await page.locator('[data-testid="sat-table"] tbody tr').count(), 17, "awkward field: screen-reader table rows");
+    log(`  ✓ awkward field satellite: 17 columns under the timeline, 4 gaps, 1 "no data" mark, tooltips inside the panel, keyboard → ${satTipShot}`);
     const overflow = await page.evaluate(() => {
       const body = document.querySelector(".panel-body");
       const clipped = [...document.querySelectorAll(".chip, .legend-item, .facts dd, .tile, .plan")].filter((node) => node.scrollWidth > node.clientWidth + 1);
@@ -264,6 +353,7 @@ async function main() {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.unroute(isApi(`/field/${idB}`));
     await page.unroute(isApi(`/field/${idB}/plans`));
+    await page.unroute(isApi(`/field/${idB}/satellite`));
 
     // ---- 5. /health down: the badge falls back to the count from /fields, no county claim ------
     await page.route(isApi("/health"), (route) => route.abort("connectionrefused"));

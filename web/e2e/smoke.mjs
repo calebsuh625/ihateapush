@@ -355,7 +355,7 @@ async function waitForPanel(page, fieldId) {
 const text = async (page, testId) => ((await page.locator(`[data-testid="${testId}"]`).first().textContent()) ?? "").trim();
 
 /** Compare everything in the open panel with the API's answers for that field. */
-async function checkPanel(page, fieldId, detail, plans) {
+async function checkPanel(page, fieldId, detail, plans, satellite) {
   const panel = page.locator('[data-testid="panel"]');
   equal(await text(page, "panel-title"), fieldId, `${fieldId}: panel title`);
   const areaText = await text(page, "panel-area");
@@ -442,6 +442,9 @@ async function checkPanel(page, fieldId, detail, plans) {
   check(overalls.every((v, i) => i === 0 || overalls[i - 1] >= v), `${fieldId}: plans are not ranked best first (${overalls.join(", ")})`);
   check((await cards.first().textContent()).includes("Recommended"), `${fieldId}: the top plan is not marked as the recommendation`);
 
+  // satellite section: matches the API, and its year columns sit exactly under the timeline cells
+  await checkSatellite(page, fieldId, detail, satellite, cells.length);
+
   // nothing in the panel may spill sideways, and the page itself must never scroll
   const overflow = await panel.evaluate((node) => {
     const body = node.querySelector(".panel-body");
@@ -455,6 +458,58 @@ async function checkPanel(page, fieldId, detail, plans) {
   });
   check(overflow.panel <= 0 && overflow.body <= 0, `${fieldId}: panel content overflows horizontally (${JSON.stringify(overflow)})`);
   check(overflow.pageX <= 0 && overflow.pageY <= 0, `${fieldId}: the page itself scrolls (${JSON.stringify(overflow)})`);
+}
+
+/** The satellite section against GET /field/{id}/satellite (its state is independent of the panel's). */
+async function checkSatellite(page, fieldId, detail, satellite, spanCells) {
+  const panel = page.locator('[data-testid="panel"]');
+  const section = panel.locator('[data-testid="satellite"]');
+  await page.waitForSelector('[data-testid="satellite"]:not([data-state="loading"])', { timeout: TIMEOUT });
+  equal(await section.getAttribute("data-state"), "ready", `${fieldId}: satellite section state`);
+  equal(await section.getAttribute("data-available"), String(satellite.available), `${fieldId}: satellite available`);
+  // directly under the crop history section
+  const order = await panel.evaluate((node) => [...node.querySelectorAll("section.section h3")].map((h) => h.textContent));
+  equal(order.slice(0, 2).join(" > "), "Crop history > Satellite", `${fieldId}: satellite section sits under the crop history`);
+  if (!satellite.available) {
+    const message = { not_built: "Satellite data has not been built yet (make satellite).", no_data_for_field: "No satellite data for this field." }[satellite.reason];
+    equal(await text(page, "sat-unavailable"), message, `${fieldId}: unavailable message`);
+    equal(await section.locator('[data-testid="sat-peak-col"]').count(), 0, `${fieldId}: bars shown although satellite data is unavailable`);
+    return;
+  }
+  const first = Math.min(...Object.keys(detail.crop_history).map(Number));
+  const inRange = satellite.years.filter((row) => row.year >= first && row.year < first + spanCells);
+  for (const [rowId, key] of [["sat-peak-col", "ndvi_peak"], ["sat-cover-col", "cover_frac"]]) {
+    const cols = await section.locator(`[data-testid="${rowId}"]`).evaluateAll((nodes) =>
+      nodes.map((n) => ({ year: Number(n.dataset.year), state: n.dataset.state, x: n.getBoundingClientRect().x, w: n.getBoundingClientRect().width, h: n.firstElementChild ? n.firstElementChild.getBoundingClientRect().height : 0, box: n.getBoundingClientRect().height })),
+    );
+    equal(cols.length, spanCells, `${fieldId}: ${key} columns (one per timeline year)`);
+    equal(cols.filter((c) => c.state === "value").length, inRange.filter((r) => r[key] !== null).length, `${fieldId}: ${key} bars vs API`);
+    equal(cols.filter((c) => c.state === "null").length, inRange.filter((r) => r[key] === null).length, `${fieldId}: ${key} "no data" marks vs API`);
+    equal(cols.filter((c) => c.state === "gap").length, spanCells - inRange.length, `${fieldId}: ${key} gaps vs API`);
+    const timeline = await panel.locator('[data-testid="timeline-cell"]').evaluateAll((nodes) => nodes.map((n) => ({ x: n.getBoundingClientRect().x, w: n.getBoundingClientRect().width })));
+    cols.forEach((c, i) => check(Math.abs(c.x - timeline[i].x) <= 1 && Math.abs(c.w - timeline[i].w) <= 1, `${fieldId}: ${key} column ${c.year} is not under its timeline cell (${c.x.toFixed(1)}/${c.w.toFixed(1)} vs ${timeline[i].x.toFixed(1)}/${timeline[i].w.toFixed(1)})`));
+    for (const c of cols) {
+      const row = inRange.find((r) => r.year === c.year);
+      if (c.state === "value") check(Math.abs(c.h - row[key] * c.box) <= 1.5, `${fieldId}: ${key} bar height for ${c.year} is ${c.h.toFixed(1)}px of ${c.box}px, API says ${row[key]}`);
+    }
+  }
+  const summary = await text(page, "sat-summary");
+  const s = satellite.summary;
+  if (s.ndvi_peak_mean !== null) check(summary.includes(s.ndvi_peak_mean.toFixed(2)), `${fieldId}: satellite summary "${summary}" lacks mean ${s.ndvi_peak_mean}`);
+  if (s.ndvi_peak_trend_per_decade !== null) {
+    const word = Math.abs(s.ndvi_peak_trend_per_decade) < 0.02 ? "steady" : s.ndvi_peak_trend_per_decade > 0 ? "rising" : "falling";
+    check(summary.includes(word), `${fieldId}: satellite summary "${summary}" should say ${word}`);
+  } else check(!/trend/.test(summary), `${fieldId}: satellite summary shows a trend without 5 years of data`);
+  check((await section.textContent()).includes("From Landsat satellite images, 30 m."), `${fieldId}: satellite note missing`);
+  // tooltip on a year that has data
+  const row = inRange.find((r) => r.ndvi_peak !== null && r.cover_frac !== null);
+  if (row) {
+    await section.locator(`[data-testid="sat-peak-col"][data-year="${row.year}"]`).hover();
+    const tip = await text(page, "sat-tip");
+    const crop = detail.crop_history[String(row.year)] ?? "no crop on record";
+    equal(tip, `${row.year} · ${crop} · peak greenness ${row.ndvi_peak.toFixed(2)} · green ${Math.round(row.cover_frac * 100)}% of clear views · ${Math.round(row.n_obs)} ${Math.round(row.n_obs) === 1 ? "view" : "views"}`, `${fieldId}: satellite tooltip`);
+    await page.mouse.move(2, 2);
+  }
 }
 
 /** Ids of the polygons currently drawn with the given outline colour. */
@@ -634,7 +689,11 @@ async function run(browser) {
       if (!response.ok) throw new Error(`${url} answered ${response.status}`);
       return response.json();
     }, apiBase + pathname);
-  const fieldData = (from, id) => Promise.all([fetchJson(from, `/field/${id}`), fetchJson(from, `/field/${id}/plans`)]);
+  const fieldData = (from, id) => Promise.all([
+    fetchJson(from, `/field/${id}`),
+    fetchJson(from, `/field/${id}/plans`),
+    fetchJson(from, `/field/${id}/satellite`),
+  ]);
 
   const [health, collection] = await Promise.all([fetchJson(page, "/health"), fetchJson(page, "/fields")]);
   const features = collection.features;
@@ -699,7 +758,7 @@ async function run(browser) {
 
   for (let i = 0; i < picks.length; i++) {
     const { point, id } = picks[i];
-    const [detail, plans] = await fieldData(page, id);
+    const [detail, plans, satellite] = await fieldData(page, id);
 
     const planned = zoomPlan[i % zoomPlan.length];
     const zoom = planned === null ? null : Math.min(18, Math.max(planned, zoomForClearance(point.clearance, point.lat, 6)));
@@ -708,7 +767,7 @@ async function run(browser) {
     const elapsed = await clickField(page, id, target);
     if (elapsed !== null) clickTimes.push(elapsed);
 
-    await checkPanel(page, id, detail, plans);
+    await checkPanel(page, id, detail, plans, satellite);
     equal(await page.evaluate(() => window.location.hash), `#${id}`, `${id}: URL hash after the click`);
     equal((await selectedOnMap(page)).join(","), id, `${id}: polygon highlighted as selected`);
     equal(await page.locator('[data-testid="hint"]').count(), 0, `${id}: hint still shown with a field selected`);
