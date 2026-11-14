@@ -2,12 +2,13 @@ PY := .venv/bin/python
 API_PORT ?= 8010
 WEB_PORT ?= 5173
 
-.PHONY: help setup fake pipeline validate api web dev test e2e
+.PHONY: help setup fake pipeline satellite validate api web dev test e2e
 
 help:
 	@echo "make setup     create .venv, install Python + web dependencies"
 	@echo "make fake      write data/fields_fake.parquet (30 fake fields, instant)"
 	@echo "make pipeline  build data/fields.parquet from real USDA/USGS data"
+	@echo "make satellite build data/field_satellite.parquet (Landsat via Earth Engine; needs 'earthengine authenticate')"
 	@echo "make validate  check the active data file against schema.md and summarise it"
 	@echo "make dev       start API (:$(API_PORT)) and web (:$(WEB_PORT)) together"
 	@echo "make api       start only the API"
@@ -28,6 +29,10 @@ fake:
 
 pipeline:
 	$(PY) pipeline/run_all.py
+
+# Optional: per-field yearly greenness from Landsat. Needs a free Google Earth Engine login (see README).
+satellite:
+	$(PY) pipeline/satellite.py
 
 validate:
 	$(PY) pipeline/schema.py
