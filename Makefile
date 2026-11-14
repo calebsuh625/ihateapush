@@ -2,7 +2,7 @@ PY := .venv/bin/python
 API_PORT ?= 8010
 WEB_PORT ?= 5173
 
-.PHONY: help setup fake pipeline validate api web dev test
+.PHONY: help setup fake pipeline validate api web dev test e2e
 
 help:
 	@echo "make setup     create .venv, install Python + web dependencies"
@@ -12,7 +12,8 @@ help:
 	@echo "make dev       start API (:$(API_PORT)) and web (:$(WEB_PORT)) together"
 	@echo "make api       start only the API"
 	@echo "make web       start only the web dev server"
-	@echo "make test      run the Python tests"
+	@echo "make test      run the Python tests and the web unit tests"
+	@echo "make e2e       click real fields in a headless browser (needs 'make dev' running)"
 
 setup:
 	@if command -v uv >/dev/null 2>&1; then \
@@ -36,7 +37,7 @@ data/fields_fake.parquet:
 	$(PY) pipeline/make_fake_fields.py
 
 api: data/fields_fake.parquet
-	$(PY) -m uvicorn api.main:app --reload --port $(API_PORT)
+	$(PY) -m uvicorn api.main:app --reload --reload-dir api --reload-dir pipeline --port $(API_PORT)
 
 web:
 	API_PORT=$(API_PORT) npm --prefix web run dev -- --port $(WEB_PORT) --strictPort
@@ -44,9 +45,15 @@ web:
 # Both servers in one terminal; Ctrl-C stops both.
 dev: data/fields_fake.parquet
 	@trap 'kill 0' INT TERM EXIT; \
-	$(PY) -m uvicorn api.main:app --reload --port $(API_PORT) & \
+	$(PY) -m uvicorn api.main:app --reload --reload-dir api --reload-dir pipeline --port $(API_PORT) & \
 	API_PORT=$(API_PORT) npm --prefix web run dev -- --port $(WEB_PORT) --strictPort & \
 	wait
 
 test:
 	$(PY) -m pytest -q
+	npm --prefix web test
+
+# Needs `make dev` running in another terminal. Downloads headless Chromium on first use.
+e2e:
+	cd web && npx playwright install chromium
+	WEB_URL=http://localhost:$(WEB_PORT) npm --prefix web run e2e
