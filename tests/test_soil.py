@@ -1,4 +1,4 @@
-"""Tests for pipeline/soil.py. No network, no real data: Soil Data Access is faked."""
+"""Tests for pipeline/soil/ssurgo.py. No network, no real data: Soil Data Access is faked."""
 from __future__ import annotations
 
 import json
@@ -20,8 +20,8 @@ import requests  # noqa: E402
 import shapely  # noqa: E402
 from shapely.geometry import Polygon, box  # noqa: E402
 
-from pipeline import soil  # noqa: E402
-from pipeline.soil import (  # noqa: E402
+from pipeline.soil import ssurgo as soil  # noqa: E402
+from pipeline.soil.ssurgo import (  # noqa: E402
     SDAClient,
     SoilDataError,
     field_organic_matter,
@@ -415,7 +415,7 @@ F_SHORE = box(-100.72, 37.90, -100.68, 37.92)  # half on B, half on water       
 
 
 class FakeSDA:
-    """Answers the three kinds of query soil.py sends, from WORLD / COMPONENTS, and counts them."""
+    """Answers the three kinds of query ssurgo.py sends, from WORLD / COMPONENTS, and counts them."""
 
     def __init__(self):
         self.world = list(WORLD)

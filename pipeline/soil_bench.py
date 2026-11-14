@@ -1,4 +1,4 @@
-"""Scale proof for pipeline/soil.py: ~6,000 synthetic fields spread over all of Finney County.
+"""Scale proof for pipeline/soil/ssurgo.py: ~6,000 synthetic fields spread over all of Finney County.
 
     python pipeline/soil_bench.py [--n 6000] [--seed 20055] [--spot-check 8] [--cache-dir DIR]
 

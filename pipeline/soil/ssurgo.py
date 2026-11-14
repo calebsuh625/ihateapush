@@ -4,7 +4,7 @@
     om = organic_matter_pct(fields)     # Series of float (percent), same index as `fields`
     om.attrs["provenance"]              # endpoint, queries, counts, coverage statistics
 
-    python pipeline/soil.py [fields.parquet] [--spot-check 8]    # default data/fields_fake.parquet
+    python pipeline/soil/ssurgo.py [fields.parquet] [--spot-check 8]    # default data/fields_fake.parquet
 
 How it works
 ------------
@@ -83,8 +83,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:  # allow `python pipeline/soil.py`
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:  # allow `python pipeline/soil/ssurgo.py`
     sys.path.insert(0, str(ROOT))
 
 import geopandas as gpd  # noqa: E402

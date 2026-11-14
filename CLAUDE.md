@@ -9,7 +9,7 @@ map → click a field → see its real crop history, soil info and top 3 rotatio
 ## Layout
 
 - `pipeline/` — data scripts. `run_all.py` rebuilds `data/fields.parquet` from public USDA/USGS data
-  (`fields.py` + `csb.py` + `cdl.py`: outlines and crop history; `soil.py`: SSURGO organic matter;
+  (`fields.py` + `csb.py` + `cdl.py`: outlines and crop history; `soil/ssurgo.py`: SSURGO organic matter;
   `slope.py` + `dem.py`: slope). `make_fake_fields.py` writes the 30-field safety net
   `data/fields_fake.parquet`; `schema.py` is the validator for the data contract.
   `satellite.py` builds the optional side file `data/field_satellite.parquet` (per-field, per-year
