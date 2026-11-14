@@ -1,0 +1,17 @@
+# data is rebuilt by the pipeline (downloads are cached in data/raw)
+/data/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# node
+node_modules/
+/web/dist/
+*.tsbuildinfo
+
+# misc
+.DS_Store
+*.log
