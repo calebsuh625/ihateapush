@@ -8,6 +8,7 @@ Endpoints (the frontend is written against exactly these shapes):
     GET /fields                    every field outline, simplified, as one GeoJSON FeatureCollection
     GET /field/{field_id}          one field: full outline, crop history, soil numbers, history stats
     GET /field/{field_id}/plans    the planner's top 3 rotations for that field
+    GET /field/{field_id}/satellite  yearly Landsat greenness for that field (optional side file)
 
 Data file, chosen once at startup: $FIELDS_PATH if set, else data/fields.parquet (real), else
 data/fields_fake.parquet. The file is validated against schema.md; a bad or missing file stops
@@ -16,6 +17,10 @@ the server with a short, readable message instead of a traceback.
 Everything is parsed once at startup into plain dicts, and the /fields payload is serialised
 (and gzipped) once, so requests are dictionary lookups. Numbers that are missing in the data
 (NaN) come out as JSON null; organic matter, slope and area are rounded to 2 decimals.
+
+The satellite numbers live in a side file (data/field_satellite.parquet, or $SATELLITE_PATH; contract in
+pipeline/satellite_schema.py). It is optional: missing or invalid, the server logs one line and carries on.
+It is only paired with the real fields file unless SATELLITE_PATH is set explicitly.
 
 The only thing this module knows about the planner is `rank_plans(FieldInput) -> list[Plan]`
 (see api/planner.py). Pass another function to `create_app(planner=...)` to swap the model.
@@ -43,6 +48,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from api.planner import FieldInput, Plan, Planner, rank_plans
+from pipeline import satellite_schema
 from pipeline.schema import FAKE_PATH, REAL_PATH, ROOT, SchemaError, load_fields, parse_crop_history
 
 log = logging.getLogger("uvicorn.error")  # shows up in the uvicorn console
@@ -51,6 +57,9 @@ GEOJSON_MEDIA_TYPE = "application/geo+json"
 # Map outlines: drop vertices that move the outline by less than ~3 m, then snap to ~1 m.
 MAP_SIMPLIFY_TOLERANCE_DEG = 0.00003  # degrees; ~3.3 m north-south, ~2.6 m east-west at 38°N
 MAP_COORD_DECIMALS = 5  # 0.00001° is about 1 m
+
+
+DEFAULT_SATELLITE_PATH = satellite_schema.SATELLITE_PATH
 
 
 class StartupError(RuntimeError):
@@ -251,6 +260,103 @@ def plan_to_json(plan: Plan) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------------------
+# Satellite side file
+# --------------------------------------------------------------------------------------
+
+
+def resolve_satellite_path(
+    env_value: str | None, fields_source: Path, real_path: Path = REAL_PATH, default: Path = DEFAULT_SATELLITE_PATH
+) -> Path | None:
+    """$SATELLITE_PATH if set; else the default file, but only next to the real fields file."""
+    if env_value:
+        return Path(env_value).expanduser()
+    if is_fake_file(fields_source):
+        return None
+    try:
+        is_real = Path(fields_source).resolve() == Path(real_path).resolve()
+    except OSError:
+        is_real = False
+    return Path(default) if is_real else None
+
+
+def load_satellite_index(path: Path | None) -> dict[str, list[dict[str, Any]]] | None:
+    """field_id -> that field's yearly rows (ascending, already rounded), or None when unavailable.
+
+    Never raises: the satellite file is optional, so every problem is a log line.
+    """
+    if path is None:
+        return None
+    try:
+        df = satellite_schema.load_satellite(path)
+    except FileNotFoundError:
+        log.info("no satellite data: run make satellite (looked for %s)", _show(path))
+        return None
+    except satellite_schema.SatelliteSchemaError as exc:
+        log.warning("satellite file ignored, serving without it: %s", str(exc).replace("\n", " "))
+        return None
+    except Exception as exc:  # optional data must never stop the server
+        log.warning("satellite file ignored, serving without it: %s: %s", _show(path), exc)
+        return None
+    index: dict[str, list[dict[str, Any]]] = {}
+    df = df.sort_values(["field_id", "year"])
+    for field_id, year, peak, cover, n_obs in zip(
+        df["field_id"], df["year"], df["ndvi_peak"], df["cover_frac"], df["n_obs"]
+    ):
+        index.setdefault(str(field_id), []).append(
+            {
+                "year": int(year),
+                "ndvi_peak": clean_number(peak, 3),
+                "cover_frac": clean_number(cover, 3),
+                "n_obs": clean_number(n_obs, 1),
+            }
+        )
+    n_rows = sum(len(rows) for rows in index.values())
+    log.info("Loaded satellite data for %s fields (%s field-years) from %s", f"{len(index):,}", f"{n_rows:,}", _show(path))
+    return index
+
+
+def _mean(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 3) if values else None
+
+
+def satellite_summary(rows: list[dict[str, Any]]) -> dict[str, float | None]:
+    peaks = [(r["year"], r["ndvi_peak"]) for r in rows if r["ndvi_peak"] is not None]
+    covers = [r["cover_frac"] for r in rows if r["cover_frac"] is not None]
+    trend = None
+    if len(peaks) >= 5:
+        x = np.array([y for y, _ in peaks], dtype=float)
+        v = np.array([p for _, p in peaks], dtype=float)
+        slope = float(np.polyfit(x, v, 1)[0]) * 10
+        trend = clean_number(slope, 3)
+    return {
+        "ndvi_peak_mean": _mean([p for _, p in peaks]),
+        "cover_frac_mean": _mean(covers),
+        "ndvi_peak_trend_per_decade": trend,
+    }
+
+
+def satellite_body(field_id: str, index: dict[str, list[dict[str, Any]]] | None) -> dict[str, Any]:
+    """Body of GET /field/{id}/satellite."""
+    rows = index.get(field_id) if index is not None else None
+    if not rows:
+        return {
+            "field_id": field_id,
+            "available": False,
+            "reason": "not_built" if index is None else "no_data_for_field",
+            "source": satellite_schema.SOURCE,
+            "years": [],
+            "summary": satellite_summary([]),
+        }
+    return {
+        "field_id": field_id,
+        "available": True,
+        "source": satellite_schema.SOURCE,
+        "years": rows,
+        "summary": satellite_summary(rows),
+    }
+
+
+# --------------------------------------------------------------------------------------
 # The in-memory store
 # --------------------------------------------------------------------------------------
 
@@ -391,7 +497,9 @@ def _record(request: Request, field_id: str) -> FieldRecord:
 
 @router.get("/health", summary="Which data file is loaded")
 async def health(request: Request) -> JSONResponse:
-    return JSONResponse(_store(request).health())
+    body = _store(request).health()
+    body["satellite"] = request.app.state.satellite is not None
+    return JSONResponse(body)
 
 
 @router.get("/fields", summary="All field outlines (simplified) as GeoJSON")
@@ -417,6 +525,12 @@ async def plans(request: Request, field_id: str) -> JSONResponse:
     planner: Planner = request.app.state.planner
     ranked = planner(record.planner_input())
     return JSONResponse({"field_id": record.field_id, "plans": [plan_to_json(plan) for plan in ranked]})
+
+
+@router.get("/field/{field_id}/satellite", summary="Yearly satellite greenness for one field")
+async def satellite(request: Request, field_id: str) -> JSONResponse:
+    record = _record(request, field_id)
+    return JSONResponse(satellite_body(record.field_id, request.app.state.satellite))
 
 
 class ReadableStartupErrors:
@@ -463,6 +577,9 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
         path = resolve_fields_path(os.environ.get("FIELDS_PATH"), REAL_PATH, FAKE_PATH)
         store = load_store(path)
         app.state.store = store
+        app.state.satellite = load_satellite_index(
+            resolve_satellite_path(os.environ.get("SATELLITE_PATH"), store.source, REAL_PATH, DEFAULT_SATELLITE_PATH)
+        )
         log.info(
             "Loaded %s fields from %s in %.2fs (/fields payload: %s kB, %s kB gzipped)",
             f"{len(store.records):,}",

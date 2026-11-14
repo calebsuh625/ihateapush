@@ -157,6 +157,13 @@ def all_positions(geometry: dict):
         yield from ring
 
 
+@pytest.fixture(autouse=True)
+def no_ambient_satellite_file(tmp_path, monkeypatch):
+    """Tests never see the real data/field_satellite.parquet or a SATELLITE_PATH from the shell."""
+    monkeypatch.delenv("SATELLITE_PATH", raising=False)
+    monkeypatch.setattr(main, "DEFAULT_SATELLITE_PATH", tmp_path / "no_such_satellite.parquet")
+
+
 @pytest.fixture()
 def fields_file(tmp_path, monkeypatch) -> Path:
     path = write_fields(tmp_path / "fields.parquet")
@@ -183,7 +190,13 @@ def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
-    assert response.json() == {"status": "ok", "source": "fields.parquet", "is_fake": False, "field_count": 5}
+    assert response.json() == {
+        "status": "ok",
+        "source": "fields.parquet",
+        "is_fake": False,
+        "field_count": 5,
+        "satellite": False,
+    }
 
 
 def test_health_reports_fake_data(tmp_path, monkeypatch):
@@ -195,6 +208,7 @@ def test_health_reports_fake_data(tmp_path, monkeypatch):
             "source": "fields_fake.parquet",
             "is_fake": True,
             "field_count": 2,
+            "satellite": False,
         }
 
 
@@ -540,12 +554,14 @@ def test_app_falls_back_from_real_to_fake(tmp_path, monkeypatch):
     with start() as c:
         assert c.get("/health").json() == {
             "status": "ok", "source": "fields_fake.parquet", "is_fake": True, "field_count": 2,
+            "satellite": False,
         }  # fmt: skip
 
     write_fields(real)  # the real file appears: it wins
     with start() as c:
         assert c.get("/health").json() == {
             "status": "ok", "source": "fields.parquet", "is_fake": False, "field_count": 5,
+            "satellite": False,
         }  # fmt: skip
 
     other = write_fields(tmp_path / "elsewhere.parquet", default_rows()[:1])
@@ -833,3 +849,143 @@ def test_many_fields_are_served_from_memory(tmp_path, monkeypatch):
             assert c.get(f"/field/{field_id}").json()["field_id"] == field_id
             assert len(c.get(f"/field/{field_id}/plans").json()["plans"]) == 3
         assert c.get("/field/KS-000001").json()["organic_matter_pct"] is None
+
+
+# --------------------------------------------------------------------------------------
+# Satellite side file: GET /field/{id}/satellite and /health "satellite"
+# --------------------------------------------------------------------------------------
+
+from pipeline import satellite_schema  # noqa: E402
+
+
+def write_satellite(path: Path, rows: list[tuple] | None = None) -> Path:
+    """rows: (field_id, year, ndvi_peak, cover_frac, n_obs)."""
+    if rows is None:
+        rows = [(f"KS-000001", 2008 + i, 0.5 + 0.02 * i, 0.3 + 0.01 * i, 10.0 + i) for i in range(10)]
+        rows[2] = ("KS-000001", 2010, NAN, NAN, 0.0)  # a year with no clear view
+        rows += [("KS-000004", 2020, 0.7, 0.5, 8.0), ("KS-000004", 2021, 0.71, 0.5, 9.0)]  # < 5 years
+        rows += [("KS-000005", y, 0.6, 0.4, 12.0) for y in (2008, 2009, 2011, 2012, 2014, 2015)]  # gaps
+    df = pd.DataFrame(rows, columns=satellite_schema.COLUMNS)
+    df["year"] = df["year"].astype("int64")
+    satellite_schema.validate_satellite(df)
+    df.to_parquet(path, index=False)
+    return path
+
+
+@pytest.fixture()
+def sat_client(fields_file, tmp_path, monkeypatch):
+    monkeypatch.setenv("SATELLITE_PATH", str(write_satellite(tmp_path / "sat.parquet")))
+    with TestClient(create_app()) as test_client:
+        yield test_client
+
+
+def test_satellite_exactly_per_contract(sat_client):
+    assert sat_client.get("/health").json()["satellite"] is True
+    response = sat_client.get("/field/KS-000001/satellite")
+    assert response.status_code == 200
+    body = strict_json(response.text)
+    assert set(body) == {"field_id", "available", "source", "years", "summary"}
+    assert body["field_id"] == "KS-000001" and body["available"] is True
+    assert body["source"] == satellite_schema.SOURCE
+    assert [y["year"] for y in body["years"]] == list(range(2008, 2018))
+    assert set(body["years"][0]) == {"year", "ndvi_peak", "cover_frac", "n_obs"}
+    assert body["years"][0] == {"year": 2008, "ndvi_peak": 0.5, "cover_frac": 0.3, "n_obs": 10.0}
+    assert body["years"][2] == {"year": 2010, "ndvi_peak": None, "cover_frac": None, "n_obs": 0.0}
+
+
+def test_satellite_summary_means_and_trend_skip_null_years(sat_client):
+    summary = sat_client.get("/field/KS-000001/satellite").json()["summary"]
+    peaks = [0.5 + 0.02 * i for i in range(10) if i != 2]
+    covers = [0.3 + 0.01 * i for i in range(10) if i != 2]
+    assert summary["ndvi_peak_mean"] == pytest.approx(sum(peaks) / 9, abs=5e-4)
+    assert summary["cover_frac_mean"] == pytest.approx(sum(covers) / 9, abs=5e-4)
+    slope = np.polyfit([2008 + i for i in range(10) if i != 2], peaks, 1)[0] * 10
+    assert summary["ndvi_peak_trend_per_decade"] == pytest.approx(slope, abs=5e-4)
+    assert summary["ndvi_peak_trend_per_decade"] == pytest.approx(0.2, abs=1e-3)
+
+
+def test_satellite_trend_is_null_with_fewer_than_5_years(sat_client):
+    body = sat_client.get("/field/KS-000004/satellite").json()
+    assert body["available"] is True and len(body["years"]) == 2
+    assert body["summary"]["ndvi_peak_trend_per_decade"] is None
+    assert body["summary"]["ndvi_peak_mean"] == pytest.approx(0.705, abs=1e-3)
+
+
+def test_satellite_years_with_gaps_are_just_missing(sat_client):
+    body = sat_client.get("/field/KS-000005/satellite").json()
+    assert [y["year"] for y in body["years"]] == [2008, 2009, 2011, 2012, 2014, 2015]
+    assert body["summary"]["ndvi_peak_trend_per_decade"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_satellite_rounding(tmp_path, fields_file, monkeypatch):
+    rows = [("KS-000001", 2008, 0.123456, 0.987654, 13.2567)]
+    monkeypatch.setenv("SATELLITE_PATH", str(write_satellite(tmp_path / "s.parquet", rows)))
+    with start() as c:
+        year = c.get("/field/KS-000001/satellite").json()["years"][0]
+    assert year == {"year": 2008, "ndvi_peak": 0.123, "cover_frac": 0.988, "n_obs": 13.3}
+
+
+def test_satellite_field_without_rows(sat_client):
+    body = sat_client.get("/field/KS-000002/satellite").json()
+    assert body["available"] is False and body["reason"] == "no_data_for_field"
+    assert body["years"] == []
+    assert body["summary"] == {"ndvi_peak_mean": None, "cover_frac_mean": None, "ndvi_peak_trend_per_decade": None}
+
+
+def test_satellite_unknown_field_is_404(sat_client, client):
+    for c in (sat_client, client):
+        response = c.get("/field/KS-999999/satellite")
+        assert response.status_code == 404
+        assert "KS-999999" in response.json()["detail"]
+
+
+def test_satellite_without_a_file_is_not_built(fields_file, tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("SATELLITE_PATH", str(tmp_path / "nope.parquet"))
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        with start() as c:
+            assert c.get("/health").json()["satellite"] is False
+            body = c.get("/field/KS-000001/satellite").json()
+            assert c.get("/field/KS-000001").status_code == 200
+    assert body["available"] is False and body["reason"] == "not_built" and body["years"] == []
+    assert body["summary"]["ndvi_peak_mean"] is None
+    assert sum("no satellite data: run make satellite" in r.getMessage() for r in caplog.records) == 1
+
+
+def test_invalid_satellite_file_is_ignored_with_a_warning(fields_file, tmp_path, monkeypatch, caplog):
+    bad = pd.DataFrame({"field_id": ["KS-000001"], "year": [2008], "ndvi_peak": [5.0], "cover_frac": [0.1], "n_obs": [1.0]})
+    bad.to_parquet(tmp_path / "bad.parquet", index=False)
+    monkeypatch.setenv("SATELLITE_PATH", str(tmp_path / "bad.parquet"))
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        with start() as c:
+            assert c.get("/health").json()["satellite"] is False
+            assert c.get("/field/KS-000001/satellite").json()["reason"] == "not_built"
+    warnings_ = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("ndvi_peak" in m and "outside" in m for m in warnings_)
+
+
+def test_satellite_load_is_logged(fields_file, tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("SATELLITE_PATH", str(write_satellite(tmp_path / "s.parquet")))
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        with start():
+            pass
+    assert any("satellite data for 3 fields (18 field-years)" in r.getMessage() for r in caplog.records)
+
+
+def test_satellite_default_file_is_only_paired_with_the_real_fields_file(tmp_path, monkeypatch):
+    sat = write_satellite(tmp_path / "default_sat.parquet")
+    monkeypatch.setattr(main, "DEFAULT_SATELLITE_PATH", sat)
+    monkeypatch.delenv("SATELLITE_PATH", raising=False)
+    real = write_fields(tmp_path / "real.parquet")
+    monkeypatch.setattr(main, "REAL_PATH", real)
+    monkeypatch.setenv("FIELDS_PATH", str(real))
+    with start() as c:
+        assert c.get("/health").json()["satellite"] is True
+    other = write_fields(tmp_path / "other.parquet")  # not the real file: never paired
+    monkeypatch.setenv("FIELDS_PATH", str(other))
+    with start() as c:
+        assert c.get("/health").json()["satellite"] is False
+    fake = write_fields(tmp_path / "fields_fake.parquet")
+    monkeypatch.setattr(main, "REAL_PATH", fake)
+    monkeypatch.setenv("FIELDS_PATH", str(fake))
+    with start() as c:
+        assert c.get("/health").json()["satellite"] is False
