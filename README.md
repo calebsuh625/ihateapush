@@ -22,8 +22,8 @@ schema.md   the data contract for data/fields.parquet
 - Node.js 20 or newer with npm (developed on Node 24)
 - `make` (optional — every target is one or two plain commands, listed below)
 - For the real data: an internet connection and about 5 GB of free disk. The first build downloads
-  about 4 GB (almost all of it one national USDA file) and takes a few minutes; later builds take
-  seconds because everything is cached in `data/raw/`.
+  about 4 GB (almost all of it one national USDA file) and took about 3 minutes from a fresh clone
+  on a fast connection; later builds take about 7 seconds because everything is cached in `data/raw/`.
 
 ## Setup and run
 
@@ -90,6 +90,17 @@ Useful flags:
 .venv/bin/python pipeline/run_all.py --fields-source cdl-segment  # force the fallback outlines
 .venv/bin/python pipeline/run_all.py --allow-missing soil,slope   # write nulls if a service is down
 ```
+
+What the current build contains: 7,255 fields (202,000 ha, about 60% of the county), all with a
+full 2008–2024 history. Field-years are 26% winter wheat, 23% corn, 18% fallow, 15% sorghum,
+11% alfalfa, 4% grass/pasture, 1% soybeans. Organic matter runs 0.5–3.6% (median 1.7%) and slope
+0.1–6.5% (median 0.8%).
+
+One sanity check is expected to print WARN: in 2024 about 7% of fields are classed grass/pasture,
+up from 0.3% in 2023. That jump is in the 2024 Cropland Data Layer itself, not a pipeline fault.
+
+An interrupted download resumes on the next run. Stopping `make dev` with Ctrl-C prints
+`make: *** [dev] Error 130`; that is normal.
 
 Besides `data/fields.parquet` the run writes two side files that are not part of the contract:
 `data/fields_provenance.json` (sources, counts, timings) and `data/fields_source_ids.csv`

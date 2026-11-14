@@ -189,7 +189,17 @@ def fetch_cdl(year: int, fips: str = FIPS, *, service_timeout: float = 420, quie
 def fetch_all(years: list[int] | None = None, fips: str = FIPS, *, quiet: bool = False) -> dict[int, dict]:
     """`fetch_cdl` for every year, one request at a time (be polite to the server)."""
     years = list(YEARS) if years is None else list(years)
-    out = {year: fetch_cdl(year, fips, quiet=quiet) for year in years}
+    out: dict[int, dict] = {}
+    for n, year in enumerate(years):
+        out[year] = fetch_cdl(year, fips, quiet=quiet)
+        # Offline with an empty cache every year costs ~30 s of retries. If the first two years
+        # both fail and nothing has worked, the service is unreachable: stop instead of
+        # grinding through all 17.
+        if n == 1 and all(i["path"] is None for i in out.values()) and len(years) > 2:
+            raise RuntimeError(
+                "CDL rasters cannot be downloaded (the first two years both failed) - check the "
+                f"internet connection and rerun. Last error: {out[year]['error']}"
+            )
     missing = [y for y, i in out.items() if i["path"] is None]
     if not quiet:
         cached = sum(i["route"] == "local-cache" for i in out.values())
