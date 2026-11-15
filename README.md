@@ -16,13 +16,17 @@ satellite views, 2016–2024: an organic-matter estimate and the number of days 
 The honest result is that the organic-matter estimate cannot show change; bare days can be
 trusted. See [Soil over time](#soil-over-time-phase-2a).
 
+**Smart planner and future weather (Phase 3, optional add-on):** the plans are scored against six climate
+models for a year you choose, and the app shows how often each plan holds up. See
+[Phase 3](#phase-3-smart-planner-and-future-weather).
+
 ```
 pipeline/   data scripts; run_all.py builds data/fields.parquet from public USDA / USGS data
-api/        FastAPI backend (main.py) + rotation planner (planner.py)
+api/        FastAPI backend (main.py) + rotation planners (the package planner/: smart.py is the Phase 3 planner, legacy.py the Phase 1 one)
 web/        Vite + React + TypeScript + react-leaflet frontend
 data/       data files (git-ignored); downloads are cached in data/raw/
 tests/      pytest tests for the pipeline, API and planner
-schema.md   the data contracts for data/fields.parquet and data/soil_health.parquet
+schema.md   the data contracts: fields, soil table, Phase 2B outputs, Phase 3 tables and API answers
 ```
 
 ## Requirements
@@ -250,7 +254,8 @@ Base URL `http://127.0.0.1:8010` (interactive docs at `/docs`).
 | `GET /health` | which data file is loaded, how many fields, and whether the satellite and soil tables are loaded |
 | `GET /fields` | GeoJSON FeatureCollection of all fields (`field_id`, `area_ha`, simplified outline) |
 | `GET /field/{id}` | one field: outline, `crop_history` as an object, organic matter, slope, area, and stats (distinct crops, longest same-crop streak, % of years in corn) |
-| `GET /field/{id}/plans` | the planner's top 3 four-year rotations with soil / water / money / overall scores and a one-line reason |
+| `GET /field/{id}/plans` | the planner's top 3 rotations with soil / water / money / overall scores and a one-line reason; with the Phase 3 tables also risk, "holds up in X of 6 futures", and the future weather assumed (see [Phase 3](#phase-3-smart-planner-and-future-weather)) |
+| `GET /climate` | Phase 3: the future weather the planner assumes, per scenario and year |
 | `GET /field/{id}/satellite` | per-year `ndvi_peak`, `cover_frac` and `n_obs`, plus averages and the trend per decade; `"available": false` with a reason if the satellite file has not been built |
 | `GET /field/{id}/soil` | per-year `om_pred`, `confidence`, `n_obs` and `bare_days` for 2016–2024, the soil-survey value, which signal to trust, the typical noise and a plain verdict; `"available": false` with a reason if the soil table has not been built |
 | `GET /effects` | Phase 2B: `data/effects.json` (503 until `make causal` has run) |
@@ -265,15 +270,17 @@ is in use (`SATELLITE_PATH=/some/file.parquet` overrides). If it is missing or i
 logs one line and runs without it. The soil table works the same way: `data/soil_health.parquet`
 and `data/soil_health_meta.json` (`SOIL_HEALTH_PATH` and `SOIL_HEALTH_META_PATH` override).
 
-The planner lives in `api/planner.py` behind one function, `rank_plans(field) -> list[Plan]`.
-To try a smarter model, write a function with that signature and pass it to `create_app(planner=...)`
-in `api/main.py`.
+The planners live in the package `api/planner/`. The Phase 1 rule-based one is `api/planner/legacy.py`
+behind one function, `rank_plans(field) -> list[Plan]`; it answers when the Phase 3 tables are missing.
+To try another model, write a function with that signature and pass it to `create_app(planner=...)`
+in `api/main.py` (the answer then says `"engine": "basic"`).
 
 ## The data contract
 
-`schema.md` defines `data/fields.parquet` and `data/soil_health.parquet`. It only changes on purpose:
-the pipeline validates against it before writing and the API validates on startup
-(`pipeline/schema.py` and `pipeline/soil/health_schema.py` are the validators).
+`schema.md` defines `data/fields.parquet`, `data/soil_health.parquet`, the Phase 2B outputs and the Phase 3
+tables and API answers. It only changes on purpose: the pipeline validates against it before writing and
+the API validates on startup (`pipeline/schema.py`, `pipeline/soil/health_schema.py`,
+`pipeline/climate/schema.py`, `pipeline/field_traits_schema.py` and `pipeline/nass.py` are the validators).
 
 ## Phase 2B: rotations compared on look-alike neighbours
 
@@ -491,3 +498,188 @@ same validator, with **made-up values and planted crop effects**. Every output t
 `is_fake: true` and the app shows a "Fake soil data · not findings" badge. The unit tests use this
 path on a small synthetic grid and check that the planted effect is recovered; they write only to
 temp folders, never to `data/`.
+
+## Phase 3: smart planner and future weather
+
+**What it does.** For one field it compares crop patterns (cycles of three or four years) and shows the
+best three. Each pattern is tried in the weather of six climate models, for a year you pick (today to 2060)
+and one of two emissions paths: "middle road" (`ssp245`) or "high emissions" (`ssp585`). You choose how
+much soil protection, water, money and risk matter to you. Each card says how many of the six futures the
+pattern holds up in. The field panel has sliders for this; the plans re-rank as you move them. Soil
+protection means fewer bare days a year and lower wind-erosion risk; it is not a measure of soil health.
+Money is return over direct costs, not take-home pay.
+
+**Data sources.**
+
+| what | source |
+|---|---|
+| observed weather 2000-2024 | NASA POWER (one download, no key) |
+| future weather 2025-2060 | `NASA/GDDP-CMIP6` on Earth Engine: ACCESS-CM2, GFDL-ESM4, MPI-ESM1-2-HR, MRI-ESM2-0, NorESM2-MM, UKESM1-0-LL |
+| yields, acres, prices | USDA NASS, Finney County (district or state where the county has no figure) |
+| irrigated or dryland, wind erodibility | our guess from outline, crops and water use; SSURGO `weg` / `wei` |
+| water use | OpenET (April-September, 2016-2024) |
+| costs, irrigation limit | K-State 2027 crop budgets; Kansas rule K.A.R. 5-3-19(a), 24 inches a year |
+| bare days per crop | the Phase 2A satellite soil table |
+
+### Build
+
+Order: `make nass`, `make climate`, `make field-traits`, `make calibrate`. Without these files the app
+runs the old planner.
+
+```bash
+make nass            # data/nass_finney.parquet (first run streams a 1.1 GB file, about 2 min)
+make climate         # climate tables (Earth Engine), log in data/logs/climate_build.log
+make field-traits    # data/field_traits.parquet (Earth Engine OpenET)
+make calibrate       # fit the crop response -> api/planner/crop_response.json (local, seconds)
+make planner-sanity  # six checks on real fields -> data/planner_sanity.md
+.venv/bin/python -m pipeline.climate.build --estimate      # cost only, nothing sent
+.venv/bin/python -m pipeline.field_traits --estimate       # OpenET pilot and cost, writes nothing
+.venv/bin/python -m pipeline.field_traits --no-openet      # without Earth Engine
+```
+
+- **Cost.** The climate tables send 648 Earth Engine requests, about **2.4 EECU-hours** once and about
+  15 minutes; every answer is cached in `data/raw/climate/`, so a second run is local. The build stops at
+  `--max-eecu-hours` (default 5). OpenET for all 7,255 fields and 9 years is about **0.07 EECU-hours**
+  (cached in `data/raw/openet/`; `--max-eecu-hours` default 3). Needs the Earth Engine login described
+  under "Satellite greenness". `make nass`, `make calibrate` and `make planner-sanity` use no Earth Engine.
+- **Outputs.** `data/climate_futures.parquet`, `climate_history.parquet`, `climate_monthly.parquet`,
+  `climate_report.md`, `nass_finney.parquet`, `field_traits.parquet`, `crop_response_report.md`. The
+  tracked files `api/planner/crop_response.json` and `economics.json` come with the repo. Columns are in
+  `schema.md`. No new Python package is needed.
+- **Prices.** `python -m api.planner.money` shows prices, costs and the irrigation limit;
+  `--update-prices` rewrites the prices in `economics.json` from NASS.
+
+### How crops respond
+
+Yield = normal yield x scale x heat factor x water factor (`api/planner/response.py`). Heat: each day above
+35 C (above 32 C in May-June for winter wheat) takes off a fitted share of the yield; the day count is
+capped at the most any year of 2000-2024 had plus a margin (85 summer days, 38 wheat days). Water: the FAO
+rule, with rain and the soil water stored before planting against what the crop needs. Irrigated crops get
+what they need up to the irrigation limit (24 inches); beyond it the missing water cuts the yield. A crop
+fails when its modelled yield is under half of normal. `make calibrate` fits this to NASS yields and writes
+`crop_response.json`.
+
+Calibration quality per crop (leave-one-year-out skill; 0 is no better than the trend, 1 is perfect):
+
+| crop | practice | quality | note |
+|---|---|---|---|
+| corn | dryland | good (0.60) | fitted |
+| winter wheat | dryland | good (0.70) | the heat loss is a textbook value, not a finding |
+| sorghum | dryland | fair (0.40) | water term is textbook |
+| corn | irrigated | fair (0.46) | fitted |
+| soybeans | irrigated | fair (0.31) | fitted |
+| winter wheat | irrigated | fair (0.24) | heat loss 1.0 % a day |
+| sorghum irrigated, soybeans dryland | | weak | 9 years each, textbook numbers |
+| alfalfa, both practices | | weak | no skill (irrigated) or no data (dryland), textbook numbers |
+
+### How plans are scored
+
+- **A future** is one climate model under the chosen scenario, averaged over about twenty years around the
+  chosen year (2060 has only 2050-2060). **Today** (2025) is 2015-2034 with each model's two runs pooled,
+  so it is the same under either scenario. It is a model climate with about 53 hot days a year against 45
+  in the 2000-2024 record.
+- **Four scores**, each 0 to 1, higher is better, on fixed scales so a hotter future lowers the score:
+  soil protection (0.6 x bare days a year + 0.4 x a wind-erosion index; 0 bare days = 1, 150 = 0), water
+  (irrigated: mm pumped, 0 = 1, 1,000 = 0; dryland: the share of the crops' water need that rain and
+  stored water cover), money (return over direct costs per acre; irrigated -$100 = 0 and $500 = 1,
+  dryland -$125 = 0 and $125 = 1) and risk (the share of planted crops that do not fail). `overall` is the
+  mean with your weights (default soil 0.3, water 0.2, money 0.3, risk 0.2).
+- **Holds up.** A plan holds up in a future when no more than 1 in 4 of its planted crops fails and it
+  still covers its direct costs on average.
+- **Ranking.** Half the average `overall` across the six models plus half the average of the two worst
+  models, so a plan that is steady beats one that is good on average and bad in the hot, dry models.
+  The top three differ from each other by more than one year in four; the third card can be well down the
+  full list (`rank` says where).
+- **Candidates** (`api/planner/candidates.py`): 105 cycles for irrigated fields, 17 for dryland. Rules: no
+  winter wheat after winter wheat, no fallow after fallow, no soybeans after soybeans, alfalfa only as a
+  stand of three or more years, at most two years in a row of corn or of sorghum. Dryland also: no
+  alfalfa, no soybeans, at most one corn year in a cycle, winter wheat only after fallow. Irrigated: at
+  most one fallow year in four. Cover crops are not candidates (no data). A field whose own pattern breaks
+  a rule is still scored and told so gently.
+- **The field decides** irrigated or dryland, soil erodibility, slope and its current pattern. Everything
+  else is county-wide, so two dryland fields on the same soil get the same three plans.
+
+**Soil-effect provider.** `SOIL_EFFECT_SOURCE=crop_average` (default) uses the county's average bare days
+per crop and previous crop. `SOIL_EFFECT_SOURCE=effects` adds what Phase 2B measured between matched
+neighbours beyond what the crops explain. Today one comparison is usable (irrigated corn-soy against
+continuous corn, 30 pairs); it moves 14 of the 105 irrigated plans and no dryland plan.
+
+```bash
+SOIL_EFFECT_SOURCE=effects make dev      # neighbour comparisons on top of the crop averages
+IRRIGATION_LIMIT_MM=450 make dev         # a tighter irrigation limit (0 or none = no limit)
+PLANNER_ENGINE=basic make dev            # force the old planner
+```
+
+Other settings (paths of the tables) are read in `api/planner/config.py`.
+
+### API
+
+`GET /field/{id}/plans?soil=&water=&money=&risk=&scenario=ssp245|ssp585&horizon=2025..2060&irrigated=true|false`
+(all optional; priorities are any numbers of zero or more) and `GET /climate`. Without the climate tables
+`/plans` answers with the old planner (`"engine": "basic"`, query ignored) and `/climate` says
+`{"available": false}`. A bad value gives a 400 with one plain sentence. Full shape in `schema.md`.
+Trimmed example, `/field/KS-013847/plans?money=5&scenario=ssp585&horizon=2060`:
+
+```json
+{"engine": "smart",
+ "climate": {"label": "+2.0°C, models disagree on summer rain, crops need 8% more water, 26 more days above 35°C (95°F)",
+             "yield_change": {"corn": {"pct": -40, "low": -56, "high": -25}}},
+ "plans": [{"name": "Sorghum – Fallow (alternating)", "rank": 1,
+            "scores": {"soil": 0.08, "water": 0.67, "money": 0.57, "risk": 0.77, "overall": 0.56},
+            "futures": {"holds": 4, "total": 6},
+            "numbers": {"bare_days": 130.6, "profit_per_acre": 18.0, "failed_share": 0.23}}],
+ "candidates": 17}
+```
+
+### In the app
+
+When the API answers with the smart planner, the field panel's "Rotation plans" section shows four sliders
+(soil protection, water, money, risk), a "Which future?" slider from Today to 2060 with a middle-road /
+high-emissions choice, and a line saying what changes in that future and how far the six models agree. An
+irrigated / dryland switch applies to that field only. Each card shows the next four years, the score bars,
+"Holds up in X of 6 futures", a strip of profit across the futures, four figures and one sentence. Under
+the cards, "What this field grows now" scores the field's last four years the same way, and "How this is
+scored" holds the rules above. Without the climate tables the controls are hidden and the cards look as in
+Phase 1. Tests: `npm --prefix web run e2e:planner` (with `make dev` running).
+
+### What is shaky
+
+Read the numbers as a comparison between plans, not a forecast.
+
+- **The dryland profit sign.** Dryland returns sit within about $40 an acre of zero, so "falls short of its
+  direct costs" and "holds up in N of 6" flip with the assumptions (the price years, the cost of a fallow
+  year, the hot-day cap). With 2015-2024 prices instead of 2020-2024 every dryland plan was short of its
+  costs even today (sceptic review, before the fixes). The yield changes in `climate.yield_change` are the
+  firmer part.
+- **Heat and drought look alike in the record.** Hot years were dry years in 2000-2024 (correlation -0.8 to
+  -0.9), so it cannot say how much of a bad year was heat and how much was water. The split leans on
+  textbook values, and hot days rise in every model while rain does not.
+- **Dryland wheat's heat loss is an assumption.** Fitted freely it came out near zero (0.04 % a day); the
+  planner keeps the textbook 1 % a day as the cautious choice. The first dryland plan in 2060 can depend on
+  it, and has not been rerun with the fitted value since the fixes.
+- **Hot days beyond the record are capped.** Several model years have more than 85 hot days (one model
+  averages 101 in 2050-2060 under `ssp585`). The cap removes a guess; it adds no knowledge of such years.
+- **Models disagree on rain.** The range crosses zero in every window; they agree on warming and on more
+  very hot days. Six models, one run each: the range is a spread, not a probability.
+- **The weather is a reanalysis, not a station.** NASA POWER runs about 1.6 C warmer than the Garden City
+  station and about 10 % wetter. Models are corrected to it, so levels carry the offset; changes do not.
+  Rain days, dry spells and heat waves are the models' own; they have 4-12 % fewer days above 35 C than
+  observed. One number for the whole county.
+- **"Today" is a model climate** for 2015-2034, a little hotter than 2000-2024. It is the same under both
+  scenarios.
+- **The irrigation limit binds often.** The model's pumping need is above what K-State budgets (corn about
+  500 mm against 381), so with 24 inches alfalfa goes short in 63 % of years today and corn in 27 %. A
+  weakening well or a right for less than 24 inches is not modelled; set `IRRIGATION_LIMIT_MM`.
+- **Irrigated plans always hold up.** All 105 hold up in 6 of 6 futures in every setting, so the badge
+  says little for irrigated fields.
+- **Money is not income.** Land, machinery and pivot ownership are not taken off (about $100 an acre
+  dryland, $430-490 irrigated), no insurance payments or government payments are counted, prices and
+  costs stay at today's level, and the cost of a fallow year ($14) is our rough, unverified estimate.
+- **No rotation effect on yield** beyond stored soil water: no nitrogen credit after soybeans or alfalfa,
+  no disease carry-over. Three agronomy rules stand in for the worst cases.
+- **Close calls at the top.** On dryland the water, money and risk scores move almost together. Under
+  `ssp585` in 2060 the first irrigated plan differs from today's for 227 of 300 sampled fields, by 0.006
+  on the ranking score. Bare days do not change with the climate in the model; only the wind does.
+- **Calibration is weak for some crops** (see the table): sorghum irrigated, soybeans dryland and alfalfa
+  run on textbook numbers; the model's yields swing less than real ones and miss some bad years (for
+  example the 2023 wheat abandonment).

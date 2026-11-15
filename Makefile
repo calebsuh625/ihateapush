@@ -2,7 +2,7 @@ PY := .venv/bin/python
 API_PORT ?= 8010
 WEB_PORT ?= 5173
 
-.PHONY: help setup fake pipeline satellite soil-obs soil-health causal validate api web dev test e2e
+.PHONY: help setup fake pipeline satellite soil-obs soil-health causal validate climate nass field-traits calibrate planner-sanity api web dev test e2e
 
 help:
 	@echo "make setup     create .venv, install Python + web dependencies"
@@ -12,6 +12,11 @@ help:
 	@echo "make soil-obs  bare-soil satellite views for every field (Earth Engine, about 30 EECU-hours; see README)"
 	@echo "make soil-health  build data/soil_health.parquet from those views (local, no network)"
 	@echo "make causal    rotations compared on matched neighbours (bare days) -> data/effects.json, data/pairs.parquet"
+	@echo "make climate   Phase 3 future-weather tables (Earth Engine, about 2.4 EECU-hours the first time; cached after)"
+	@echo "make nass      Phase 3 USDA crop statistics -> data/nass_finney.parquet (first run streams a 1.1 GB file)"
+	@echo "make field-traits  Phase 3 per-field irrigation guess, wind erodibility, OpenET water use (about 0.07 EECU-hours)"
+	@echo "make calibrate fit the crop response to NASS yields -> api/planner/crop_response.json (local, seconds)"
+	@echo "make planner-sanity  run the planner's checks on real fields -> data/planner_sanity.md"
 	@echo "make validate  check the active data file against schema.md and summarise it"
 	@echo "make dev       start API (:$(API_PORT)) and web (:$(WEB_PORT)) together"
 	@echo "make api       start only the API"
@@ -51,6 +56,28 @@ causal:
 	$(PY) -m pipeline.causal.run_causal > data/causal.log 2>&1 \
 		&& grep '^\[' data/causal.log | cut -c1-200 | tail -4 \
 		|| (tail -5 data/causal.log; exit 1)
+
+# Phase 3 (smart planner). Order: nass, climate, field-traits, calibrate. Without these files the app
+# runs the old planner. Run `$(PY) -m pipeline.climate.build --estimate` and
+# `$(PY) -m pipeline.field_traits --estimate` first; the Earth Engine downloads are cached under data/raw/.
+climate:
+	@mkdir -p data/logs
+	$(PY) -m pipeline.climate.build > data/logs/climate_build.log 2>&1 \
+		&& tail -3 data/logs/climate_build.log \
+		|| (tail -5 data/logs/climate_build.log; exit 1)
+
+nass:
+	$(PY) -m pipeline.nass
+
+field-traits:
+	$(PY) -m pipeline.field_traits
+
+# Local, needs data/nass_finney.parquet and the climate tables. Rewrites the tracked crop_response.json.
+calibrate:
+	$(PY) -m api.planner.calibrate
+
+planner-sanity:
+	$(PY) -m api.planner.sanity
 
 validate:
 	$(PY) pipeline/schema.py

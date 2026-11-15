@@ -3,8 +3,10 @@
 **This file is the contract between the pipeline, the API and the frontend. It only changes on purpose** —
 if you change it, change the validator, the API and the frontend in the same commit.
 
-Two tables: [`data/fields.parquet`](#datafieldsparquet) (one row per field) and
-[`data/soil_health.parquet`](#datasoil_healthparquet) (one row per field per year).
+Two core tables: [`data/fields.parquet`](#datafieldsparquet) (one row per field) and
+[`data/soil_health.parquet`](#datasoil_healthparquet) (one row per field per year). Phase 2B outputs and
+the Phase 3 planner inputs (three climate tables, `nass_finney.parquet`, `field_traits.parquet`, two
+tracked JSON files) and answers (`/field/{id}/plans`, `/climate`) are described further down.
 
 # `data/fields.parquet`
 
@@ -196,3 +198,182 @@ One row per matched pair (plain Parquet, no geometry).
 One row per field: `field_id`, `irrigation` (`irrigated` / `dryland` / `uncertain`), `irrigation_reason`,
 `circle_fill`, `rotation_pre`, `rotation_post`, `soil_group`, `eligible` (bool), `n_baseline`, `n_pre`,
 `n_post` (soil years with a value in each window), `baseline`, `pre`, `post` (the field's own means).
+
+---
+
+# Phase 3: planner inputs and answers
+
+All optional: without them the app runs the old rule-based planner (`api/planner/legacy.py`). None of
+them changes `data/fields.parquet`.
+
+## Climate tables
+
+Validator: `pipeline/climate/schema.py` (`check_futures`, `check_history`, `check_monthly`; pandas only).
+Written by `python -m pipeline.climate.build`. Plain Parquet, no geometry: one number for the whole county.
+Source: `NASA/GDDP-CMIP6` daily model output (Earth Engine), six models, bias-corrected month by month
+against NASA POWER observed weather for 2000-2024. Method and limits: `data/climate_report.md`.
+
+Yearly columns, the same in `climate_futures.parquet` and `climate_history.parquet`. All `float`, never
+null. Growing season (GS) = 1 Apr - 30 Sep. Wheat season of year Y = 1 Oct (Y-1) - 30 Jun (Y).
+
+| column            | meaning |
+|-------------------|---------|
+| `tmean_c`         | GS mean of (Tmax + Tmin) / 2, degrees C |
+| `rain_mm`         | GS rain total, mm |
+| `summer_rain_mm`  | June-August rain total, mm |
+| `gdd`             | GS growing degree days, base 10 C (Tmax capped at 30, Tmin floored at 10) |
+| `hot_days`        | GS days with Tmax above 35 C |
+| `dry_spell_days`  | Longest run of GS days with rain below 1 mm |
+| `et0_mm`          | GS reference evapotranspiration total, mm (FAO-56 Penman-Monteith) |
+| `wind_ms`         | GS mean wind speed at 10 m, m/s |
+| `wheat_rain_mm`   | Wheat-season rain total, mm |
+| `wheat_hot_days`  | Days with Tmax above 32 C in May-June |
+| `wheat_et0_mm`    | Wheat-season reference ET total, mm |
+| `spring_wind_ms`  | February-May mean wind speed at 10 m, m/s |
+| `erosion_climate` | Wind-erosion climate factor, scaled so the observed 2000-2024 mean is 100; one year is capped at 300 |
+| `annual_rain_mm`, `annual_et0_mm`, `annual_tmean_c` | Calendar-year rain total, reference ET total, mean temperature |
+
+### `data/climate_futures.parquet`
+
+`model` (string), `scenario` (`ssp245` or `ssp585`), `year` (int) + the 16 yearly columns. One row for
+every model x scenario x year 2000-2060 (6 x 2 x 61 = 732 rows). Years to 2024 are the model's corrected
+baseline; futures proper are 2025-2060. Models: ACCESS-CM2, GFDL-ESM4, MPI-ESM1-2-HR, MRI-ESM2-0,
+NorESM2-MM, UKESM1-0-LL.
+
+### `data/climate_history.parquet`
+
+`year` (int, 2000-2024, each once) + the 16 yearly columns, from observed weather (NASA POWER). 25 rows.
+
+### `data/climate_monthly.parquet`
+
+`model`, `scenario`, `year` (int), `month` (int, 1-12) + seven `float` columns, never null: `tmax_c`,
+`tmin_c`, `tmean_c` (monthly means, C), `rain_mm`, `et0_mm` (monthly totals, mm), `wind_ms` (mean wind at
+10 m), `hot_days` (days above 35 C). Observed rows have `model` = `scenario` = `"observed"` (2000-2024);
+model rows cover 2000-2060 for both scenarios. October-December 1999 is present for every series (the
+first wheat season starts then); no other month before 2000 is allowed. 9,123 rows.
+
+```bash
+python -m pipeline.climate.schema            # validates the three tables, prints a summary
+```
+
+## `data/nass_finney.parquet`
+
+USDA NASS crop statistics (yields, acres, prices). Validator and builder: `pipeline/nass.py`
+(`python -m pipeline.nass`, `--check`). Plain Parquet, tidy long format, one row per
+(year, crop, practice, stat).
+
+| column        | type   | null? | meaning |
+|---------------|--------|-------|---------|
+| `year`        | int    | no    | Crop year (2000-2024 for yields and acres; the last 10 marketing years for prices) |
+| `crop`        | string | no    | `corn`, `sorghum`, `winter wheat`, `soybeans`, `alfalfa` (fallow has no statistics) |
+| `practice`    | string | no    | `irrigated`, `dryland` or `all` |
+| `stat`        | string | no    | `yield`, `planted_acres`, `harvested_acres` or `price` |
+| `value`       | float  | no    | The number, `>= 0` |
+| `unit`        | string | no    | `bu/acre`, `tons/acre` (alfalfa), `acres`, `$/bu`, `$/ton` (alfalfa) |
+| `level`       | string | no    | Where the value came from: `county` (Finney), `district` (Kansas Southwest) or `state` |
+| `source_desc` | string | no    | NASS short description of the series |
+
+- A year NASS did not publish for the county is filled from the district, then the state; `level` says
+  which. What NASS publishes nowhere is absent: the irrigated / dryland split ends in 2018 (corn), 2019
+  (winter wheat), 2016 (soybeans) and 2009 (sorghum); alfalfa has `all` only and no `planted_acres`.
+- `planted_acres` and `harvested_acres` of one (crop, practice, year) come from the same level. Only
+  `level == "county"` rows are Finney County amounts.
+- Prices are Kansas marketing-year prices (`level` always `state`, `practice` always `all`); sorghum is
+  converted from $/cwt at 56 lb per bushel. Live file: 772 rows.
+
+## `data/field_traits.parquet`
+
+Per-field traits for the planner. Validator: `pipeline/field_traits_schema.py`. Built by
+`python -m pipeline.field_traits`. Plain Parquet, one row per field in `data/fields.parquet` (7,255 rows).
+
+| column             | type   | null? | meaning |
+|--------------------|--------|-------|---------|
+| `field_id`         | string | no    | A `field_id` from `data/fields.parquet`, unique |
+| `irrigation`       | string | no    | `irrigated` or `dryland`: our best guess; `irrigated` exactly when `irrigated_prob >= 0.5` |
+| `irrigated_prob`   | float  | no    | 0-1, how likely the field is irrigated |
+| `irrigation_basis` | string | no    | Short plain text on what the guess rests on |
+| `weg`              | string | yes   | SSURGO wind erodibility group of the main soil: `1`, `2`, `3`, `4`, `4L`, `5`, `6`, `7`, `8` (1 blows most easily) |
+| `wei`              | float  | yes   | SSURGO wind erodibility index, tons/acre/year (0-310) |
+| `et_gs_mm`         | float  | yes   | Mean April-September evapotranspiration 2016-2024, mm (OpenET); null when OpenET was not fetched |
+
+The irrigation value is a guess from outline shape, crops grown and (when OpenET ran) water use. It is
+not a record of water rights or wells.
+
+## Tracked planner files (`api/planner/`)
+
+Both are in git so a fresh clone works. Never edit `crop_response.json` by hand.
+
+- `crop_response.json`: written by `python -m api.planner.calibrate`. Keys: `written`, `written_by`,
+  `model`, `sources`, `constants` (`et0_scale`, `fallow_efficiency`, `awc_mm`, `pivot_efficiency`),
+  `fail_below` (0.5: a crop "fails" under half its normal yield), `max_yield_rel` (2.0), `heat_cap`
+  (`hot_days`, `wheat_hot_days`: the most hot days fed to the heat factor), `typical_prev`,
+  `calibration_rules`, and `series`: `crop -> practice -> {unit, n_years, years, ky, heat_loss, scale,
+  normal_yield, trend_pct_per_year, resid_sd, r2, loo_skill, loo_rmse, status, verdict, status_text, ...}`.
+  `verdict` is `good` / `fair` / `weak` (from the leave-one-year-out skill); `status` is `fitted`,
+  `partly textbook` or `textbook`; `status_text` says in plain words which number is a textbook value.
+- `economics.json`: prices, costs and the irrigation limit behind `api/planner/money.py`. Keys: `note`,
+  `basis`, `read_on`, `prices` (median of 2020-2024 Kansas prices, `per_unit` per crop), `budget_prices`,
+  `pumping` (cost per mm and per inch), `costs` (per crop and practice: `per_acre`, `status`, `source`,
+  `url`, ...; `fallow` included), `index_pages`, `cost_rule`, `cost_year`, `irrigation_limit` (`mm`,
+  `inches`, `status`, `source`, `url`). A cost with `status` = `verified` was read from the K-State
+  budget on the date given; `rough, unverified` is our estimate. Dollars are return over direct costs.
+
+## `GET /field/{id}/plans`
+
+Query (all optional): `soil`, `water`, `money`, `risk` (zero or more, any scale, scaled to add up to 1;
+defaults 0.30 / 0.20 / 0.30 / 0.20), `scenario` (`ssp245` default or `ssp585`), `horizon` (2025-2060,
+default 2025 = today), `irrigated` (`true` / `false` overrides our guess). Soil means soil protection:
+fewer bare days a year and lower wind-erosion risk.
+
+Smart answer (`"engine": "smart"`), trimmed:
+
+| key | contents |
+|-----|----------|
+| `field_id`, `engine` | |
+| `settings` | `weights` (soil, water, money, risk), `scenario`, `horizon`, `window` (first and last year averaged), `irrigated`, `irrigation_source` (`guess` or override), `irrigation_basis`, `soil_source`, `soil_note`, `holds_up_rule`, `ranking_rule`, `profit_basis`, `irrigation_limit_mm`, `irrigation_limit_in` (null when no limit), `yield_change_note`, `limits` (list of plain sentences), `models` |
+| `climate` | `label` (one plain line), `changes` (tmean_c, summer_rain_pct, hot_days, et0_pct, ..., `summer_rain_agree`, `models`), `range` (lowest and highest model per change), `window`, `models`, `yield_change` (`crop -> {pct, low, high}`) |
+| `plans[]` (top 3) | `name`, `rotation` (next four years), `cycle` (repeating unit, 3 or 4 crops), `scores` (`soil`, `water`, `money`, `risk`, `overall`, `robust`; each 0-1), `reason` (one sentence), `futures` (`holds`, `total`), `spread` (`overall` and `profit_per_acre`, each `low` / `mid` / `high` across the models), `numbers` (`bare_days`, `erosion_index`, `irrigation_mm`, `irrigation_in`, `water_met_share`, `profit_per_acre`, `failed_share`), `rank` (place in the full ranking) |
+| `current` | the field's last four years scored like a plan (the plan keys plus `years`, `previous_crop`, `is_candidate`, `rules_broken` as gentle sentences), or `null` |
+| `current_note` | why `current` is null, otherwise null |
+| `candidates` | how many cycles were compared (105 irrigated, 17 dryland) |
+
+```json
+{"field_id": "KS-013847", "engine": "smart",
+ "settings": {"scenario": "ssp585", "horizon": 2060, "irrigated": false, "irrigation_source": "guess", "...": 0},
+ "climate": {"label": "+2.0°C, models disagree on summer rain, crops need 8% more water, 26 more days above 35°C (95°F)",
+             "yield_change": {"corn": {"pct": -40, "low": -56, "high": -25}}},
+ "plans": [{"name": "Sorghum – Fallow (alternating)", "rank": 1,
+            "scores": {"soil": 0.08, "water": 0.67, "money": 0.57, "risk": 0.77, "overall": 0.56, "robust": 0.53},
+            "futures": {"holds": 4, "total": 6},
+            "numbers": {"bare_days": 130.6, "profit_per_acre": 18.0, "failed_share": 0.23}}],
+ "current": null, "current_note": "The last four years (2021-2024) include grass/pasture, which ...", "candidates": 17}
+```
+
+(Values from the live server on 2026-11-15; the trimmed example was taken with `money=5`, `scenario=ssp585`,
+`horizon=2060`.)
+
+Basic answer (`"engine": "basic"`): `{"field_id", "engine": "basic", "plans": [{name, rotation, scores, reason}]}`.
+Returned when the climate tables are missing, `PLANNER_ENGINE=basic`, a custom planner was passed to
+`create_app`, or the smart planner failed for that field. Query parameters are accepted and ignored. Every
+plan in either answer keeps `name`, `rotation`, `scores.soil/water/money/overall` and `reason`.
+
+Errors: `400 {"detail": "<one plain sentence>"}` for a negative or non-finite priority, all four zero,
+unknown scenario or a horizon outside 2025-2060 (smart planner only); `404` no such field; `422` a value
+that is not a number.
+
+## `GET /climate`
+
+What the smart planner assumes about the future. `{"available": true, "source", "models" (list of 6),
+"window_rule", "baseline", "horizons", "scenarios", "observed"}`. `horizons` is 2025, 2030 ... 2060.
+`baseline` is the pooled Today (`horizon`, `window`, `label`, `pooled_scenarios`, `values`, and
+`values_by_scenario` kept for older clients). `scenarios` maps `ssp245` and `ssp585` to one row per
+horizon: `horizon`, `window`, `label`, `changes`, `values`, `range` (lowest and highest model). `observed`
+is `{years: [2000, 2024], values}`, the observed averages. When the tables have not been built: `{"available": false, "reason":
+"not_built"}`. `GET /health` also reports `"climate": true|false`.
+
+## Cache: `data/planner_bare_days.json` (optional, git-ignored)
+
+Written only by `python -m api.planner.soil_effect` and the sanity script. Keys: `version`, `signature`
+(name, size and modification time of the source tables; the cache is ignored when they differ), `built`,
+`by_crop` (`practice -> crop -> bare days a year`), `by_prev` (`practice -> crop -> previous crop -> bare
+days`), `n_crop`, `n_prev`, `info`.

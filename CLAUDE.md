@@ -22,12 +22,22 @@ map → click a field → see its real crop history, soil info and top 3 rotatio
   `data/pairs.parquet`, `data/causal_fields.parquet` (see schema.md). Runs on the real
   `data/soil_health.parquet`; outcome `bare_days` (lower is better), cut-off year 2020; settings in
   `config.py`. Served by `api/causal.py`; shown in the "Your neighbors" panel section.
-- `api/` — FastAPI backend (`api/main.py`) and the rotation planner (`api/planner.py`,
-  entry point `rank_plans(field) -> list[Plan]`).
+- `pipeline/climate/` — Phase 3 future weather: six NEX-GDDP-CMIP6 models × two scenarios, corrected
+  to NASA POWER observations (`build.py`, `make climate`) → `data/climate_futures.parquet`,
+  `climate_history.parquet`, `climate_monthly.parquet`. `pipeline/nass.py` → `data/nass_finney.parquet`
+  (yields, acres, prices); `pipeline/field_traits.py` → `data/field_traits.parquet` (irrigated or
+  dryland, wind erodibility, OpenET water use).
+- `api/` — FastAPI backend (`api/main.py`) and the rotation planner package `api/planner/`.
+  `legacy.py` is the Phase 1 planner (`rank_plans(field) -> list[Plan]`, still the fallback).
+  `smart.py` is the Phase 3 planner (`rank_plans_smart`): candidate rotations (`candidates.py`) scored
+  in six climate futures on soil, water, money and risk (`response.py`, `water.py`, `soil_effect.py`,
+  `erosion.py`, `money.py`, `futures.py`); settings in `config.py`; fitted crop response in the tracked
+  `crop_response.json` (`calibrate.py`), prices and costs in the tracked `economics.json`.
 - `web/` — Vite + React + TypeScript + react-leaflet frontend.
 - `data/` — data files, git-ignored. Downloads are cached in `data/raw/`.
 - `tests/` — pytest tests for the API, planner and pipeline helpers.
-- `schema.md` — the data contracts for `data/fields.parquet` and `data/soil_health.parquet`.
+- `schema.md` — the data contracts for `data/fields.parquet`, `data/soil_health.parquet`, the Phase 3
+  tables and the planner's API answers.
 
 ## Rules
 
@@ -44,6 +54,16 @@ map → click a field → see its real crop history, soil info and top 3 rotatio
 - Phase 2B measures bare days, not soil health. The only differences that stand out are the alfalfa
   ones, and the crops grown explain them; its fake-switch placebo fails. Do not write that a rotation
   "improved the soil" from it. Details in README "Phase 2B".
+- Phase 3 planner: the soil score is soil protection (fewer bare days, lower wind-erosion risk), never
+  "soil health". Dollar figures are returns over direct costs, not profit or income; on dryland their
+  sign flips with the price years and the fallow cost, so quote the yield changes instead. The climate
+  models agree on heat but not on rain; do not write "less rain" unless 5 of 6 agree.
+- The soil-effect source is one setting, `SOIL_EFFECT_SOURCE=crop_average|effects` (default
+  `crop_average`; `effects` adds the Phase 2B numbers from `data/effects.json`).
+- Without the climate tables the API answers with the Phase 1 planner (`"engine": "basic"`); keep that
+  fallback and `tests/test_planner.py` working.
+- `make climate` costs about 2.4 EECU-hours once (cached in `data/raw/climate/`); `make field-traits`
+  about 0.07. Run `python -m pipeline.climate.build --estimate` first.
 - `make soil-obs` costs about 30 EECU-hours for the county. Run `--estimate` first, use
   `--max-eecu-hours`, and bump `METHOD_VERSION` in `soil/bare_soil.py` when the method changes.
 - Do not push; the owner pushes.
@@ -58,6 +78,11 @@ make satellite  # optional: data/field_satellite.parquet (needs Earth Engine log
 make soil-obs   # optional: bare-soil views via Earth Engine (about 30 EECU-hours for the county)
 make soil-health  # optional: data/soil_health.parquet from those views (local)
 make causal     # data/effects.json + data/pairs.parquet (log: data/causal.log)
+make nass       # Phase 3: data/nass_finney.parquet (first run streams a 1.1 GB USDA file)
+make climate    # Phase 3: future-weather tables (Earth Engine, about 2.4 EECU-hours once)
+make field-traits  # Phase 3: data/field_traits.parquet (Earth Engine, about 0.07 EECU-hours)
+make calibrate  # Phase 3: refit api/planner/crop_response.json (local, seconds)
+make planner-sanity  # Phase 3: planner checks on real fields -> data/planner_sanity.md
 make dev        # API on :8010 + web on :5173
 make test       # pytest + web unit tests
 make e2e        # with `make dev` running: headless browser clicks real fields
