@@ -2,12 +2,13 @@ PY := .venv/bin/python
 API_PORT ?= 8010
 WEB_PORT ?= 5173
 
-.PHONY: help setup fake pipeline validate api web dev test e2e
+.PHONY: help setup fake pipeline causal validate api web dev test e2e
 
 help:
 	@echo "make setup     create .venv, install Python + web dependencies"
 	@echo "make fake      write data/fields_fake.parquet (30 fake fields, instant)"
 	@echo "make pipeline  build data/fields.parquet from real USDA/USGS data"
+	@echo "make causal    rotation effects from matched neighbours -> data/effects.json, data/pairs.parquet"
 	@echo "make validate  check the active data file against schema.md and summarise it"
 	@echo "make dev       start API (:$(API_PORT)) and web (:$(WEB_PORT)) together"
 	@echo "make api       start only the API"
@@ -28,6 +29,10 @@ fake:
 
 pipeline:
 	$(PY) pipeline/run_all.py
+
+# Phase 2B. Progress goes to data/causal.log. CAUSAL_OUTCOME=<soil column> picks the outcome.
+causal:
+	$(PY) -m pipeline.causal.run_causal > data/causal.log 2>&1 && grep '^\[' data/causal.log | tail -3
 
 validate:
 	$(PY) pipeline/schema.py

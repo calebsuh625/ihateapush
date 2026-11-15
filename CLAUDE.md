@@ -12,6 +12,8 @@ map → click a field → see its real crop history, soil info and top 3 rotatio
   (`fields.py` + `csb.py` + `cdl.py`: outlines and crop history; `soil.py`: SSURGO organic matter;
   `slope.py` + `dem.py`: slope). `make_fake_fields.py` writes the 30-field safety net
   `data/fields_fake.parquet`; `schema.py` is the validator for the data contract.
+- `pipeline/causal/` — Phase 2B: rotation effects on soil from matched neighbouring fields
+  (`run_causal.py`, `make causal`) → `data/effects.json`, `data/pairs.parquet` (see schema.md).
 - `api/` — FastAPI backend (`api/main.py`) and the rotation planner (`api/planner.py`,
   entry point `rank_plans(field) -> list[Plan]`).
 - `web/` — Vite + React + TypeScript + react-leaflet frontend.
@@ -33,6 +35,7 @@ map → click a field → see its real crop history, soil info and top 3 rotatio
 make setup      # .venv + pip install + npm install
 make fake       # data/fields_fake.parquet (instant)
 make pipeline   # data/fields.parquet from real data (python pipeline/run_all.py)
+make causal     # data/effects.json + data/pairs.parquet (log: data/causal.log)
 make dev        # API on :8010 + web on :5173
 make test       # pytest + web unit tests
 make e2e        # with `make dev` running: headless browser clicks real fields

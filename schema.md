@@ -45,3 +45,65 @@ python pipeline/schema.py data/fields.parquet   # validates, then prints a summa
 ```
 
 The pipeline validates before it writes; the API validates on startup and refuses to start on a bad file.
+
+---
+
+# Phase 2B outputs: rotation effects from matched neighbours
+
+Written by `make causal` (`python -m pipeline.causal.run_causal`). None of these change
+`data/fields.parquet`; they are read by `GET /effects` and `GET /field/{id}/neighbors`.
+
+**Input.** The soil score table from Phase 2A, `data/soil_health.parquet`: one row per field per year,
+`field_id, year, om_pred, n_obs, confidence` (more score columns may follow). Until it exists the run
+uses `data/soil_health_fake.parquet` (same columns, **made-up values with planted crop effects**,
+from `pipeline/causal/make_fake_soil.py`) and every output says `is_fake: true`. The outcome column is a
+setting, not code: `CAUSAL_OUTCOME=<column>` (default `om_pred`; see `pipeline/causal/config.py`).
+
+## `data/effects.json`
+
+| key | meaning |
+|-----|---------|
+| `is_fake`, `warning` | `true` + a warning sentence when the soil scores are the fake ones |
+| `sources` | file names of the fields and soil tables used |
+| `outcome` | `column`, `label`, `units`, `higher_is_better` |
+| `design` | switch year (2016), history / rotation years, calipers, bootstrap settings |
+| `counts` | fields, eligible fields, irrigation groups, rotation types, candidate and matched pairs |
+| `effects[]` | one row per comparison and group (below) |
+| `by_year` | comparison → `[{year, gap, n_pairs}]`: mean A − B gap each year, relative to each field's pre-2016 level |
+| `placebos.fake_switch_years[]` | `fake_switch_year`, `comparison`, `effect`, `ci_low`, `ci_high`, `p_value`, `n_pairs`, `ci_excludes_zero` |
+| `placebos.shuffled_labels[]` | `comparison`, `real_effect`, `null_mean`, `null_sd`, `null_p95_abs`, `p_value`, `n_shuffles` |
+| `demo_pairs[]` | the clearest pairs for a demo: `pair_id`, `comparison`, `field_a`, `field_b`, `distance_km`, `match_score`, `did` |
+
+`effects[]` row: `a`, `b` (rotation types; `comparison` = `"a vs b"`), `group_kind` (`irrigation` or `soil`),
+`group` (`all`, `irrigated`, `dryland`, or a SSURGO organic-matter band), `effect`, `ci_low`, `ci_high`
+(95% cluster bootstrap), `se`, `p_value` (sign-flip permutation), `n_pairs`, `n_clusters`,
+`ci_excludes_zero`, and with fake soil only `planted_effect` (what the estimate should find).
+`effect` = mean over pairs of `(post_A − pre_A) − (post_B − pre_B)` in outcome units: positive means the
+score rose more under rotation A. Rows with fewer than 10 pairs are left out.
+
+Rotation types (2016–2024, `pipeline/causal/rotations.py`): `alfalfa/perennial`, `diverse`, `corn-soy`,
+`wheat-sorghum-fallow`, `continuous corn`, `other` (`other` is never compared). In a comparison, A is the
+type earlier in that list.
+
+## `data/pairs.parquet`
+
+One row per matched pair (plain Parquet, no geometry).
+
+| column | meaning |
+|--------|---------|
+| `pair_id` | `"P00042"` |
+| `comparison`, `rotation_a`, `rotation_b` | as in `effects[]` |
+| `field_a`, `field_b` | field ids; `field_a` has rotation A |
+| `irrigation` | `irrigated` / `dryland` (both fields) |
+| `soil_group` | SSURGO organic-matter band of the pair |
+| `distance_km`, `slope_diff`, `ssurgo_om_diff`, `baseline_diff`, `history_distance` | how alike the two fields are (absolute differences; `history_distance` = total-variation distance of the 2008–2015 crop mix, 0 = same) |
+| `match_score` | sum of each difference over its caliper; lower = more alike |
+| `rotation_pre_a`, `rotation_pre_b` | 2008–2015 rotation type |
+| `baseline_a/_b`, `pre_a/_b`, `post_a/_b` | soil score: first half of pre-2016 years (matched on), second half (DiD "before"), 2016–2024 (DiD "after") |
+| `did` | `(post_a − pre_a) − (post_b − pre_b)` |
+
+## `data/causal_fields.parquet`
+
+One row per field: `field_id`, `irrigation` (`irrigated` / `dryland` / `uncertain`), `irrigation_reason`,
+`circle_fill`, `rotation_pre`, `rotation_post`, `soil_group`, `eligible` (bool), `n_pre`, `n_post`
+(soil observations), `baseline`, `pre`, `post`.

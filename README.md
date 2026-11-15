@@ -116,6 +116,8 @@ Base URL `http://127.0.0.1:8010` (interactive docs at `/docs`).
 | `GET /fields` | GeoJSON FeatureCollection of all fields (`field_id`, `area_ha`, simplified outline) |
 | `GET /field/{id}` | one field: outline, `crop_history` as an object, organic matter, slope, area, and stats (distinct crops, longest same-crop streak, % of years in corn) |
 | `GET /field/{id}/plans` | the planner's top 3 four-year rotations with soil / water / money / overall scores and a one-line reason |
+| `GET /effects` | Phase 2B: `data/effects.json` (503 until `make causal` has run) |
+| `GET /field/{id}/neighbors` | Phase 2B: the field's matched look-alike neighbours, their crops and soil timelines |
 
 On startup the API loads `data/fields.parquet` if it exists, otherwise `data/fields_fake.parquet`,
 logs which one, and validates it against `schema.md`; a file that does not match stops the server
@@ -129,3 +131,18 @@ in `api/main.py`.
 
 `schema.md` defines `data/fields.parquet`. It only changes on purpose: the pipeline validates
 against it before writing and the API validates on startup (`pipeline/schema.py` is the validator).
+
+## Phase 2B: rotation effects from look-alike neighbours
+
+```bash
+make causal                                  # ~10 s; log in data/causal.log
+CAUSAL_OUTCOME=bare_soil_index make causal   # analyse another soil column, no code change
+```
+
+Each field's 2016–2024 crops are classed as a rotation type, irrigated vs dryland is inferred from its
+shape and 2008–2015 crops, and fields are paired 1:1 with a neighbour under 5 km away with similar slope,
+mapped soil, starting soil score and 2008–2015 crops but a different rotation since 2016. Effects are
+difference-in-differences on the satellite soil score with spatial-cluster bootstrap CIs, plus two
+placebos (fake switch years inside 2008–2015; rotation labels shuffled and everything re-matched).
+Outputs and their columns are in `schema.md`. Until Phase 2A's `data/soil_health.parquet` exists the run
+uses made-up soil scores (`data/soil_health_fake.parquet`) and every output and the app say so.
