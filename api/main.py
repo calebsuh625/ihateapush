@@ -42,6 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 
+from api.causal import router as causal_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from pipeline.schema import FAKE_PATH, REAL_PATH, ROOT, SchemaError, load_fields, parse_crop_history
 
@@ -487,6 +488,7 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
     )
     app.state.planner = planner
     app.include_router(router)
+    app.include_router(causal_router)  # Phase 2B: /effects, /field/{id}/neighbors
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
     # Local dev: the Vite page on :5173 calls this API on another port. No cookies, so "*" is fine.
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
