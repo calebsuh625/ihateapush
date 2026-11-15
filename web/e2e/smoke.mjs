@@ -186,7 +186,10 @@ function watch(page, label) {
     if (message.type() !== "error") return;
     const where = message.location()?.url ?? "";
     const text = `${label}: console error: ${message.text()}${where ? ` (${where})` : ""}`;
-    if (isTile(where) && !STRICT_TILES) warnings.push(text);
+    // 503 from the neighbour endpoints is a deliberate answer ("not measured in this county yet" /
+    // "run make causal"), shown in the panel; the browser still logs it as a console error.
+    const notReady = /status of 503/.test(message.text()) && /\/(neighbors|effects)(\?|$)/.test(where);
+    if ((isTile(where) && !STRICT_TILES) || notReady) warnings.push(text);
     else problems.push(text);
   });
   page.on("pageerror", (error) => problems.push(`${label}: uncaught page error: ${error.message}`));
@@ -203,6 +206,7 @@ function watch(page, label) {
     const url = response.url();
     if (response.status() < 400) return;
     if (isTile(url)) (STRICT_TILES ? problems : warnings).push(`${label}: map tile answered ${response.status()}: ${url}`);
+    else if (response.status() === 503 && /\/(neighbors|effects)(\?|$)/.test(url)) warnings.push(`${label}: not ready (503): ${url}`);
     else requests.push({ url, problem: `${label}: API answered ${response.status()} for ${url}` });
   });
   return {
@@ -629,7 +633,7 @@ async function checkNeighbors(page, fieldId, answer) {
     // no causal results on this server: the section must say so and show nothing else
     equal(await cards.count(), 0, `${fieldId}: neighbors shown although the API answered ${answer.status}`);
     const note = ((await section.locator('[data-testid="error-note"]').textContent()) ?? "").trim();
-    check(note.includes("make causal"), `${fieldId}: neighbors error does not say how to fix it: "${note}"`);
+    check(note.includes("make causal") || note.includes("not measured in"), `${fieldId}: neighbors error does not say why: "${note}"`);
     return null;
   }
 
@@ -908,10 +912,15 @@ async function run(browser) {
       (load.fetchMs !== null ? ` (GET /fields took ${ms(load.fetchMs)}${load.fetchKb ? `, ${Math.round(load.fetchKb)} kB` : ""})` : ""),
   );
 
+  // The served county comes from GET /region (an older API without it serves Finney County).
+  const region = await fetchAnswer(page, "/region");
+  const regionLabel = region.status === 200 && region.body?.label ? region.body.label : "Finney County, KS";
+  const borrowed = region.status === 200 && region.body?.borrowed?.length ? " · partly Finney data" : "";
+  if (!health.is_fake && region.status === 200) await page.waitForSelector('[data-testid="region-label"]');
   const badge = await text(page, "badge");
   const count = new Intl.NumberFormat("en-US").format(health.field_count);
   const noun = health.field_count === 1 ? "field" : "fields";
-  equal(badge, health.is_fake ? `Demo data — ${count} fake ${noun}` : `${count} ${noun} · Finney County, KS`, "data badge");
+  equal(badge, health.is_fake ? `Demo data — ${count} fake ${noun}` : `${count} ${noun} · ${regionLabel}${borrowed}`, "data badge");
   equal(await text(page, "hint"), "Click a field to see its crop history, soil and rotation plans", "empty-selection hint");
   equal(await page.locator('[data-testid="panel"]').count(), 0, "panels open before any click");
 

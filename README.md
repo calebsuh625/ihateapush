@@ -258,7 +258,16 @@ REGION=20069 make dev             # serve Gray County (GET /region says which co
 ```
 
 Built so far: Finney (20055), Gray (20069), Haskell (20081) and Kearny (20093), the counties touching
-Finney in the same NASS district (Southwest Kansas, 30). A county outside the known table also needs
+Finney in the same NASS district (Southwest Kansas, 30). Measured on 2026-11-15 (CSB zip and CDL cached):
+
+| County | Fields | Area covered | Guessed irrigated (shape + crops) | First build |
+|---|---|---|---|---|
+| Finney 20055 | 7,255 | (see above) | (Phase 3 table) | ~85 s |
+| Gray 20069 | 6,001 | 68% of 2,251 km2 | 1,977 (33%) | 12 min (SSURGO tiles) |
+| Haskell 20081 | 4,715 | 73% of 1,496 km2 | 1,803 (38%) | 9 min |
+| Kearny 20093 | 3,968 | 56% of 2,255 km2 | 1,142 (29%) | 1.2 min |
+
+Each county's run gives the same one WARN as Finney (the 2024 crop map's grass/pasture jump). A county outside the known table also needs
 `NASS_ASD=<district>` for `make nass`, and `REGION_NAME` if its Census outline is not cached yet.
 
 What each new county gets, and what it borrows:

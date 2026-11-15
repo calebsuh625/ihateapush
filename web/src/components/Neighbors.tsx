@@ -79,7 +79,7 @@ export function Neighbors({ fieldId }: { fieldId: string }) {
           <ErrorNote
             title="Could not load neighbors"
             message={res.message}
-            onRetry={res.message.includes("make causal") ? undefined : retry}
+            onRetry={res.message.includes("make causal") || res.message.includes("not measured in") ? undefined : retry}
           />
         ))}
       {res.status === "ready" && <NeighborsBody data={res.data} />}
