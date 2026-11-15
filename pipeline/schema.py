@@ -20,10 +20,11 @@ if str(ROOT) not in sys.path:  # allow `python pipeline/schema.py`
     sys.path.insert(0, str(ROOT))
 
 import geopandas as gpd  # noqa: E402
+from pipeline.region import DATA_DIR as REGION_DATA_DIR  # noqa: E402  (data/ for Finney, data/regions/<fips>/ otherwise)
 
-DATA_DIR = ROOT / "data"
+DATA_DIR = REGION_DATA_DIR
 REAL_PATH = DATA_DIR / "fields.parquet"
-FAKE_PATH = DATA_DIR / "fields_fake.parquet"
+FAKE_PATH = ROOT / "data" / "fields_fake.parquet"  # Finney demo fields, shared
 
 COLUMNS = ["field_id", "geometry", "crop_history", "organic_matter_pct", "slope_pct", "area_ha"]
 FLOAT_COLUMNS = ["organic_matter_pct", "slope_pct", "area_ha"]

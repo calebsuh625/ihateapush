@@ -31,9 +31,10 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
+from pipeline.region import DATA_DIR as REGION_DATA_DIR, fallback_path, nass_path  # noqa: E402  (data/ for Finney, data/regions/<fips>/ otherwise)
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT / "data"
+DATA_DIR = REGION_DATA_DIR
 PLANNER_DIR = Path(__file__).resolve().parent
 
 SOIL_SOURCES = ("crop_average", "effects")
@@ -48,9 +49,15 @@ _PATHS = {
     "soil_health_path": ("SOIL_HEALTH_PATH", DATA_DIR / "soil_health.parquet"),
     "fields_path": ("PLANNER_FIELDS_PATH", DATA_DIR / "fields.parquet"),
     "effects_path": ("EFFECTS_PATH", DATA_DIR / "effects.json"),
-    "nass_path": ("NASS_PATH", DATA_DIR / "nass_finney.parquet"),
+    "nass_path": ("NASS_PATH", nass_path()),
     "soil_cache_path": ("PLANNER_SOIL_CACHE_PATH", DATA_DIR / "planner_bare_days.json"),
     "economics_path": ("ECONOMICS_PATH", PLANNER_DIR / "economics.json"),
+}
+
+# Settings a non-Finney region may borrow from Finney County when it has no file of its own.
+_BORROWABLE = {
+    "climate_futures_path": "climate", "climate_monthly_path": "climate", "climate_history_path": "climate",
+    "effects_path": "effects", "nass_path": "nass",
 }
 
 
@@ -68,6 +75,7 @@ class Settings:
     soil_cache_path: Path
     economics_path: Path
     irrigation_limit_mm: float | None = None    # None = not set (use economics.json); 0 = no limit
+    borrowed: tuple = ()                        # kinds lent by Finney County to another region (pipeline/region.py)
 
 
 def settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -77,8 +85,19 @@ def settings(env: Mapping[str, str] | None = None) -> Settings:
     if source not in SOIL_SOURCES:
         raise ValueError(f"SOIL_EFFECT_SOURCE={source!r}: expected one of {', '.join(SOIL_SOURCES)}")
     paths = {name: Path(env.get(var) or default) for name, (var, default) in _PATHS.items()}
+    # Outside Finney County, a file the region does not have yet may be Finney's (see pipeline/region.py).
+    # Only when no environment variable chose the path; `borrowed` says which kinds were lent.
+    borrowed = []
+    for name, kind in _BORROWABLE.items():
+        if env.get(_PATHS[name][0]):
+            continue
+        lent = fallback_path(paths[name], kind)
+        if lent != paths[name]:
+            paths[name] = lent
+            if kind not in borrowed:
+                borrowed.append(kind)
     return Settings(soil_effect_source=source, irrigation_limit_mm=irrigation_limit(env.get("IRRIGATION_LIMIT_MM")),
-                    **paths)
+                    borrowed=tuple(borrowed), **paths)
 
 
 def irrigation_limit(text: str | None) -> float | None:

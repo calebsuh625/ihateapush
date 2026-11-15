@@ -41,9 +41,10 @@ import numpy as np
 import pandas as pd
 
 from pipeline.climate import bias, et0, fetch_gddp, fetch_power, indicators, schema
+from pipeline.region import DATA_DIR as REGION_DATA_DIR  # noqa: E402  (data/ for Finney, data/regions/<fips>/ otherwise)
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT / "data"
+DATA_DIR = REGION_DATA_DIR
 LOG_DIR = DATA_DIR / "logs" / "phase3"
 REPORT_NAME = "climate_report.md"
 

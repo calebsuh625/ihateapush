@@ -9,8 +9,9 @@ import type { FarmTool } from "./components/FieldMap";
 import { ErrorNote, FieldPanel } from "./components/FieldPanel";
 import type { FieldFacts } from "./components/FieldPanel";
 import { LayerControl } from "./components/LayerControl";
-import { APP_NAME, REGION_LABEL } from "./config";
+import { APP_NAME } from "./config";
 import { useAdvisor } from "./hooks/useAdvisor";
+import { RegionLabel } from "./components/RegionLabel";
 import { useResource } from "./hooks/useResource";
 import type { Resource } from "./hooks/useResource";
 import { useMapLayers } from "./hooks/useMapLayers";
@@ -369,7 +370,7 @@ function DataBadge({ health, fieldCount }: { health: Resource<Health>; fieldCoun
       </p>
     ) : (
       <p className="badge" data-testid="badge" data-fake="false">
-        {formatCount(count)} {plural(count, "field")} · {REGION_LABEL}
+        {formatCount(count)} {plural(count, "field")} · <RegionLabel />
       </p>
     );
   }

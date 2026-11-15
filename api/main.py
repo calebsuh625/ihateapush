@@ -66,6 +66,7 @@ from api.groundwater import GroundwaterService, attach_outlook, router as ground
 from api.twin import router as twin_router
 from api import reliability
 from api.layers import LayerService, router as layers_router
+from api.regions import router as regions_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from api.planner import config as planner_config
 from api.planner import custom, farm, smart, transition
@@ -1116,6 +1117,7 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
     app.include_router(layers_router)  # Phase 4: /layers, /layers/{name}
     app.include_router(groundwater_router)  # Phase 4: /groundwater
     app.include_router(advisor_router)  # Phase 4: /advisor/status, /advisor/chat
+    app.include_router(regions_router)  # /region, /regions (which county is served)
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
     # Local dev: the Vite page on :5173 calls this API on another port. No cookies, so "*" is fine.
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])

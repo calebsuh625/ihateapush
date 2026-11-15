@@ -11,15 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:  # allow `python pipeline/<script>.py`
     sys.path.insert(0, str(ROOT))
 
-DATA_DIR = ROOT / "data"
-RAW_DIR = DATA_DIR / "raw"  # every download is cached here
+from pipeline.region import DATA_DIR, RAW_DIR, REGION  # noqa: E402
 
-# Region: Finney County, Kansas
-STATE_ABBR = "KS"
-STATE_FIPS = "20"
-COUNTY_FIPS = "055"
-FIPS = STATE_FIPS + COUNTY_FIPS  # "20055"
-COUNTY_NAME = "Finney"
+# Region: $REGION (a 5-digit county FIPS), default Finney County, Kansas (20055). See pipeline/region.py.
+# DATA_DIR is data/ for Finney and data/regions/<fips>/ otherwise; RAW_DIR (downloads) is always data/raw/.
+STATE_ABBR = REGION.state_abbr
+STATE_FIPS = REGION.state_fips
+COUNTY_FIPS = REGION.county_fips
+FIPS = REGION.fips  # "20055" for Finney
+COUNTY_NAME = REGION.county_name
 
 YEARS = list(range(2008, 2025))  # crop history years, inclusive
 MIN_FIELD_HA = 5.0

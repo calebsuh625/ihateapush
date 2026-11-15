@@ -61,14 +61,15 @@ import pandas as pd
 from api.planner import response, water
 from api.planner.crops import (CROP_TABLE, CROPS, FAIL_BELOW, HEAT_LOSS_BOUNDS, MAX_YIELD_REL, PRACTICES, PREV_KINDS,
                                WHEAT_HEAT_LOSS_BOUNDS)
+from pipeline.region import DATA_DIR as REGION_DATA_DIR, nass_path  # noqa: E402  (data/ for Finney, data/regions/<fips>/ otherwise)
 
 ROOT = Path(__file__).resolve().parents[2]
-NASS_PATH = ROOT / "data" / "nass_finney.parquet"
-HISTORY_PATH = ROOT / "data" / "climate_history.parquet"
-MONTHLY_PATH = ROOT / "data" / "climate_monthly.parquet"
-OPENET_PATH = ROOT / "data" / "logs" / "phase3" / "openet_by_crop.csv"
-REPORT_PATH = ROOT / "data" / "crop_response_report.md"
-LOG_DIR = ROOT / "data" / "logs" / "phase3"
+NASS_PATH = nass_path()
+HISTORY_PATH = REGION_DATA_DIR / "climate_history.parquet"
+MONTHLY_PATH = REGION_DATA_DIR / "climate_monthly.parquet"
+OPENET_PATH = REGION_DATA_DIR / "logs" / "phase3" / "openet_by_crop.csv"
+REPORT_PATH = REGION_DATA_DIR / "crop_response_report.md"
+LOG_DIR = REGION_DATA_DIR / "logs" / "phase3"
 
 MIN_YEARS = 10
 EDGE = 0.05                 # a fitted value this close to a bound (share of the range) counts as on it
