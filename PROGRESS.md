@@ -12,7 +12,7 @@ Branch `phase-4`, cut from `main` at `15aceb7`. Nothing is pushed. One commit pe
 | 4 | Twin view | done (checked, committed) |
 | 5 | Map layers + time-lapse | done (checked, committed) |
 | 6 | Water reality check | done (checked, committed) |
-| 7 | Farm advisor (chat) | not started |
+| 7 | Farm advisor (chat) | done (checked, committed) |
 | 8 | Performance + reliability | not started |
 
 ## Decisions made without you
@@ -163,9 +163,16 @@ which limit binds, and the rotation and start year chosen for each field with wh
   some nearby wells only start in 2007-2013; the what-if is one fixed limit for every year and crop; the map
   layers always use the default limit; the what-if stays on when another field is opened (shown, with "Remove").
 
+### 7. Farm advisor (chat)
+
+- A farmer can open "Farm advisor" from a field or the farm panel and ask in plain words ("why not corn?", "what if I can only irrigate half as much?"). It answers only from our own tools (plans, scores, climate, water outlook and so on), with a collapsed "Based on" list, and marks any number it could not match to a tool result.
+- Try: http://localhost:5173/#KS-014376, press "Farm advisor". API `GET /advisor/status`, `POST /advisor/chat`.
+- Decisions: Gemini over REST (key from env or git-ignored .env); model `gemini-flash-latest` with fallbacks (gemini-3.5-flash, gemini-3-flash-preview) because the default was often busy; 60 s total limit; one self-correction round when numbers are unmatched.
+- Limits: the number check catches invented numbers, not wrong sentences; answers take 5 to 40 s, no streaming; every question uses your Gemini quota (the checker's live questions hit the quota, so the panel showed its plain "busy" error; a missing id was only covered by tests).
+
 ## What is left
 
-Items 7 and 8 in the table above.
+Item 8 in the table above.
 
 ## For you in the morning
 
@@ -216,3 +223,4 @@ Items 7 and 8 in the table above.
   only in a hover title.
 - Item 6: `data/groundwater.parquet` and its cache are under data/ (git-ignored); another machine needs
   `make groundwater` (7 small requests) or the section says the levels are not built.
+- Item 7: the free Gemini quota runs out quickly (each `make e2e` and pytest run with a key makes one live call; set ADVISOR_LIVE_TESTS off if you want to save it). Decide whether to keep the model fallback chain. Never commit .env.

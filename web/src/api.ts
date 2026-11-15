@@ -1,5 +1,6 @@
 // The one place the app talks to the backend. Every call returns typed JSON or throws ApiError
 // (or the browser's AbortError when the caller cancelled the request).
+import type { AdvisorReply, AdvisorStatus } from "./lib/advisor";
 import type { LayerAnswer, LayerCatalog } from "./lib/layers";
 import type { FarmPlan, FieldCollection, FieldDetail, FieldPlans, FieldSatellite, FieldScore, FieldSoil, FieldTransition, Health } from "./types";
 
@@ -177,6 +178,19 @@ export const api = {
         isObject(b.alone) &&
         Array.isArray(b.fields) &&
         isObject(b.solver),
+      signal,
+    ),
+
+  /** Is there an API key for the farm advisor? (GET /advisor/status) */
+  advisorStatus: (signal?: AbortSignal) =>
+    getJson<AdvisorStatus>("/advisor/status", (b) => isObject(b) && typeof b.available === "boolean", signal),
+
+  /** One question to the farm advisor. `body` is the request as JSON text (see lib/advisor.ts). */
+  advisorChat: (body: string, signal?: AbortSignal) =>
+    postJson<AdvisorReply>(
+      "/advisor/chat",
+      body,
+      (b) => isObject(b) && typeof b.answer === "string" && Array.isArray(b.tool_calls) && isObject(b.grounding) && Array.isArray(b.grounding.unmatched),
       signal,
     ),
 

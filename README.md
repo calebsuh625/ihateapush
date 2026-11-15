@@ -1112,3 +1112,36 @@ Irrigated plans assume a well that keeps delivering. This item puts the measured
   levels are the recovered ones, summer pumping levels are lower; a well's depth is not the bottom of the
   aquifer; the what-if is the farmer's number, not a measurement. Tests: `tests/test_groundwater.py`,
   `web/tests/water.test.mjs`, browser checks in `e2e:phase4`. Notes: `data/logs/phase4/item_6.md`.
+
+### Farm advisor (item 7)
+
+A chat panel, "Farm advisor", opened by a button under the title of the field panel and of the farm panel.
+You ask in your own words ("What if I could only pump half as much water?") and it answers from the same
+plans, climate models and well records as the rest of the app, with the sliders, year, scenario, irrigation
+switch and pumping what-if you have on screen.
+
+- **How it works**: Gemini reads the question and calls tools; each tool runs one of this API's own endpoint
+  functions (`/plans`, `/score`, `/transition`, `/twin`, `/climate`, `/groundwater`, `POST /farm/plan`, the field
+  record), cut down to what a model needs (`api/advisor_tools.py`). The instructions (`api/advisor.py`) carry the
+  wording rules: soil protection, returns over direct costs, "the models agree on heat, not rain", neighbour
+  comparisons are not proof, groundwater is not a forecast, never invent a number.
+- **Number check**: after the answer is written, every number in it is looked up among the numbers the tools gave
+  (`api/advisor_grounding.py`: rounding to the digits shown, shares as percent, round numbers within 5%, years
+  exactly). A number it cannot find makes the server ask the model once to correct itself from the tool results; what is
+  still unmatched is marked in the answer and named in a short note. Under each answer a
+  collapsed "Based on" lists the tools used with their arguments.
+- **Key**: `GEMINI_API_KEY=...` in the git-ignored `.env` at the project root (read on every call, no restart).
+  Without it the panel says "Add an API key to use the advisor" with the exact line, and nothing else changes.
+  Model: `GEMINI_MODEL=<name>` in `.env` (default `gemini-flash-latest`, with `gemini-3.5-flash` and `gemini-3-flash-preview`
+  as fallbacks when the first is overloaded, over quota or slow). The whole answer, correction included, has to fit in 60 seconds.
+- **Endpoints**: `GET /advisor/status`, `POST /advisor/chat` (schema.md). The conversation lives in the page, is
+  kept while the panel is closed and is cleared when another field or the farm is opened.
+- **Layout**: docked beside the field panel from 1180 px wide, sliding over its right edge below that, full screen
+  on a phone.
+- **Limits**: the check catches numbers, not wrong sentences, a wrong sign or numbers written as words; a
+  number repeated from an earlier answer in the same conversation counts as given (earlier tool results are not
+  sent back); an answer takes 5 to 40 seconds (60 at most) because the model calls tools first; Cancel stops the waiting and
+  the server stops before its next step, but a model call already under way still finishes; every question
+  spends the owner's Gemini quota. Tests: `tests/test_advisor.py`, `web/tests/advisor.test.mjs`, browser checks
+  in `e2e:phase4` (mocked for the fixed cases, one live question when a key is set). Notes:
+  `data/logs/phase4/item_7.md`.

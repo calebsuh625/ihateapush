@@ -1053,6 +1053,43 @@ field], "gaps": [thousandths or null per field]}`, in the field order of `GET /f
 of the planner's table versions (path, size and time stamp of every file the planner reads, its
 settings), the fields file's ETag and the default priorities; a file with another key is ignored.
 
+## `GET /advisor/status` and `POST /advisor/chat` (Phase 4: farm advisor)
+
+Served by `api/advisor.py`. The advisor is Google Gemini (`GEMINI_MODEL`, default `gemini-flash-latest`; when that answers 5xx, 404, 429 or is slow the
+request is run again on `gemini-3.5-flash`, then `gemini-3-flash-preview`; `ADVISOR_MODEL` is the older name for the same setting)
+with nine tools (`api/advisor_tools.py`) that run this API's own endpoint functions in-process. Nothing is
+stored on the server; the page sends the conversation with every question. The key is `GEMINI_API_KEY`, read
+from the environment or the git-ignored `.env` at the repo root on every call. It is never returned.
+
+`GET /advisor/status` -> `{available: bool, provider, model, reason, tools: [name, ...]}`. `reason` is null with a
+key and "add GEMINI_API_KEY to .env" without one (`POST /advisor/chat` then answers 503 with that same sentence as
+`detail`). Without a key `available` is false and the answer also adds `env_file` (".env"), `env_line` ("GEMINI_API_KEY=your-key-here"), `message` ("Add an
+API key to use the advisor") and `how`.
+
+`POST /advisor/chat`, request:
+
+```
+{"messages": [{"role": "user" | "assistant", "text": "..."}],      // ("content" also accepted) the last one is the question; at most 24 turns, 2000 characters each
+ "context":  {"field_id": "KS-014376",                              // all keys optional
+              "farm_field_ids": ["KS-...", ...],
+              "weights": {"soil": 3, "water": 2, "money": 3, "risk": 2},
+              "scenario": "ssp245" | "ssp585", "horizon": 2040,
+              "irrigated": true | false,                            // the irrigation switch, for field_id
+              "limit_in": 12}}                                      // the pumping what-if
+```
+
+Answer (200): `{answer: str, tool_calls: [{name, args, summary, ok}], grounding: {checked, matched, unmatched:
+[{text, value, start, end}], passed}, model, corrected}`. `corrected` is true when the number check failed and the model was asked once to
+rewrite the answer. `answer` may use `**bold**`, `*` / `-` list lines and blank
+lines, nothing else. `grounding` is the number check of `api/advisor_grounding.py`: every number written in the
+answer is looked up among the numbers of this request's tool results, the arguments, the farmer's own words
+and the on-screen settings; `unmatched` lists those it cannot find, with `start` / `end` as JavaScript string
+positions (`answer.slice(start, end) === text`).
+
+Errors are `{detail: "<one plain sentence>", code}`: 400 `bad_request`, 503 `no_key`, 429 `busy`, 504
+`timeout`, 502 `key` / `model` / `upstream` / `network` / `blocked` / `empty` / `refused`, 499 `cancelled`
+(the browser went away), 500 `server`.
+
 ## `GET /climate`
 
 What the smart planner assumes about the future. `{"available": true, "source", "models" (list of 6),

@@ -14,6 +14,7 @@ import { resetWords, whatIfLine } from "../lib/water";
 import type { PlannerChoices } from "../lib/planner";
 import { organicMatterClass, slopeClass } from "../thresholds";
 import type { FieldDetail, FieldSatellite, FieldSoil, Plan, Streak } from "../types";
+import { AdvisorButton } from "./AdvisorButton";
 import { Neighbors } from "./Neighbors";
 import { OwnRotation } from "./OwnRotation";
 import { PlanCard } from "./PlanCard";
@@ -44,9 +45,22 @@ interface FieldPanelProps {
   back?: { label: string; onClick: () => void };
   /** The "Compare with its twin" button in the neighbors section: whether the twin view is open, and how to toggle it. */
   twin?: { open: boolean; onToggle: () => void };
+  /** The "Farm advisor" button: whether the chat is open, and how to toggle it. */
+  advisor?: { open: boolean; onToggle: () => void };
+  /** Tells the app what the advisor needs to know about this field: the irrigation switch and whether it is irrigated. */
+  onFacts?: (facts: FieldFacts) => void;
 }
 
-export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlannerChoices, back, twin }: FieldPanelProps) {
+/** What the farm advisor is told about the open field beyond its id. */
+export interface FieldFacts {
+  fieldId: string;
+  /** The farmer's own irrigated / dryland switch, or null when it is left to the planner. */
+  irrigationOverride: boolean | null;
+  /** Whether the plans below treat the field as irrigated (null while they are loading). */
+  irrigated: boolean | null;
+}
+
+export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlannerChoices, back, twin, advisor, onFacts }: FieldPanelProps) {
   // Two independent requests, started together; each can fail and be retried on its own.
   const [detail, retryDetail] = useResource(fieldId, api.field);
   // The irrigated / dryland override belongs to one field: it is forgotten when another is opened.
@@ -70,6 +84,10 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
   const smartPlans = plans.status === "ready" && plans.data.engine === "smart" && plans.data.settings !== undefined ? plans.data : null;
   // The water reality check belongs to irrigated fields: the answer carries it only for them.
   const waterOutlook = smartPlans?.settings?.irrigated ? smartPlans.water_outlook : undefined;
+  const irrigatedNow = smartPlans?.settings ? Boolean(smartPlans.settings.irrigated) : null;
+  useEffect(() => {
+    onFacts?.({ fieldId, irrigationOverride, irrigated: irrigatedNow });
+  }, [onFacts, fieldId, irrigationOverride, irrigatedNow]);
   const setLimitIn = (limitIn: number | null) => onPlannerChoices({ ...plannerChoices, limitIn });
   // A third, optional one: the satellite numbers. Its failure stays inside its own section.
   const [satellite, retrySatellite] = useResource(fieldId, api.satellite);
@@ -119,6 +137,7 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
               </>
             )}
           </p>
+          {advisor && <AdvisorButton open={advisor.open} onToggle={advisor.onToggle} />}
         </div>
         <button type="button" className="icon-button" onClick={onClose} aria-label="Close field panel" title="Close (Esc)">
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">

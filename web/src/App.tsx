@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE, api, apiUrl, getJson } from "./api";
+import { AdvisorPanel } from "./components/AdvisorPanel";
 import { FarmPanel } from "./components/FarmPanel";
 import { TwinView } from "./components/TwinView";
 import { FieldMap } from "./components/FieldMap";
 import type { FarmTool } from "./components/FieldMap";
 import { ErrorNote, FieldPanel } from "./components/FieldPanel";
+import type { FieldFacts } from "./components/FieldPanel";
 import { LayerControl } from "./components/LayerControl";
 import { APP_NAME, REGION_LABEL } from "./config";
+import { useAdvisor } from "./hooks/useAdvisor";
 import { useResource } from "./hooks/useResource";
 import type { Resource } from "./hooks/useResource";
 import { useMapLayers } from "./hooks/useMapLayers";
 import { useSelection } from "./hooks/useSelection";
+import { advisorContext, exampleQuestions } from "./lib/advisor";
+import type { Subject } from "./lib/advisor";
 import { addFields, toggleField } from "./lib/farm";
 import { sheetHeight } from "./lib/twin";
 import type { TwinAnswer } from "./lib/twin";
@@ -21,6 +26,7 @@ import type { Health } from "./types";
 
 const loadFields = (_key: string, signal: AbortSignal) => api.fields(signal);
 const loadHealth = (_key: string, signal: AbortSignal) => api.health(signal);
+const loadAdvisorStatus = (_key: string, signal: AbortSignal) => api.advisorStatus(signal);
 const loadTwin = (fieldId: string, signal: AbortSignal) =>
   getJson<TwinAnswer>(
     `/field/${encodeURIComponent(fieldId)}/twin`,
@@ -80,6 +86,11 @@ export default function App() {
   const [twinRes, retryTwin] = useResource(compareId, loadTwin);
   const twinId = compareId !== null && twinRes.status === "ready" && twinRes.data.has_twin ? (twinRes.data.twin?.field_id ?? null) : null;
   const twinHeight = sheetHeight(window.innerHeight);
+  // The farm advisor: the chat is about the open field, or about the farm when no field is open. Its
+  // conversation lives here, so it is kept while the panel is closed.
+  const [advisorOpen, setAdvisorOpen] = useState(false);
+  const [advisorOpens, setAdvisorOpens] = useState(0); // asks /advisor/status again every time the panel is opened
+  const [facts, setFacts] = useState<FieldFacts | null>(null);
 
   const fieldData = fields.status === "ready" ? fields.data : null;
   // The map layer (colour by bare days, erosion risk …) and its year live here, so they stay as they are
@@ -97,6 +108,21 @@ export default function App() {
   // A farm saved with other data may name fields that are gone: only the ones on the map count.
   const farmIds = useMemo(() => farm.ids.filter((id) => areaById.has(id)), [farm.ids, areaById]);
 
+  const selectedId = selection?.id ?? null;
+  const subject = useMemo<Subject>(() => (selectedId !== null ? { kind: "field", id: selectedId } : farmMode ? { kind: "farm" } : null), [selectedId, farmMode]);
+  const factsNow = facts !== null && facts.fieldId === selectedId ? facts : null;
+  const advisor = useAdvisor(subject, advisorContext(subject, farmIds, plannerChoices, factsNow?.irrigationOverride ?? null));
+  const advisorShown = advisorOpen && subject !== null;
+  const [advisorStatus, retryAdvisorStatus] = useResource(advisorOpens > 0 && advisorShown ? `advisor-${advisorOpens}` : null, loadAdvisorStatus);
+  const toggleAdvisor = useCallback(() => {
+    setAdvisorOpen((open) => !open);
+    setAdvisorOpens((n) => n + 1);
+  }, []);
+  // Nothing open (the field panel was closed): the advisor goes with it, its conversation stays.
+  useEffect(() => {
+    if (subject === null) setAdvisorOpen(false);
+  }, [subject]);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(FARM_STORE, JSON.stringify(farm));
@@ -106,15 +132,16 @@ export default function App() {
   }, [farm]);
 
   useEffect(() => {
-    if (!selection) return;
+    if (!selection && !advisorShown) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (compareId !== null) setCompare(null); // the comparison closes first, then the field
+      if (advisorShown) setAdvisorOpen(false); // the advisor closes first, then the comparison, then the field
+      else if (compareId !== null) setCompare(null);
       else clear();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selection, clear, compareId]);
+  }, [selection, clear, compareId, advisorShown]);
 
   // A comparison left open for a field that is no longer selected is forgotten.
   useEffect(() => {
@@ -162,12 +189,13 @@ export default function App() {
 
   return (
     <div
-      className="app"
+      className={advisorShown ? "app app--advisor" : "app"}
       data-testid="app"
       data-api-base={API_BASE}
       data-fields={fields.status}
       data-fields-drawn={fieldData && drawn !== null ? drawn : undefined}
       data-mode={mode}
+      data-advisor={advisorShown ? "open" : "closed"}
     >
       <main className="map-wrap">
         <FieldMap
@@ -275,6 +303,8 @@ export default function App() {
           onPlannerChoices={setPlannerChoices}
           back={farmMode ? { label: "Back to the farm plan", onClick: clear } : undefined}
           twin={{ open: compareId !== null, onToggle: () => setCompare(compareId !== null ? null : selection.id) }}
+          advisor={{ open: advisorShown, onToggle: toggleAdvisor }}
+          onFacts={setFacts}
         />
       ) : (
         farmMode && (
@@ -290,8 +320,20 @@ export default function App() {
             onClear={clearFarm}
             onOpenField={select}
             onClose={toggleFarmMode}
+            advisor={{ open: advisorShown, onToggle: toggleAdvisor }}
           />
         )
+      )}
+
+      {advisorShown && subject !== null && (
+        <AdvisorPanel
+          subject={subject}
+          status={advisorStatus}
+          onRetryStatus={retryAdvisorStatus}
+          advisor={advisor}
+          examples={exampleQuestions(subject, factsNow?.irrigated ?? null)}
+          onClose={() => setAdvisorOpen(false)}
+        />
       )}
 
       {compareId !== null && (

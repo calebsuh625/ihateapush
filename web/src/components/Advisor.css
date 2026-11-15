@@ -1,0 +1,315 @@
+/* "Farm advisor" (AdvisorPanel.tsx): a chat panel. Wide screens (1180px and up): a third column beside the
+   field panel, so the map only gets narrower. Narrower desktops: slides over the right edge, the map stays
+   visible to its left. Phones: full screen. Uses the tokens from styles.css. */
+
+.advisor {
+  position: fixed;
+  z-index: 1250; /* above the twin sheet (1200) and the map overlays */
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(400px, 100vw);
+  min-height: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--line-strong);
+  box-shadow: -6px 0 24px rgb(16 24 20 / 22%);
+  animation: advisor-in 160ms ease-out both;
+}
+
+@keyframes advisor-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+@media (min-width: 1180px) {
+  .advisor {
+    position: relative;
+    z-index: 1;
+    width: 400px;
+    box-shadow: -2px 0 12px rgb(16 24 20 / 8%);
+    animation: none;
+  }
+
+  .app--advisor {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+}
+
+@media (max-width: 760px), (max-width: 1000px) and (orientation: portrait) {
+  .advisor {
+    inset: 0;
+    width: auto;
+    border-left: 0;
+    box-shadow: none;
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .advisor {
+    animation: none;
+  }
+}
+
+.advisor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s4) var(--s4) var(--s3) var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+.advisor-head h2 {
+  margin-top: 2px;
+  font-size: var(--text-lg);
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.advisor-note {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s4) var(--s5);
+  color: var(--ink-2);
+}
+
+.advisor-body {
+  display: grid;
+  gap: var(--s3);
+  align-content: start;
+  padding: var(--s5);
+  overflow-y: auto;
+}
+
+.advisor-nokey-title {
+  font-size: var(--text-lg);
+  font-weight: 650;
+}
+
+.advisor-line {
+  margin: 0;
+  padding: var(--s3);
+  overflow-x: auto;
+  font: 13px / 1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  user-select: all;
+}
+
+.advisor code {
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--surface-2);
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+}
+
+.advisor-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-height: 0;
+  padding: var(--s4) var(--s4) var(--s3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.advisor-empty,
+.advisor-notice {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.advisor-notice {
+  padding: var(--s2) var(--s3);
+  background: var(--demo-bg);
+  border: 1px solid var(--demo-line);
+  border-radius: var(--radius);
+  color: var(--demo-ink);
+}
+
+.advisor-msg {
+  max-width: 100%;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
+}
+
+.advisor-msg--user {
+  align-self: flex-end;
+  max-width: 88%;
+  color: var(--ink);
+  background: var(--accent-soft);
+  border: 1px solid var(--track);
+  white-space: pre-wrap;
+}
+
+.advisor-msg--assistant {
+  align-self: stretch;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.advisor-text > * + * {
+  margin-top: var(--s2);
+}
+
+.advisor-text ul {
+  padding-left: var(--s4);
+  list-style: disc;
+}
+
+.advisor-text li + li {
+  margin-top: var(--s1);
+}
+
+.advisor-unmatched {
+  padding: 0 2px;
+  color: var(--demo-ink);
+  background: var(--demo-bg);
+  border-bottom: 2px dotted var(--demo-ink);
+  border-radius: 2px;
+}
+
+.advisor-unmatched-note {
+  margin-top: var(--s2);
+  padding: var(--s2) var(--s3);
+  font-size: 13px;
+  color: var(--demo-ink);
+  background: var(--demo-bg);
+  border: 1px solid var(--demo-line);
+  border-radius: var(--radius);
+}
+
+.advisor-based {
+  margin-top: var(--s2);
+  font-size: 13px;
+}
+
+.advisor-based summary {
+  display: inline-block;
+  padding: 2px 0;
+  color: var(--accent-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.advisor-calls {
+  display: grid;
+  gap: var(--s2);
+  margin: var(--s2) 0;
+  padding-left: var(--s5);
+  list-style: decimal;
+}
+
+.advisor-args {
+  color: var(--ink-2);
+}
+
+.advisor-failed {
+  color: var(--danger);
+}
+
+.advisor-small {
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.advisor-waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  font-size: 13px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+
+.advisor-waiting > span:nth-child(2) {
+  flex: 1;
+}
+
+.advisor-failure {
+  align-items: flex-start;
+}
+
+.advisor-cancelled {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  font-size: 13px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+
+.advisor-foot {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4) var(--s4);
+  border-top: 1px solid var(--line);
+}
+
+.advisor-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.advisor-chip {
+  padding: 6px var(--s3);
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: left;
+  color: var(--accent-ink);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.advisor-chip:hover {
+  background: var(--accent-soft);
+}
+
+.advisor-form {
+  display: flex;
+  gap: var(--s2);
+  align-items: flex-end;
+}
+
+.advisor-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--s2) var(--s3);
+  font: inherit;
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  resize: none;
+}
+
+.advisor-form .button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The button that opens the advisor, in the field panel's and the farm panel's header. */
+.advisor-open {
+  margin-top: var(--s2);
+}

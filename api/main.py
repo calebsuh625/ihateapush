@@ -60,6 +60,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 
+from api.advisor import router as advisor_router
 from api.causal import router as causal_router
 from api.groundwater import GroundwaterService, attach_outlook, router as groundwater_router, what_if_block
 from api.twin import router as twin_router
@@ -1110,6 +1111,7 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
     app.include_router(twin_router)  # Phase 4: /field/{id}/twin
     app.include_router(layers_router)  # Phase 4: /layers, /layers/{name}
     app.include_router(groundwater_router)  # Phase 4: /groundwater
+    app.include_router(advisor_router)  # Phase 4: /advisor/status, /advisor/chat
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
     # Local dev: the Vite page on :5173 calls this API on another port. No cookies, so "*" is fine.
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])

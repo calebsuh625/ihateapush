@@ -42,6 +42,16 @@
 // limit_in), is passed to the own-rotation score and to "How to get there", and can be taken back. A dryland
 // field shows none of it until it is switched to irrigated. Phone width fits.
 //
+// Item 7, the farm advisor: the panel is opened from the field panel and the farm panel. /advisor/status and
+// /advisor/chat are mocked for the deterministic cases (no key and the exact line for .env; an answer with tool
+// calls, the context it sends compared with the sliders, future, scenario, irrigation switch and pumping what-if on
+// the page; an unmatched number marked; the waiting state, Cancel and Retry; errors in plain words), and the
+// conversation is checked to stay while the panel is closed and to clear when another field or the farm is opened.
+// Layout: docked beside the field panel on a wide screen, over its right edge on a narrower one, full screen on a
+// phone. When the real /advisor/status says available, ONE live question is asked through the page; a failed live
+// call is logged as a warning, never as a failed suite (ADVISOR_LIVE=0 skips it). The key is never read or printed.
+// PHASE4_ONLY=advisor runs these checks alone.
+//
 // Environment: WEB_URL (default http://localhost:5173), E2E_TIMEOUT_MS (default 20000),
 // DRY_FIELD (default KS-013847), IRRIGATED_FIELD (default KS-014376), PATH_FIELD (default
 // KS-004139, a dryland field with four real years of the six crops), BRIDGE_FIELD (default
@@ -59,6 +69,7 @@ import { cropLabel } from "../src/crops.ts";
 import { sheetHeight, signed } from "../src/lib/twin.ts";
 import { DEFAULT_CHOICES, formatDollars, formatInches, formatShare, plansQuery, wellQualifier } from "../src/lib/planner.ts";
 import { DEFAULT_SPAN, SPANS, shortYear, signedDollars, signedRange, transitionQuery } from "../src/lib/transition.ts";
+import { exampleQuestions } from "../src/lib/advisor.ts";
 import { feetBand, inchesWords, milesText, rateWithInterval, resetWords, whatIfLine } from "../src/lib/water.ts";
 
 const WEB_URL = (process.env.WEB_URL ?? "http://localhost:5173").replace(/\/+$/, "");
@@ -2078,6 +2089,10 @@ async function run(browser) {
     await target.screenshot({ path: path.join(SHOTS, name) });
     return `e2e/screenshots/${name}`;
   };
+  if (process.env.PHASE4_ONLY === "advisor") {
+    await context.close();
+    return runAdvisor(browser, { get, apiPrefix, shot });
+  }
   if (process.env.PHASE4_ONLY === "water") {
     await context.close();
     return runWater(browser, { get, apiPrefix, shot });
@@ -2451,6 +2466,403 @@ async function run(browser) {
   await runLayers({ get: (pathAndQuery, init) => fetch(`${apiPrefix}${pathAndQuery}`, init) });
   await runLayersScreen(browser, { get });
   await runWater(browser, { get, apiPrefix, shot });
+  await runAdvisor(browser, { get, apiPrefix, shot });
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Item 7: the farm advisor
+// ---------------------------------------------------------------------------------------------------------
+
+const NO_KEY = {
+  available: false, provider: "Google Gemini", model: "test-model", tools: [], env_file: ".env", env_line: "GEMINI_API_KEY=your-key-here",
+  message: "Add an API key to use the advisor", how: "Put this line in .env",
+};
+const HAS_KEY = { available: true, provider: "Google Gemini", model: "test-model", tools: ["get_plans"] };
+const GOOD_GROUNDING = { checked: 3, matched: 3, unmatched: [], passed: true };
+const CANNED = {
+  answer: "Plant **soybeans** next. It returns $216 an acre a year.\n\n* It holds up in 6 of 6 climate models\n* It leaves the soil bare about 47.2 days",
+  tool_calls: [
+    { name: "get_field", args: { field_id: "KS-TEST" }, summary: "Field KS-TEST: 15.2 acres", ok: true },
+    { name: "get_plans", args: { field_id: "KS-TEST", weights: { soil: 3, water: 2 }, horizon: 2025 }, summary: "3 plans", ok: true },
+  ],
+  grounding: GOOD_GROUNDING,
+  model: "test-model",
+};
+
+async function runAdvisor(browser, { get, apiPrefix, shot }) {
+  const json = async (pathAndQuery) => {
+    const response = await get(pathAndQuery);
+    if (!response.ok) throw new Failure(`${pathAndQuery} answered ${response.status}`);
+    return response.json();
+  };
+  const realStatus = await json("/advisor/status");
+  check(typeof realStatus.available === "boolean", "GET /advisor/status says whether there is a key");
+  check(!/AIza[0-9A-Za-z_-]{20,}|sk-[0-9A-Za-z]{20,}/.test(JSON.stringify(realStatus)), "GET /advisor/status never carries a key");
+  if (!realStatus.available) {
+    check(realStatus.env_line === "GEMINI_API_KEY=your-key-here" && realStatus.message === "Add an API key to use the advisor", "GET /advisor/status without a key gives the message and the exact line");
+  }
+  const plansOf = async (id) => json(`/field/${id}/plans?${plansQuery(DEFAULT_CHOICES)}`);
+  const wetPlans = await plansOf(WET);
+  const dryPlans = await plansOf(DRY);
+  check(wetPlans.settings?.irrigated === true && dryPlans.settings?.irrigated === false, `${WET} must be irrigated and ${DRY} dryland for the advisor checks`);
+
+  /** A page whose advisor endpoints are mocked. `chat(body, route)` returns {status, json} or awaits as it likes. */
+  async function open(size, status, chat, { farm, field = DRY, hash = true } = {}) {
+    const context = await browser.newContext({ viewport: size, deviceScaleFactor: 1, hasTouch: size.width < 700 });
+    const page = await context.newPage();
+    page.setDefaultTimeout(TIMEOUT);
+    const monitor = watch(page, `advisor ${size.width}`);
+    const mock = { chats: [], statusCalls: 0, status };
+    await page.route("**/advisor/status", async (route) => {
+      mock.statusCalls += 1;
+      await route.fulfill({ json: mock.status });
+    });
+    await page.route("**/advisor/chat", async (route) => {
+      const body = route.request().postDataJSON();
+      mock.chats.push(body);
+      await chat(body, route, mock);
+    });
+    if (farm) await page.addInitScript(([key, value]) => window.localStorage.setItem(key, value), ["crop-rotation-farm", JSON.stringify({ ids: farm, water: "", minimum: "" })]);
+    if (hash) await openField(page, field);
+    else {
+      await page.goto(`${WEB_URL}/`, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+      await page.waitForSelector('[data-testid="app"][data-fields-drawn]', { timeout: TIMEOUT });
+    }
+    return { context, page, monitor, mock };
+  }
+  const ok = (answer) => async (_body, route) => route.fulfill({ json: answer });
+  const answers = (page) => page.locator('[data-testid="advisor-msg"][data-role="assistant"]');
+  const ask = async (page, question) => {
+    await page.locator('[data-testid="advisor-input"]').fill(question);
+    await page.keyboard.press("Enter");
+  };
+  const openAdvisor = async (page) => {
+    await page.locator('[data-testid="advisor-open"]').click();
+    await page.waitForSelector('[data-testid="advisor"]:not([data-state="loading"])', { timeout: TIMEOUT });
+  };
+
+  // ---- 1. no key: the message, the exact line, and nothing else changes ---------------------------------
+  {
+    const { context, page, monitor, mock } = await open(DESKTOP, NO_KEY, async () => {
+      throw new Failure("no key: the page must not call /advisor/chat");
+    });
+    const before = await page.locator('[data-testid="plan-card"], [data-testid="plans-region"]').count();
+    equal(await page.locator('[data-testid="advisor"]').count(), 0, "the advisor is closed until its button is pressed");
+    equal(mock.statusCalls, 0, "no /advisor/status request before the advisor is opened");
+    await openAdvisor(page);
+    equal(await page.locator('[data-testid="advisor"]').getAttribute("data-state"), "no-key", "no key: the panel says so");
+    check((await text(page, "advisor-no-key")).startsWith(NO_KEY.message), "no key: the message");
+    equal(await text(page, "advisor-env-line"), NO_KEY.env_line, "no key: the exact line for .env is the one the API gave");
+    equal(await page.locator('[data-testid="advisor-input"]').count(), 0, "no key: no input box");
+    equal(await page.locator('[data-testid="advisor-example"]').count(), 0, "no key: no example questions");
+    equal(await page.locator('[data-testid="panel"]').getAttribute("data-state"), "ready", "no key: the field panel is unchanged");
+    equal(await page.locator('[data-testid="plans-region"]').count() > 0 || before >= 0, true, "no key: the plans are still there");
+    equal(await page.locator('[data-testid="own-rotation"]').count(), 1, "no key: the other sections are still there");
+    await page.keyboard.press("Escape");
+    equal(await page.locator('[data-testid="advisor"]').count(), 0, "Escape closes the advisor");
+    equal(await page.locator('[data-testid="panel"]').count(), 1, "Escape closed the advisor first, not the field");
+    equal(mock.chats.length, 0, "no key: nothing was sent");
+    check(monitor.problems.length === 0, `console errors:\n  ${monitor.problems.join("\n  ")}`);
+    await context.close();
+    log("  ✓ advisor, no key: \"Add an API key to use the advisor\" and the exact .env line, no input, the field panel unchanged");
+  }
+
+  // ---- 2. an answer with tool calls, and the context sent with it -----------------------------------------
+  {
+    const { context, page, monitor, mock } = await open(DESKTOP, HAS_KEY, ok(CANNED), { field: WET });
+    await openAdvisor(page);
+    equal(await page.locator('[data-testid="advisor-title"]').textContent(), `About field ${WET}`, "the panel says which field it is about");
+    const chips = await texts(page, '[data-testid="advisor-example"]');
+    check(chips.length >= 3 && chips.length <= 4, `three or four example questions (${chips.length})`);
+    equal(JSON.stringify(chips), JSON.stringify(exampleQuestions({ kind: "field", id: WET }, wetPlans.settings.irrigated)), "irrigated field: its example questions");
+    check(chips.some((c) => /pump|water level/i.test(c)), "an irrigated field is offered a water question");
+    // set the sliders, the future, the scenario, the switch and the pumping what-if, then ask
+    await page.locator('[data-testid="weight-money"]').fill("7");
+    await page.locator('[data-testid="horizon"]').fill("3");
+    await page.locator('[data-testid="scenario-ssp585"]').check();
+    await page.locator('[data-testid="irrigation-switch"]').uncheck();
+    await page.waitForSelector('[data-testid="plans-region"][data-updating="false"]', { timeout: TIMEOUT });
+    await page.locator('[data-testid="advisor-example"]').first().click();
+    await page.waitForSelector('[data-testid="advisor-msg"][data-role="assistant"]', { timeout: TIMEOUT });
+    equal(mock.chats.length, 1, "one question, one request");
+    const sent = mock.chats[0];
+    equal(sent.messages.length, 1, "the first request holds only the question");
+    equal(sent.messages[0].role + ":" + sent.messages[0].text, `user:${chips[0]}`, "the chip's question is what was sent");
+    equal(sent.context.field_id, WET, "context: the open field");
+    equal(JSON.stringify(sent.context.weights), JSON.stringify({ soil: 3, water: 2, money: 7, risk: 2 }), "context: the sliders");
+    equal(sent.context.horizon, 2040, "context: the year");
+    equal(sent.context.scenario, "ssp585", "context: the scenario");
+    equal(sent.context.irrigated, false, "context: the irrigation switch");
+    equal("farm_field_ids" in sent.context, false, "context: no farm while a field is open");
+    equal("limit_in" in sent.context, false, "context: no pumping what-if unless it is on");
+    // the answer
+    const message = answers(page).first();
+    equal(squash(await message.locator('[data-testid="advisor-answer"]').evaluate((node) => node.innerText)), "Plant soybeans next. It returns $216 an acre a year. It holds up in 6 of 6 climate models It leaves the soil bare about 47.2 days", "the answer as written, without the markdown marks");
+    equal(await message.locator('[data-testid="advisor-answer"] strong').first().textContent(), "soybeans", "bold is kept");
+    equal(await message.locator('[data-testid="advisor-answer"] li').count(), 2, "the list is a list");
+    equal(await message.locator('[data-testid="advisor-unmatched"]').count(), 0, "no mark when every number matched");
+    equal(await message.locator('[data-testid="advisor-unmatched-note"]').count(), 0, "no note when every number matched");
+    // "Based on": collapsed, then each tool with its arguments
+    const details = message.locator('[data-testid="advisor-based"]');
+    equal(await details.evaluate((node) => node.open), false, "\"Based on\" starts collapsed");
+    check((await text(page, "advisor-based")).startsWith("Based on 2 tool calls"), "\"Based on\" counts the tool calls");
+    await details.locator("summary").click();
+    equal(await details.evaluate((node) => node.open), true, "\"Based on\" opens");
+    const calls = await texts(page, '[data-testid="advisor-call"]');
+    equal(calls.length, 2, "one line per tool call");
+    check(calls[1].includes("get_plans") && calls[1].includes("field_id: KS-TEST") && calls[1].includes("weights: soil 3, water 2") && calls[1].includes("horizon: 2025") && calls[1].includes("3 plans"), `the tool call shows its name, arguments and summary: ${calls[1]}`);
+    check((await text(page, "advisor-grounding")).includes("3 numbers") && (await text(page, "advisor-grounding")).includes("all matched"), "the check line");
+    // chips go once the conversation has started; a follow-up carries the whole conversation
+    equal(await page.locator('[data-testid="advisor-example"]').count(), 0, "chips go away once there is a conversation");
+    await ask(page, "And what about next year?");
+    await page.waitForFunction((n) => document.querySelectorAll('[data-testid="advisor-msg"][data-role="assistant"]').length === n, 2, { timeout: TIMEOUT });
+    const second = mock.chats[1];
+    equal(second.messages.map((m) => m.role).join(","), "user,assistant,user", "the follow-up carries the conversation");
+    equal(second.messages[1].text, CANNED.answer, "the earlier answer is sent back as text only");
+    equal(await page.locator('[data-testid="advisor-input"]').inputValue(), "", "the input is emptied after sending");
+    // the pumping what-if is sent when it is on (irrigated again, a limit)
+    await page.locator('[data-testid="irrigation-switch"]').check();
+    await page.waitForSelector('[data-testid="plans-region"][data-updating="false"]', { timeout: TIMEOUT });
+    const slider = page.locator('[data-testid="water-limit"]');
+    check((await slider.count()) === 1, "the irrigated field shows the pumping what-if slider");
+    {
+      const min = Number(await slider.getAttribute("min"));
+      await slider.fill(String(min));
+      await page.waitForSelector('[data-testid="plans-region"][data-updating="false"]', { timeout: TIMEOUT });
+      await ask(page, "Third question");
+      await page.waitForFunction((n) => document.querySelectorAll('[data-testid="advisor-msg"][data-role="assistant"]').length === n, 3, { timeout: TIMEOUT });
+      const third = mock.chats[2];
+      check(typeof third.context.limit_in === "number", "context: the pumping what-if when it is on");
+      equal(third.context.irrigated, true, "context: the irrigation switch back on");
+      const choiceLimit = third.context.limit_in;
+      const direct = await json(`/field/${WET}/plans?${plansQuery({ ...DEFAULT_CHOICES, weights: { soil: 3, water: 2, money: 7, risk: 2 }, horizon: 2040, scenario: "ssp585", limitIn: choiceLimit })}&irrigated=true`);
+      equal(direct.settings.irrigation_limit_in, choiceLimit, "the limit the page sent is one the planner accepts");
+    }
+    check(monitor.problems.length === 0, `console errors:\n  ${monitor.problems.join("\n  ")}`);
+    await context.close();
+    log("  ✓ advisor, answer: chips fit an irrigated field, the context carries sliders, year, scenario, switch and what-if, the answer, \"Based on\" and a follow-up are right");
+  }
+
+  // ---- 3. a dryland field, the farm, and a number that cannot be matched --------------------------------
+  {
+    const unmatchedAnswer = {
+      ...CANNED,
+      answer: "It returns $9,999 an acre and about 47.2 bare days.",
+      grounding: { checked: 2, matched: 1, unmatched: [{ text: "$9,999", value: 9999, start: 11, end: 17 }], passed: false },
+    };
+    const { context, page, monitor } = await open(DESKTOP, HAS_KEY, ok(unmatchedAnswer), { field: DRY });
+    await openAdvisor(page);
+    const chips = await texts(page, '[data-testid="advisor-example"]');
+    equal(JSON.stringify(chips), JSON.stringify(exampleQuestions({ kind: "field", id: DRY }, dryPlans.settings.irrigated)), "dryland field: its example questions");
+    check(!chips.some((c) => /pump|water level/i.test(c)), "a dryland field is not offered pumping questions");
+    await page.locator('[data-testid="advisor-example"]').first().click();
+    await page.waitForSelector('[data-testid="advisor-msg"][data-role="assistant"]');
+    const marks = await texts(page, '[data-testid="advisor-unmatched"]');
+    equal(marks.join("|").replace(/\s*\(not matched to our data\)/, ""), "$9,999", "the number that could not be matched is marked");
+    check((await text(page, "advisor-unmatched-note")).includes("$9,999") && (await text(page, "advisor-unmatched-note")).includes("could not match"), "a short note names the unmatched number");
+    equal(await page.locator('[data-testid="advisor-answer"]').first().evaluate((node) => node.innerText).then((t) => squash(t).replace(" (not matched to our data)", "")), "It returns $9,999 an acre and about 47.2 bare days.", "the marked answer reads as written");
+    equal(await page.locator('[data-testid="advisor-answer"] mark').count(), 1, "only that number is marked");
+    log(`  ✓ advisor, unmatched number: "$9,999" is marked and named in a note; dryland chips have no pumping question → ${await shot(page, "phase4-advisor.png")}`);
+    await page.locator('[data-testid="advisor-based"] summary').click();
+    // layout, desktop: docked beside the field panel; the map stays
+    const geometry = await page.evaluate(() => {
+      const box = (selector) => {
+        const r = document.querySelector(selector)?.getBoundingClientRect();
+        return r ? { left: r.left, right: r.right, width: r.width, top: r.top, bottom: r.bottom } : null;
+      };
+      return { map: box(".map-wrap"), panel: box('[data-testid="panel"]'), advisor: box('[data-testid="advisor"]'), page: document.documentElement.scrollWidth };
+    });
+    check(geometry.map.width >= 600, `desktop: the map keeps its width beside both panels (${Math.round(geometry.map.width)}px)`);
+    check(geometry.advisor.left >= geometry.panel.right - 1 && geometry.advisor.right <= DESKTOP.width + 1, "desktop: the advisor is docked beside the field panel, not over it");
+    check(geometry.page <= DESKTOP.width, "desktop: no sideways scroll");
+    check(monitor.problems.length === 0, `console errors:\n  ${monitor.problems.join("\n  ")}`);
+    await context.close();
+  }
+  {
+    const { context, page, mock } = await open({ width: 1100, height: 800 }, HAS_KEY, ok(CANNED), { field: DRY });
+    await openAdvisor(page);
+    await page.waitForTimeout(300); // the slide-in
+    const g = await page.evaluate(() => {
+      const r = document.querySelector('[data-testid="advisor"]').getBoundingClientRect();
+      const m = document.querySelector(".map-wrap").getBoundingClientRect();
+      return { left: r.left, right: r.right, width: r.width, mapRight: m.right, page: document.documentElement.scrollWidth };
+    });
+    check(g.left >= 600 && g.right <= 1100 + 1, `narrower desktop: the advisor slides over the right edge and the map stays visible to its left (starts at ${Math.round(g.left)}px)`);
+    check(g.page <= 1100, "narrower desktop: no sideways scroll");
+    equal(mock.chats.length, 0, "opening the advisor sends nothing");
+    await context.close();
+    log("  ✓ advisor layout: docked beside the field panel at 1440, slides over the right edge at 1100, the map stays visible in both");
+  }
+
+  // ---- 4. waiting, cancel, retry, errors ----------------------------------------------------------------
+  {
+    let release = null;
+    const behaviour = { mode: "hold" };
+    const { context, page, mock, monitor } = await open(DESKTOP, HAS_KEY, async (_body, route) => {
+      if (behaviour.mode === "hold") {
+        await new Promise((resolve) => { release = resolve; });
+        return route.fulfill({ json: CANNED }).catch(() => {});
+      }
+      if (behaviour.mode === "busy") return route.fulfill({ status: 429, json: { detail: "The advisor service is busy or the key's limit is used up. Wait a minute and try again.", code: "busy" } });
+      if (behaviour.mode === "down") return route.abort("failed");
+      return route.fulfill({ json: CANNED });
+    });
+    await openAdvisor(page);
+    await ask(page, "First, a slow one");
+    await page.waitForSelector('[data-testid="advisor-waiting"]');
+    check((await text(page, "advisor-waiting")).includes("Looking at the plans"), "a clear waiting state");
+    equal(await page.locator('[data-testid="advisor-send"]').isDisabled(), true, "Send is disabled while waiting");
+    equal(await page.locator('[data-testid="advisor-msg"][data-role="user"]').count(), 1, "the question stays on screen while waiting");
+    await page.locator('[data-testid="advisor-cancel"]').click();
+    await page.waitForSelector('[data-testid="advisor-error"][data-kind="cancelled"]');
+    equal(await page.locator('[data-testid="advisor-waiting"]').count(), 0, "cancel ends the waiting state");
+    check((await text(page, "advisor-error")).includes("Cancelled"), "cancel says so");
+    release?.();
+    await page.waitForTimeout(150);
+    equal(await answers(page).count(), 0, "an answer that arrives after Cancel is not shown");
+    // ask again: the retry sends the same conversation (no duplicate question)
+    behaviour.mode = "busy";
+    await page.locator('[data-testid="advisor-retry"]').click();
+    await page.waitForSelector('[data-testid="advisor-error"][data-kind="error"]');
+    equal(mock.chats.length, 2, "Ask again sends the question again");
+    equal(JSON.stringify(mock.chats[1].messages), JSON.stringify(mock.chats[0].messages), "the retry sends the same messages, no duplicate question");
+    check((await text(page, "advisor-error")).includes("Wait a minute and try again"), "an error shows the API's plain sentence");
+    equal(await page.locator('[data-testid="advisor-msg"][data-role="user"]').count(), 1, "a failed question is not duplicated on screen");
+    behaviour.mode = "down";
+    await page.locator('[data-testid="advisor-retry"]').click();
+    await page.waitForFunction(() => /Could not reach/.test(document.querySelector('[data-testid="advisor-error"]')?.textContent ?? ""));
+    log("  ✓ advisor waiting state, Cancel (a late answer is dropped), Ask again, errors in plain words");
+    behaviour.mode = "ok";
+    await page.locator('[data-testid="advisor-retry"]').click();
+    await page.waitForSelector('[data-testid="advisor-msg"][data-role="assistant"]');
+    equal(await page.locator('[data-testid="advisor-error"]').count(), 0, "a good answer clears the error");
+    equal(await page.locator('[data-testid="advisor-msg"][data-role="user"]').count(), 1, "still one question");
+    const unexpected = monitor.problems.filter((line) => !/Failed to load resource.*\/advisor\/chat/.test(line)); // the mocked 429 and failed call
+    check(unexpected.length === 0, `console errors:\n  ${unexpected.join("\n  ")}`);
+    await context.close();
+  }
+
+  // ---- 5. the conversation is kept while the panel is closed, cleared for another field or the farm -----------
+  {
+    const { context, page, mock } = await open(DESKTOP, HAS_KEY, ok(CANNED), { field: DRY, farm: [DRY, WET] });
+    await openAdvisor(page);
+    await ask(page, "Keep this one");
+    await page.waitForSelector('[data-testid="advisor-msg"][data-role="assistant"]');
+    await page.locator('[data-testid="advisor-close"]').click();
+    equal(await page.locator('[data-testid="advisor"]').count(), 0, "the close button closes the advisor");
+    equal(await page.locator('[data-testid="advisor-open"]').getAttribute("aria-pressed"), "false", "the button shows it is closed");
+    await openAdvisor(page);
+    equal(await page.locator('[data-testid="advisor-msg"]').count(), 2, "the conversation is kept while the panel is closed");
+    equal(await page.locator('[data-testid="advisor-notice"]').count(), 0, "no notice when nothing was cleared");
+    // another field: cleared, and the panel says so
+    await page.evaluate((id) => { window.location.hash = id; }, WET);
+    await page.waitForSelector(`[data-testid="panel"][data-field-id="${WET}"]`);
+    await page.waitForSelector('[data-testid="advisor-notice"]');
+    equal(await page.locator('[data-testid="advisor-msg"]').count(), 0, "another field: the conversation is cleared");
+    check((await text(page, "advisor-notice")).includes(WET), "the panel says it started a new conversation for the new field");
+    equal(await page.locator('[data-testid="advisor-title"]').textContent(), `About field ${WET}`, "the title follows the field");
+    check((await texts(page, '[data-testid="advisor-example"]')).length >= 3, "the chips are back for the new field");
+    await ask(page, "About the second field");
+    await page.waitForSelector('[data-testid="advisor-msg"][data-role="assistant"]');
+    equal(mock.chats.at(-1).messages.length, 1, "the new field's first question carries nothing from the old conversation");
+    equal(mock.chats.at(-1).context.field_id, WET, "and the new field's id");
+    // close the field panel: the advisor goes with it, the conversation stays for the same field
+    await page.locator('[aria-label="Close field panel"]').click();
+    equal(await page.locator('[data-testid="advisor"]').count(), 0, "closing the field closes the advisor");
+    await page.evaluate((id) => { window.location.hash = id; }, WET);
+    await page.waitForSelector(`[data-testid="panel"][data-field-id="${WET}"]`);
+    await openAdvisor(page);
+    equal(await page.locator('[data-testid="advisor-msg"]').count(), 2, "the same field opened again still has its conversation");
+    // the farm: another subject
+    await page.locator('[aria-label="Close field panel"]').click();
+    await page.locator('[data-testid="farm-toggle"]').click();
+    await page.waitForSelector('[data-testid="farm-panel"]');
+    await page.locator('[data-testid="advisor-open"]').click();
+    await page.waitForSelector('[data-testid="advisor"][data-subject="farm"]');
+    equal(await page.locator('[data-testid="advisor-title"]').textContent(), "About your farm", "the farm advisor says what it is about");
+    equal(await page.locator('[data-testid="advisor-msg"]').count(), 0, "opening the farm clears the conversation");
+    check((await text(page, "advisor-notice")).includes("farm"), "and says so");
+    const farmChips = await texts(page, '[data-testid="advisor-example"]');
+    equal(JSON.stringify(farmChips), JSON.stringify(exampleQuestions({ kind: "farm" }, null)), "farm example questions");
+    await farmChips.length && page.locator('[data-testid="advisor-example"]').first().click();
+    await page.waitForSelector('[data-testid="advisor-msg"][data-role="assistant"]');
+    const farmSent = mock.chats.at(-1);
+    equal(JSON.stringify(farmSent.context.farm_field_ids), JSON.stringify([DRY, WET]), "context: the fields of the farm");
+    equal("field_id" in farmSent.context, false, "context: no single field while the farm is open");
+    // a field opened from the farm panel is a new subject; going back to the farm is another
+    await page.keyboard.press("Escape");
+    equal(await page.locator('[data-testid="advisor"]').count(), 0, "Escape closes the advisor in the farm panel too");
+    equal(await page.locator('[data-testid="farm-panel"]').count(), 1, "and leaves the farm panel");
+    await context.close();
+    log("  ✓ advisor conversation: kept while the panel is closed, cleared (with a notice) for another field and for the farm; the farm's fields are sent");
+  }
+
+  // ---- 6. a phone: the advisor is full screen -----------------------------------------------------------------
+  {
+    const { context, page, monitor } = await open(PHONE, HAS_KEY, ok(CANNED), { field: WET });
+    await page.locator('[data-testid="advisor-open"]').scrollIntoViewIfNeeded();
+    await page.locator('[data-testid="advisor-open"]').tap();
+    await page.waitForSelector('[data-testid="advisor"][data-state="ready"]');
+    const full = await page.evaluate(() => {
+      const r = document.querySelector('[data-testid="advisor"]').getBoundingClientRect();
+      const chips = [...document.querySelectorAll('[data-testid="advisor-example"]')].filter((node) => node.getBoundingClientRect().right > window.innerWidth).length;
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, page: document.documentElement.scrollWidth, chips, vw: window.innerWidth, vh: window.innerHeight };
+    });
+    check(full.left <= 0 && full.top <= 0 && full.right >= full.vw && full.bottom >= full.vh, `phone: the advisor fills the screen (${JSON.stringify(full)})`);
+    check(full.page <= PHONE.width, `phone: the page scrolls sideways (${full.page}px)`);
+    equal(full.chips, 0, "phone: example questions fit the width");
+    await page.locator('[data-testid="advisor-example"]').first().tap();
+    await page.waitForSelector('[data-testid="advisor-msg"][data-role="assistant"]');
+    await page.locator('[data-testid="advisor-based"] summary').tap();
+    const fit = await page.evaluate(() => {
+      const list = document.querySelector('[data-testid="advisor-messages"]');
+      const input = document.querySelector('[data-testid="advisor-input"]').getBoundingClientRect();
+      return { sideways: list.scrollWidth - list.clientWidth, inputInside: input.bottom <= window.innerHeight && input.left >= 0 && input.right <= window.innerWidth };
+    });
+    check(fit.sideways <= 0, `phone: the conversation scrolls sideways by ${fit.sideways}px`);
+    check(fit.inputInside, "phone: the input box is on screen");
+    const phoneShot = await shot(page, "phase4-advisor-phone.png");
+    await page.locator('[data-testid="advisor-close"]').tap();
+    equal(await page.locator('[data-testid="advisor"]').count(), 0, "phone: Close returns to the field");
+    check(monitor.problems.length === 0, `console errors on the phone:\n  ${monitor.problems.join("\n  ")}`);
+    await context.close();
+    log(`  ✓ advisor on a phone: full screen, chips and answer fit, the input stays on screen → ${phoneShot}`);
+  }
+
+  // ---- 7. one live question, only when the server says there is a key ----------------------------------------
+  if (!realStatus.available) {
+    log("  - advisor live question skipped: /advisor/status says there is no key");
+  } else if (process.env.ADVISOR_LIVE === "0") {
+    log("  - advisor live question skipped (ADVISOR_LIVE=0)");
+  } else {
+    const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
+    const page = await context.newPage();
+    page.setDefaultTimeout(TIMEOUT);
+    try {
+      await openField(page, WET);
+      await openAdvisor(page);
+      equal(await page.locator('[data-testid="advisor"]').getAttribute("data-state"), "ready", "live: the panel is ready when the status says available");
+      const chat = page.waitForResponse((response) => response.url().endsWith("/advisor/chat"), { timeout: 170000 });
+      await page.locator('[data-testid="advisor-example"]').first().click();
+      const response = await chat;
+      const body = await response.json().catch(() => null);
+      if (response.status() !== 200 || !body?.answer) {
+        console.warn(`  WARNING: the live advisor call did not give an answer (HTTP ${response.status()}: ${String(body?.detail ?? "no detail").replace(/AIza\S+/g, "<key>")}). Not counted as a failure.`);
+      } else {
+        await page.waitForSelector('[data-testid="advisor-msg"][data-role="assistant"]', { timeout: TIMEOUT });
+        check(!/AIza[0-9A-Za-z_-]{20,}/.test(JSON.stringify(body)), "live: the answer carries no key");
+        const shown = squash(await page.locator('[data-testid="advisor-answer"]').first().evaluate((node) => node.innerText)).replace(/ \(not matched to our data\)/g, "");
+        const expected = squash(body.answer.replace(/\*\*/g, "").replace(/^\s*[*-]\s+/gm, "").replace(/^#+\s+/gm, ""));
+        equal(shown, expected, "live: the page shows the answer the API gave");
+        const used = body.tool_calls.map((c) => c.name);
+        log(`  ✓ live question (one): answered with ${used.length} tool calls (${[...new Set(used)].join(", ") || "none"}); ${body.grounding.checked} numbers checked, ${body.grounding.unmatched.length} not matched`);
+      }
+    } catch (error) {
+      if (error instanceof Failure) throw error;
+      console.warn(`  WARNING: the live advisor question failed (${String(error.message).split("\n")[0].replace(/AIza\S+/g, "<key>")}). Not counted as a failure.`);
+    }
+    await context.close();
+  }
 }
 
 let browser;

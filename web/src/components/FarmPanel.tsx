@@ -23,6 +23,7 @@ import { hectaresToAcres, plural } from "../lib/format";
 import { plansQuery } from "../lib/planner";
 import type { PlannerChoices } from "../lib/planner";
 import type { FarmBand, FarmField, FarmLimit, FarmPlan, FarmYear } from "../types";
+import { AdvisorButton } from "./AdvisorButton";
 import { ErrorNote } from "./FieldPanel";
 import { inchesWords } from "../lib/water";
 import { PlannerControls } from "./PlannerControls";
@@ -51,9 +52,11 @@ interface FarmPanelProps {
   onClear: () => void;
   onOpenField: (id: string) => void;
   onClose: () => void;
+  /** The "Farm advisor" button: whether the chat is open, and how to toggle it. */
+  advisor?: { open: boolean; onToggle: () => void };
 }
 
-export function FarmPanel({ ids, areaById, choices, onChoices, water, minimum, onLimits, onRemove, onClear, onOpenField, onClose }: FarmPanelProps) {
+export function FarmPanel({ ids, areaById, choices, onChoices, water, minimum, onLimits, onRemove, onClear, onOpenField, onClose, advisor }: FarmPanelProps) {
   const id = useId();
   const request = farmRequest(ids, choices, water, minimum);
   const body = request === null ? null : JSON.stringify(request);
@@ -91,6 +94,7 @@ export function FarmPanel({ ids, areaById, choices, onChoices, water, minimum, o
           <p className="panel-area tabular" data-testid="farm-acres">
             {ids.length > 0 && <>{formatWhole(totalAcres)} acres in total</>}
           </p>
+          {advisor && <AdvisorButton open={advisor.open} onToggle={advisor.onToggle} />}
         </div>
         <button type="button" className="icon-button" onClick={onClose} aria-label="Close the farm plan" title="Close the farm plan">
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
