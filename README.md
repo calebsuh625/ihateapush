@@ -277,6 +277,21 @@ the pipeline validates against it before writing and the API validates on startu
 
 ## Phase 2B: rotation effects from look-alike neighbours
 
+> **⚠️ FAKE SOIL DATA.** Every Phase 2B number on this branch comes from **made-up soil scores**
+> (`data/soil_health_fake.parquet`) with crop effects planted on purpose. They show the method recovers
+> known effects; they are **not findings**. Re-run `make causal` once Phase 2A's real
+> `data/soil_health.parquet` is in place; no code changes are needed.
+>
+> | Comparison (fake data) | Pairs | Estimate [95% CI] | Planted |
+> |---|---|---|---|
+> | alfalfa/perennial vs continuous corn | 112 | +0.095 [+0.067, +0.124] | +0.089 |
+> | alfalfa/perennial vs wheat-sorghum-fallow | 81 | +0.151 [+0.122, +0.179] | +0.154 |
+> | diverse vs wheat-sorghum-fallow | 450 | +0.021 [+0.016, +0.028] | +0.018 |
+> | corn-soy vs continuous corn | 53 | -0.018 [-0.033, +0.004] (not distinguishable from 0) | -0.015 |
+>
+> Placebos (also on fake data): shuffled labels centre on 0; fake switch years 2011-2013 flag 3 of 27
+> alfalfa estimates (+0.01 to +0.02), likely because matching allows up to 2 alfalfa years before 2016.
+
 ```bash
 make causal                                  # ~10 s; log in data/causal.log
 CAUSAL_OUTCOME=bare_soil_index make causal   # analyse another soil column, no code change
