@@ -30,6 +30,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from pipeline.causal import config, soil_data
+from pipeline.region import REGION
 
 router = APIRouter()
 
@@ -40,6 +41,10 @@ CAUSAL_FIELDS_PATH: Path = config.CAUSAL_FIELDS_PATH
 MAX_NEIGHBORS = 5
 
 NOT_READY = "No causal results yet. Run `make causal` (writes data/effects.json and data/pairs.parquet), then try again."
+NOT_MEASURED_HERE = (
+    f"Neighbour comparisons are not measured in {REGION.label} yet: they need this county's own satellite "
+    "soil data. The planner uses the rotation effects measured in Finney County meanwhile."
+)
 
 
 def _num(value: Any, decimals: int = 4) -> float | None:
@@ -70,7 +75,7 @@ def _stamp() -> tuple | None:
 def load_causal(request: Request) -> CausalStore:
     stamp = _stamp()
     if stamp is None:
-        raise HTTPException(status_code=503, detail=NOT_READY)
+        raise HTTPException(status_code=503, detail=NOT_READY if REGION.is_default else NOT_MEASURED_HERE)
     cached: CausalStore | None = getattr(request.app.state, "causal", None)
     if cached is not None and cached.stamp == stamp:
         return cached
