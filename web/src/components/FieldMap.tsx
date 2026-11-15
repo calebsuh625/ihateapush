@@ -5,6 +5,7 @@ import { REGION_CENTER, REGION_ZOOM } from "../config";
 import type { Selection } from "../hooks/useSelection";
 import { boxLoop, fieldsInside, loopArea } from "../lib/farm";
 import { collectionBounds, pointInRings, ringBounds } from "../lib/geo";
+import { NO_VALUE_COLOUR, boxesOf, visibleIndexes } from "../lib/layers";
 import type { FieldCollection } from "../types";
 
 declare global {
@@ -68,6 +69,39 @@ const STYLES: Record<ZoomBand, Record<FieldState, L.PathOptions>> = {
   },
 };
 
+// ---------------------------------------------------------------------------------------------
+// A map layer colours the fields by a value. The fill is the layer's colour in every state; the
+// outline and weight still say hovered, selected, twin or picked for the farm. Painted fills are
+// stronger than the plain ones (the colour is the message), and the plain outline is thinner so it
+// does not cover the colour of a field a few pixels wide.
+// ---------------------------------------------------------------------------------------------
+
+const PAINT_OPACITY: Record<ZoomBand, number> = { far: 0.85, mid: 0.8, near: 0.7 };
+const PAINT_OUTLINE = "#2a352f";
+const PAINT_BASE: Record<ZoomBand, L.PathOptions> = {
+  far: { color: PAINT_OUTLINE, weight: 0.3, opacity: 0.45 },
+  mid: { color: PAINT_OUTLINE, weight: 0.7, opacity: 0.6 },
+  near: { color: PAINT_OUTLINE, weight: 1.5, opacity: 0.8 },
+};
+const paintedCache = new Map<string, L.PathOptions>();
+
+/** The style of a field in `state` when a layer gives it `fill`; the plain style when it gives none. */
+function styleOf(band: ZoomBand, state: FieldState, fill: string | null): L.PathOptions {
+  if (fill === null) return STYLES[band][state];
+  const key = `${band}|${state}|${fill}`;
+  let style = paintedCache.get(key);
+  if (!style) {
+    const strong = state === "hover" || state === "farmHover" || state === "selected";
+    style = {
+      ...(state === "base" ? PAINT_BASE[band] : STYLES[band][state]),
+      fillColor: fill,
+      fillOpacity: Math.min(1, PAINT_OPACITY[band] + (strong ? 0.1 : 0)),
+    };
+    paintedCache.set(key, style);
+  }
+  return style;
+}
+
 /** Leave room for the title card in the top-left corner when fitting the view. */
 const FIT_ALL: L.FitBoundsOptions = { paddingTopLeft: [24, 104], paddingBottomRight: [24, 28] };
 const FIT_FARM: L.FitBoundsOptions = { paddingTopLeft: [48, 150], paddingBottomRight: [48, 48], maxZoom: 15, animate: false };
@@ -109,6 +143,13 @@ interface FieldsLayer {
   setTwin(id: string | null): void;
   /** The fields picked for the farm (empty outside farm mode). Only the difference is restyled. */
   setFarm(ids: Iterable<string>): void;
+  /**
+   * Colour the fields by a layer: one colour per field, in the order of the fields (null for the plain
+   * map). Only the fields whose colour changed are restyled.
+   */
+  paint(fills: readonly string[] | null): void;
+  /** Indexes (into the fields) of the fields any part of which is in the current view. */
+  inView(): Uint32Array;
   /** Fields whose centre lies inside a loop of [lon, lat] points. */
   inside(loop: readonly (readonly number[])[]): string[];
   bounds(id: string): L.LatLngBounds | null;
@@ -142,17 +183,28 @@ function createFieldsLayer(map: L.Map, fields: FieldCollection, onPick: (id: str
   let twin: string | null = null;
   let hovered: string | null = null;
   let farm = new Set<string>();
+  let fills: readonly string[] | null = null;
+  const indexOf = new Map<string, number>();
+  fields.features.forEach((feature, i) => {
+    const id = featureId(feature);
+    if (id && !indexOf.has(id)) indexOf.set(id, i);
+  });
+  const fillOf = (id: string): string | null => {
+    const at = indexOf.get(id);
+    return fills === null || at === undefined ? null : (fills[at] ?? NO_VALUE_COLOUR);
+  };
+  const boxes = boxesOf(fields.features);
 
   const stateOf = (id: string): FieldState =>
     id === selected ? "selected" : id === twin ? "twin" : farm.has(id) ? (id === hovered ? "farmHover" : "farm") : id === hovered ? "hover" : "base";
   const restyle = (id: string | null) => {
     if (id === null) return;
-    byId.get(id)?.setStyle(STYLES[band][stateOf(id)]);
+    byId.get(id)?.setStyle(styleOf(band, stateOf(id), fillOf(id)));
   };
 
   const options: L.GeoJSONOptions & { renderer: L.Renderer } = {
     renderer,
-    style: () => STYLES[band].base,
+    style: () => styleOf(band, "base", null),
     onEachFeature: (feature, layer) => {
       const id = featureId(feature);
       if (!id) return;
@@ -235,7 +287,7 @@ function createFieldsLayer(map: L.Map, fields: FieldCollection, onPick: (id: str
     const next = bandFor(map.getZoom());
     if (next === band) return;
     band = next;
-    byId.forEach((layer, id) => layer.setStyle(STYLES[band][stateOf(id)]));
+    byId.forEach((layer, id) => layer.setStyle(styleOf(band, stateOf(id), fillOf(id))));
     syncRing();
   };
 
@@ -282,6 +334,22 @@ function createFieldsLayer(map: L.Map, fields: FieldCollection, onPick: (id: str
         byId.get(id)?.bringToFront(); // its thicker outline goes over the neighbours'
       });
       if (selected !== null) byId.get(selected)?.bringToFront();
+    },
+    paint(next) {
+      const previous = fills;
+      fills = next;
+      if (previous === next) return;
+      // Restyle in place: the polygons stay, only the ones whose colour changed are touched
+      // (all of them when a layer goes on or off or the classes change meaning).
+      fields.features.forEach((feature, i) => {
+        if (previous !== null && next !== null && previous[i] === next[i]) return;
+        restyle(featureId(feature) || null);
+      });
+      if (selected !== null) byId.get(selected)?.bringToFront();
+    },
+    inView() {
+      const b = map.getBounds();
+      return visibleIndexes(boxes, b.getWest(), b.getSouth(), b.getEast(), b.getNorth());
     },
     inside: (loop) => fieldsInside(shapes, loop),
     bounds: (id) => byId.get(id)?.getBounds() ?? null,
@@ -403,18 +471,22 @@ interface FieldsProps {
   twin: string | null;
   /** Pixels of the bottom of the viewport the twin view covers (the map is fitted above it). */
   twinCover: number;
+  /** One colour per field, in the order of the fields, from the chosen map layer; null for the plain map. */
+  fills: readonly string[] | null;
+  /** Called, after the view has stopped changing, with the fields in view. */
+  onView?: (indexes: Uint32Array) => void;
 }
 
 const NO_FARM: readonly string[] = [];
 
-function Fields({ fields, selection, onSelect, onRendered, farm, tool, onLasso, twin, twinCover }: FieldsProps) {
+function Fields({ fields, selection, onSelect, onRendered, farm, tool, onLasso, twin, twinCover, fills, onView }: FieldsProps) {
   const map = useMap();
   const layerRef = useRef<FieldsLayer | null>(null);
   /** The selection the view has already been moved for. */
   const shownRef = useRef<Selection | null>(null);
-  const latest = useRef({ selection, onSelect, onRendered, farm, onLasso, twin, twinCover });
+  const latest = useRef({ selection, onSelect, onRendered, farm, onLasso, twin, twinCover, fills, onView });
   useEffect(() => {
-    latest.current = { selection, onSelect, onRendered, farm, onLasso, twin, twinCover };
+    latest.current = { selection, onSelect, onRendered, farm, onLasso, twin, twinCover, fills, onView };
   });
 
   // Build the layer once per collection, then frame it: the linked field if the URL names one
@@ -427,6 +499,7 @@ function Fields({ fields, selection, onSelect, onRendered, farm, tool, onLasso, 
     layer.select(current?.id ?? null);
     layer.setFarm(latest.current.farm ?? NO_FARM);
     layer.setTwin(latest.current.twin);
+    layer.paint(latest.current.fills);
     shownRef.current = current;
     const linked = current ? layer.bounds(current.id) : null;
     const all = collectionBounds(fields);
@@ -444,6 +517,32 @@ function Fields({ fields, selection, onSelect, onRendered, farm, tool, onLasso, 
       L.Util.cancelAnimFrame(frame);
       layer.destroy();
       layerRef.current = null;
+    };
+  }, [map, fields]);
+
+  // Follow the map layer: restyle in place, never rebuild the polygons.
+  useEffect(() => {
+    layerRef.current?.paint(fills);
+  }, [fills, fields]);
+
+  // Tell the layer control which fields are in view, once the map has stopped moving for a moment.
+  useEffect(() => {
+    let timer = 0;
+    const send = () => {
+      const layer = layerRef.current;
+      if (layer) latest.current.onView?.(layer.inView());
+    };
+    const soon = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(send, 150);
+    };
+    map.on("moveend", soon);
+    map.on("resize", soon);
+    soon();
+    return () => {
+      window.clearTimeout(timer);
+      map.off("moveend", soon);
+      map.off("resize", soon);
     };
   }, [map, fields]);
 
@@ -555,9 +654,12 @@ interface FieldMapProps {
   twin?: string | null;
   /** How many pixels of the viewport's bottom that view covers, so the map is fitted above it. */
   twinCover?: number;
+  /** One colour per field from the chosen map layer; null (the default) for the plain map. */
+  fills?: readonly string[] | null;
+  onView?: (indexes: Uint32Array) => void;
 }
 
-export function FieldMap({ fields, selection, onSelect, onRendered, farm = null, tool = "click", onLasso, twin = null, twinCover = 0 }: FieldMapProps) {
+export function FieldMap({ fields, selection, onSelect, onRendered, farm = null, tool = "click", onLasso, twin = null, twinCover = 0, fills = null, onView }: FieldMapProps) {
   return (
     <MapContainer
       className="map"
@@ -587,6 +689,8 @@ export function FieldMap({ fields, selection, onSelect, onRendered, farm = null,
           onLasso={onLasso}
           twin={twin}
           twinCover={twinCover}
+          fills={fills}
+          onView={onView}
         />
       )}
     </MapContainer>

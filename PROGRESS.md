@@ -10,7 +10,7 @@ Branch `phase-4`, cut from `main` at `15aceb7`. Nothing is pushed. One commit pe
 | 2 | Transition path | done (checked, committed) |
 | 3 | Whole-farm planner | done (checked, committed) |
 | 4 | Twin view | done (checked, committed) |
-| 5 | Map layers + time-lapse | not started |
+| 5 | Map layers + time-lapse | done (checked, committed) |
 | 6 | Water reality check | not started |
 | 7 | Farm advisor (chat) | not started |
 | 8 | Performance + reliability | not started |
@@ -112,9 +112,32 @@ which limit binds, and the rotation and start year chosen for each field with wh
   no button and the usual reason); one pair is noisy and the view says so; interval and placebo belong
   to the comparison, not the pair; comparisons under 10 pairs have no average.
 
+### 5. Map layers + time-lapse
+
+- The farmer can colour the whole map with "Colour fields by" (bottom left): Bare days and Wind erosion risk for
+  each year 2016-2024 with a year slider and play / pause (a year a second), Rotation change recommended (how
+  the field's last four years compare with our first pick), and Irrigated or dryland. The legend shows the
+  class breaks, the caveat, and counts, acres, median and middle half or share per class for the fields in view
+  next to the county, so zooming and panning change the numbers. Selection, farm mode and the twin outline
+  stay on top; the layer and year stay when a field is opened.
+- Try: http://localhost:5173, pick "Bare days", press play, zoom in. API `GET /layers`, `GET /layers/{name}`
+  (`?year=`), arrays in the field order of `GET /fields` (README "Phase 4", schema.md). Notes:
+  data/logs/phase4/item_5.md.
+- Decisions: class breaks come from the data (20/40/60/80th percentile of all field-years, moved to round
+  numbers: bare days 1/20/50/100; erosion index 0.002/0.05/0.2/0.3), one scale for all years; "within the
+  spread" = the score gap is no bigger than the larger of the two rotations' low-to-high range across the six
+  climate models; a sixth class was added for 114 fields whose own pattern scores as high as our first pick;
+  the erosion layer uses each single year's observed wind factor (spiky: 2022 is at the cap, and says so);
+  the rotation layer is built once in the background (about 3 s) and cached in data/layers_cache/.
+- Checker fixes: shares were rounded twice (251 of 7,255 showed as 4%, classes summed to 102%); the score gap
+  was not shown (now the county median per class under each label); two table columns ran together.
+- Limits: the rotation layer is for default priorities and today's climate only; 1,420 fields (20%) are
+  "cannot tell"; 2016 has 295 fields with no bare-days reading (grey); the layer is not in the page address;
+  a field's own layer value is not in its panel; on a phone with a field open the card covers most of the map.
+
 ## What is left
 
-Items 5 to 8 in the table above.
+Items 6 to 8 in the table above.
 
 ## For you in the morning
 
@@ -150,3 +173,9 @@ Items 5 to 8 in the table above.
   look in pipeline/causal/ (not edited tonight).
 - Item 4: table rows are each rounded to 0.1, so "this minus twin" can be 0.1 off the two rows above it
   (for example -10.8 and +25.9 against -36.6). Say if you want whole days instead.
+- Item 5, look at: the rotation layer says "a little higher, within the spread between climate models" for
+  53% of fields and "clearly higher" for only 3%. That is the honest reading of the model spread, but the map
+  mostly says "our pick is not clearly better". Say if you want a different rule (for example: ahead in all
+  six models).
+- Item 5: the wind erosion time-lapse is dominated by 2022 (wind factor 300 against 46-136 in other years),
+  so that year turns the whole county dark. It is the observed factor and the caveat says so.

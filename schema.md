@@ -801,6 +801,145 @@ what the numbers are is a difference between look-alike neighbours in the days t
 same rotation sits on the same side); a `did` of exactly zero is counted as `no_change`. Numbers are rounded
 to one decimal (bare days are measured to a tenth).
 
+## `GET /layers` and `GET /layers/{name}` (Phase 4: map layers)
+
+County-wide per-field values the map colours by (`api/layers.py`). Layer names, in this order:
+`bare_days`, `erosion_risk`, `rotation_change`, `irrigation`.
+
+**How to join.** Every `values` (and `detail`) array has one entry per field in the order of the
+`features` array of `GET /fields`: `values[i]` belongs to `features[i]`. `field_count` and `fields_etag`
+(the ETag header of `GET /fields`) are in every answer.
+
+**Number layers** (`kind: "number"`: `bare_days`, `erosion_risk`) send whole numbers or `null`:
+real value = `values[i] * value_scale` (`1` for bare days, `0.001` for the erosion index; bare days are
+rounded half up). Class index of a value = how many entries of `breaks_scaled` are `<=` it.
+**Class layers** (`kind: "class"`: `rotation_change`, `irrigation`) send the index into `classes`, and a
+second array `detail` (the score gap in thousandths; the irrigation probability in whole percent).
+
+`GET /layers` (always 200; about 2 kB):
+
+```jsonc
+{
+  "field_count": 7255,
+  "fields_etag": "W/\"f72bb73aa9a48d763981\"",
+  "is_fake": false,
+  "join": "values[i] (and detail[i]) belongs to features[i] of GET /fields: ...",
+  "layers": [
+    {
+      "name": "bare_days", "url": "/layers/bare_days",
+      "title": "Days the soil sat bare",
+      "kind": "number",                     // "number" | "class"
+      "status": "ready",                    // "ready" | "building" | "unavailable"
+      "reason": null,                       // one sentence when not ready
+      "unit": "days a year",                // null for class layers
+      "value_scale": 1,
+      "years": [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024],   // null for layers without years
+      "method": "...", "caveat": "...", "source": "data/soil_health.parquet",
+      "field_count": 7255,
+      "higher_is_worse": true,              // number layers only
+      "rule": "value = values[i] * value_scale; ...",
+      "breaks": [1, 20, 50, 100],           // number layers: in the real unit
+      "breaks_scaled": [1, 20, 50, 100],    // the same in the unit of `values`
+      "breaks_note": "Breaks are the 20th, 40th, 60th and 80th percentile ...",
+      "classes": [                          // number layers: one more than the breaks
+        {"index": 0, "label": "under 1", "min": null, "max": 1, "min_scaled": null, "max_scaled": 1},
+        {"index": 1, "label": "1 to under 20", "min": 1, "max": 20, "min_scaled": 1, "max_scaled": 20}
+        // ... {"index": 4, "label": "100 or more", "min": 100, "max": null, ...}
+      ]
+    },
+    // erosion_risk: as above with "value_scale": 0.001, "unit": "relative index",
+    //   "breaks": [0.002, 0.05, 0.2, 0.3], "breaks_scaled": [2, 50, 200, 300], and
+    //   "inputs": {"erosion_climate_by_year": {"2016": 71, ..., "2022": 300, ...},   // 100 = 2000-2024 average
+    //              "erosion_climate_note": "...", "fields_soil_assumed": 0,
+    //              "fields_soil_assumed_note": "...", "index_cap": 3.0}
+    {
+      "name": "rotation_change", "kind": "class", "status": "ready", "years": null, "unit": null, "value_scale": 1,
+      "ordered": true,                      // class layers: true when the classes run in a meaningful order
+      "classes": [
+        {"index": 0, "key": "same", "label": "Same plan: the field already follows our first pick", "no_value": false},
+        {"index": 1, "key": "top_pick", "label": "Among our top picks: the field follows our second or third pick", "no_value": false},
+        {"index": 2, "key": "not_higher", "label": "Our first pick does not score higher than what the field does now", "no_value": false},
+        {"index": 3, "key": "within_spread", "label": "Our first pick scores a little higher, within the spread between climate models", "no_value": false},
+        {"index": 4, "key": "clearly_higher", "label": "Our first pick scores clearly higher", "no_value": false},
+        {"index": 5, "key": "unknown", "label": "Cannot tell: no four-year pattern on record", "no_value": true}
+      ],
+      "detail": {"key": "score_gap", "label": "First pick's ranking score minus the current pattern's",
+                 "unit": "score points (0 to 1 scale)", "value_scale": 0.001, "note": "..."},
+      "settings": {"weights": {"soil": 0.3, "water": 0.2, "money": 0.3, "risk": 0.2}, "scenario": "ssp245", "horizon": 2025}
+      // while it is being worked out: "status": "building", "reason": "...",
+      //   "progress": {"done": 1200, "total": 7255}, "retry_after_s": 2, and no classes / detail / settings
+    },
+    {
+      "name": "irrigation", "kind": "class", "status": "ready", "years": null, "ordered": false,
+      "classes": [{"index": 0, "key": "dryland", "label": "Dryland (our best guess)", "no_value": false},
+                  {"index": 1, "key": "irrigated", "label": "Irrigated (our best guess)", "no_value": false},
+                  {"index": 2, "key": "unknown", "label": "Not in the field traits table", "no_value": true}],
+      "detail": {"key": "irrigated_prob", "label": "How likely the field is irrigated", "unit": "%", "value_scale": 1, "note": "..."}
+    }
+  ]
+}
+```
+
+An unavailable layer has only the common keys (`name`, `title`, `kind`, `status`, `reason`, `unit`,
+`value_scale`, `years: null`, `method`, `caveat`, `source`, `field_count`, `rule`, `higher_is_worse` or
+`ordered`, `url`).
+
+`GET /layers/{name}`: the layer's entry from the listing (without `url`), plus `fields_etag`, `is_fake`,
+`join` and `series`. Query `year=2020` keeps that one year in `series` (400 for a year the layer does not
+have, or for a layer without years). 404 for an unknown name. 200 with `"status": "unavailable"` and no
+`series` when its table is missing. **202** with `"status": "building"`, `progress` and a `Retry-After`
+header while `rotation_change` is being worked out (ask again). Headers as `GET /fields`: `ETag`
+(send `If-None-Match` for a 304), `Cache-Control: no-cache`, gzip.
+
+```jsonc
+// number layer: one entry per year, ascending
+"series": [
+  {
+    "year": 2016,
+    "values": [54, 15, 144, 139, ...],     // field_count whole numbers or null, in the order of GET /fields
+    "summary": {
+      "fields": 7255, "fields_with_value": 6960, "fields_no_value": 295,
+      "acres_with_value": 467566,
+      "median": 27, "p25": 0, "p75": 92,     // real unit, of the fields with a value (null when there are none)
+      "classes": [                           // one per class; shares are of the fields (acres) WITH a value
+        {"index": 0, "fields": 1745, "acres": 103758, "share_fields": 0.251, "share_acres": 0.222}
+      ]
+    }
+  }
+]
+// class layer: one entry, "year": null
+"series": [
+  {
+    "year": null,
+    "values": [0, 0, 3, 5, ...],             // class index per field
+    "detail": [0, 0, 25, null, ...],         // see `detail` above; null = none
+    "summary": {
+      "fields": 7255, "fields_with_value": 5835, "fields_no_value": 1420,   // no value = the `no_value` class
+      "acres": 498797,
+      "classes": [                           // shares are of ALL fields (acres)
+        {"index": 0, "fields": 1419, "acres": 150853, "share_fields": 0.196, "share_acres": 0.302, "detail_median": 0.0}
+      ],
+      "detail": {"fields": 5835, "median": 0.022, "p25": 0.0, "p75": 0.057}   // real unit of `detail`
+    }
+  }
+]
+```
+
+Rotation-change classes (`classify_change` in `api/layers.py`), from the field's `GET /field/{id}/plans`
+answer with no parameters: `unknown` when `current` is null; `same` when `current.is_candidate` and its
+`cycle` is `plans[0].cycle` (gap 0); `top_pick` when it is `plans[1]` or `plans[2]`; otherwise with
+gap = `plans[0].scores.robust - current.scores.robust`: `not_higher` when gap <= 0, `within_spread` when
+gap <= the larger of the two `spread.overall.high - spread.overall.low`, else `clearly_higher`.
+
+## Cache: `data/layers_cache/rotation_change.json` (optional, git-ignored)
+
+Written by the API after it has run the planner for every field (`rotation_change_fake.json` for the
+made-up fields; `$LAYERS_CACHE_DIR` moves the folder). Safe to delete: it is rebuilt on the next request.
+`{"version", "key", "field_ids_sha1", "field_count", "built", "class_keys", "classes": [class index per
+field], "gaps": [thousandths or null per field]}`, in the field order of `GET /fields`. `key` is a hash
+of the planner's table versions (path, size and time stamp of every file the planner reads, its
+settings), the fields file's ETag and the default priorities; a file with another key is ignored.
+
 ## `GET /climate`
 
 What the smart planner assumes about the future. `{"available": true, "source", "models" (list of 6),

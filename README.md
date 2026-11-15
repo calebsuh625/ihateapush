@@ -263,6 +263,7 @@ Base URL `http://127.0.0.1:8010` (interactive docs at `/docs`).
 | `GET /effects` | Phase 2B: `data/effects.json` (503 until `make causal` has run) |
 | `GET /field/{id}/neighbors` | Phase 2B: the field's matched look-alike neighbours, their crops and soil timelines |
 | `GET /field/{id}/twin` | Phase 4: the field and its best-matched neighbour side by side: histories, bare days, the pair's difference, its comparison's interval, how many pairs agree, the placebo (503 until `make causal` has run) |
+| `GET /layers`, `GET /layers/{name}` | Phase 4: county-wide per-field values the map can colour by (`bare_days`, `erosion_risk`, `rotation_change`, `irrigation`), as arrays in the field order of `GET /fields`, with class breaks and county summaries (see [Phase 4](#phase-4)) |
 
 On startup the API loads `data/fields.parquet` if it exists, otherwise `data/fields_fake.parquet`,
 logs which one, and validates it against `schema.md`; a file that does not match stops the server
@@ -1001,3 +1002,72 @@ says a rotation caused or improved anything.
   unit tests in `web/tests/twin.test.mjs`), a twin outline in `web/src/components/FieldMap.tsx`, the button in
   `Neighbors.tsx`. Tests: `tests/test_twin.py` (made-up tables; one real-data test), browser checks in
   `web/e2e/phase4.mjs` (screenshots `web/e2e/screenshots/phase4-twin*.png`).
+
+### Map layers (item 5, backend)
+
+County-wide values per field that the map can colour by. Four layers, all from our own tables and the planner:
+
+| layer | what | from |
+|---|---|---|
+| `bare_days` | days the soil sat bare, per year 2016-2024, whole days; a field-year with no reading stays empty | `data/soil_health.parquet` |
+| `erosion_risk` | the planner's wind erosion index (`api/planner/erosion.py`) per year: that year's measured bare days x the field's wind erodibility x a slope factor x that year's observed wind-erosion climate | soil table, `data/field_traits.parquet`, `data/climate_history.parquet`, field slope |
+| `rotation_change` | one class per field for the default priorities and today's climate: same plan / among our top picks / our first pick does not score higher / a little higher but within the spread between climate models / clearly higher / cannot tell; with the score gap | the planner, exactly as `GET /field/{id}/plans` with no parameters |
+| `irrigation` | irrigated or dryland (our best guess), with the probability in whole percent | `data/field_traits.parquet` |
+
+- **Endpoints** (`api/layers.py`). `GET /layers` lists the layers: status, years, unit, class breaks, a method
+  note and a caveat each (2.5 kB). `GET /layers/{name}` (optionally `?year=2020`) sends the values as
+  arrays in the order of the `features` of `GET /fields` (`values[i]` belongs to `features[i]`;
+  `field_count` and `fields_etag` let a client check), plus per year a county summary: median, quartiles,
+  fields and acres per class with their shares, fields with no value. Whole numbers on the wire
+  (`value_scale` says what one unit is), gzipped once, with an ETag (304 when unchanged). Sizes for the
+  county: 75 kB for nine years of bare days, 89 kB for nine years of erosion risk, 11 kB for the rotation layer. Shapes in `schema.md`.
+- **Class breaks come from the data**: the 20th, 40th, 60th and 80th percentile of every field-year pooled,
+  each moved to the nearest round number, so one scale serves every year (today: 1 / 20 / 50 / 100 bare
+  days; 0.002 / 0.05 / 0.2 / 0.3 for the erosion index). The web app must take them from the API.
+- **Rotation change** runs the planner for all 7,255 fields (about 3 s) once, in a background thread, when
+  the layers are first asked for; until then `GET /layers/rotation_change` answers 202 with
+  `"status": "building"` and a progress count. The result is cached in `data/layers_cache/rotation_change.json`
+  under a key made of the planner's table versions, so a restart reads it back; when a planner table or
+  setting changes it is rebuilt. "Within the spread" means the gap between our first pick's ranking score
+  and the current pattern's is no bigger than how far either one's score moves across the six climate
+  models (highest minus lowest); "clearly higher" means it is bigger.
+- **Missing files.** A layer whose table is missing answers `"status": "unavailable"` with a reason; the
+  others still work (no traits table: no irrigation and no erosion layer; no climate tables: no rotation
+  layer; the made-up demo fields only get the rotation layer).
+- **Limits.** The erosion layer uses single years of the wind climate, which are spiky (2022 sits at the
+  cap of 3 times the average) and which the planner itself never uses singly: read a year as that
+  year's weather on that year's cover, and it is a relative index, not tons of soil. Bare days are a
+  satellite estimate; 2016 has 295 fields with no reading. The rotation layer is for the default
+  priorities only, and its gap is a model score, not a measured gain; 20% of fields have no four-year
+  pattern of the six crops and cannot be compared; 2% follow a pattern outside our candidate list that
+  scores as high as our first pick. The irrigation layer is a guess, not a record of wells. The map screen is
+  described in the next section; this part is the API (browser suite `e2e:phase4` checks it against `/fields`, `/field/{id}/soil`
+  and `/field/{id}/plans`; unit tests in `tests/test_layers.py`).
+
+### Map layers and time-lapse (item 5, web)
+
+A "Colour fields by" card at the bottom left of the map: Fields (as before), Bare days, Wind erosion risk,
+Rotation change recommended, Irrigated or dryland. The one canvas layer of fields is restyled in place (only the
+fields whose colour changed are touched, nothing is rebuilt), so switching layer or year is instant after the
+first load of a layer (every year comes in one answer, `GET /layers/{name}`).
+
+- **Year slider 2016-2024** with play / pause (one year a second; stops at the last year, when the slider is
+  dragged or another layer is chosen; play from the last year starts again at the first). For the rotation and
+  irrigation layers, which have one value per field, the slider and play are disabled with a one-line reason.
+- **Legend** from the API: class labels, unit, the layer's caveat, and for the wind layer that year's wind factor.
+  Class breaks are never written in the web app. Colours are ours: purple (bare days) and teal (wind) get lighter or
+  darker in one direction, rose (rotation change) the same, ochre / teal for dryland / irrigated, and
+  "no value" is a neutral grey that no scale uses. The lightness steps are tested (`web/tests/layers.test.mjs`).
+- **Numbers for the view**: the same table gives, for the fields with any part on the map and for the whole
+  county, fields, acres, median and middle half (number layers) and the count and share of every class. "In view"
+  is computed in the browser from the layer arrays and the field outlines, 150 ms after the map stops moving;
+  the county column is the API's own summary. Shares are of the fields with a value (bare days, wind) or of all
+  fields (rotation, irrigation), worked out from the counts (the API's shares are rounded to three decimals, and
+  rounding those again can be 1% off); acres are acres of the fields counted. Under each class of the rotation
+  and irrigation layers: the API's county median of the score gap or of the chance the field is irrigated.
+- **Kept**: layer and year stay when a field is opened or closed and in farm mode; the selected field, picked farm
+  fields and the twin keep their outlines (blue, orange, dashed amber) over the layer's fill.
+- **Checks**: a layer is used only if its `field_count` (and, when the browser can read it, `fields_etag`) agrees
+  with the fields on the map; otherwise the card says so instead of colouring the wrong fields.
+- Limits: the phone starts with the legend folded; a field partly in view counts as in view; the layer is
+  not in the page address (a reload goes back to Fields). See `data/logs/phase4/item_5.md`.

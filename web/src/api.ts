@@ -1,5 +1,6 @@
 // The one place the app talks to the backend. Every call returns typed JSON or throws ApiError
 // (or the browser's AbortError when the caller cancelled the request).
+import type { LayerAnswer, LayerCatalog } from "./lib/layers";
 import type { FarmPlan, FieldCollection, FieldDetail, FieldPlans, FieldSatellite, FieldScore, FieldSoil, FieldTransition, Health } from "./types";
 
 const configured: string | undefined = import.meta.env.VITE_API_URL;
@@ -90,6 +91,32 @@ export const api = {
       (b) => isObject(b) && b.type === "FeatureCollection" && Array.isArray(b.features),
       signal,
     ),
+
+  /** The list of map layers (GET /layers). */
+  layers: (signal?: AbortSignal) =>
+    getJson<LayerCatalog>("/layers", (b) => isObject(b) && Array.isArray(b.layers) && typeof b.field_count === "number", signal),
+
+  /** One map layer, every year of it (GET /layers/{name}). Answers 202 with status "building" while it is made. */
+  layer: (name: string, signal?: AbortSignal) =>
+    getJson<LayerAnswer>(
+      `/layers/${encodeURIComponent(name)}`,
+      (b) => isObject(b) && b.name === name && typeof b.status === "string" && typeof b.field_count === "number",
+      signal,
+    ),
+
+  /**
+   * The ETag of the fields the map holds, read from the cached answer of GET /fields (so no second
+   * download). Null when the browser has no copy or the header is hidden from this page.
+   */
+  async fieldsEtag(signal?: AbortSignal): Promise<string | null> {
+    try {
+      const res = await fetch(`${API_BASE}/fields`, { signal, cache: "force-cache" });
+      void res.body?.cancel();
+      return res.headers.get("etag");
+    } catch {
+      return null;
+    }
+  },
 
   field: (fieldId: string, signal?: AbortSignal) =>
     getJson<FieldDetail>(

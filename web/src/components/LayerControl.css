@@ -1,0 +1,209 @@
+/* The map layer card (LayerControl.tsx): bottom-left over the map. Tokens come from styles.css. */
+
+.lyr {
+  position: absolute;
+  bottom: 28px; /* clear of the attribution line */
+  left: var(--s3);
+  z-index: 1050; /* over the fields, under the title card, the twin sheet and the zoom buttons' menus */
+  display: grid;
+  gap: 6px;
+  width: min(420px, calc(100% - 2 * var(--s3) - 52px));
+  max-height: calc(100% - 200px);
+  min-height: 0;
+  padding: var(--s2) var(--s3);
+  overflow-y: auto;
+  background: rgb(255 255 255 / 96%);
+  border: 1px solid rgb(16 24 20 / 14%);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.lyr-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.lyr-name {
+  flex: none;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.lyr-select {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 2px var(--s2);
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+}
+
+.lyr-year {
+  gap: 6px;
+}
+
+.lyr-play {
+  flex: none;
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--accent-ink);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.lyr-play:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.lyr-play:disabled {
+  color: var(--muted);
+  border-color: var(--line-strong);
+  cursor: default;
+}
+
+.lyr-slider {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.lyr-year-text {
+  flex: none;
+  min-width: 3.2em;
+  font-weight: 650;
+  text-align: right;
+}
+
+.lyr-note,
+.lyr-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.lyr-summary {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.lyr-toggle {
+  justify-self: start;
+}
+
+.lyr-legend {
+  display: grid;
+  gap: 6px;
+}
+
+.lyr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.lyr-table caption {
+  padding-bottom: 4px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.lyr-unit {
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.lyr-table th,
+.lyr-table td {
+  padding: 2px 0;
+  font-weight: 400;
+  text-align: right;
+  vertical-align: top;
+}
+
+.lyr-table thead th {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.lyr-table tbody th {
+  text-align: left;
+  padding-right: var(--s2);
+}
+
+.lyr-table td {
+  width: 22%;
+  padding-left: 10px;
+  white-space: nowrap;
+}
+
+.lyr-table tr.lyr-class th {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.lyr-table tbody tr[data-testid="layer-row-spread"],
+.lyr-table tbody tr[data-testid="layer-row-acres"]:last-of-type {
+  border-bottom: 1px solid var(--line);
+}
+
+.lyr-swatch {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  border: 1px solid rgb(16 24 20 / 45%);
+  border-radius: 3px;
+}
+
+.lyr-label,
+.lyr-text {
+  min-width: 0;
+}
+
+.lyr-text .lyr-label {
+  display: block;
+}
+
+.lyr-detail {
+  display: block;
+  color: var(--ink-2);
+}
+
+.lyr-caveat {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+@media (max-width: 760px), (max-width: 1000px) and (orientation: portrait) {
+  .lyr {
+    left: var(--s2);
+    width: calc(100% - 2 * var(--s2) - 52px);
+    max-height: 46%;
+    padding: 6px var(--s2);
+  }
+
+  .lyr-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}

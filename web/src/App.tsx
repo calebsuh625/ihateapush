@@ -5,9 +5,11 @@ import { TwinView } from "./components/TwinView";
 import { FieldMap } from "./components/FieldMap";
 import type { FarmTool } from "./components/FieldMap";
 import { ErrorNote, FieldPanel } from "./components/FieldPanel";
+import { LayerControl } from "./components/LayerControl";
 import { APP_NAME, REGION_LABEL } from "./config";
 import { useResource } from "./hooks/useResource";
 import type { Resource } from "./hooks/useResource";
+import { useMapLayers } from "./hooks/useMapLayers";
 import { useSelection } from "./hooks/useSelection";
 import { addFields, toggleField } from "./lib/farm";
 import { sheetHeight } from "./lib/twin";
@@ -80,6 +82,9 @@ export default function App() {
   const twinHeight = sheetHeight(window.innerHeight);
 
   const fieldData = fields.status === "ready" ? fields.data : null;
+  // The map layer (colour by bare days, erosion risk …) and its year live here, so they stay as they are
+  // when a field is opened or closed.
+  const layers = useMapLayers(fieldData);
   const areaById = useMemo(() => {
     const areas = new Map<string, number>();
     for (const feature of fieldData?.features ?? []) {
@@ -175,6 +180,8 @@ export default function App() {
           onLasso={lasso}
           twin={twinId}
           twinCover={twinHeight}
+          fills={layers.fills}
+          onView={layers.setViewFields}
         />
 
         <div className="masthead">
@@ -245,6 +252,8 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {fieldData && fieldCount !== 0 && <LayerControl state={layers} />}
 
         {fields.status === "error" && (
           <div className="map-error" data-testid="fields-error">

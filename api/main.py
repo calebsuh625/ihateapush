@@ -17,6 +17,7 @@ Endpoints (the frontend is written against exactly these shapes):
     GET /climate                   the climate futures the smart planner uses (or {"available": false})
     GET /field/{field_id}/satellite  yearly Landsat greenness for that field (optional side file)
     GET /field/{field_id}/soil     yearly satellite organic matter and bare-soil days (optional side file)
+    GET /layers, /layers/{name}    county-wide per-field values the map can colour by (api/layers.py)
 
 Data file, chosen once at startup: $FIELDS_PATH if set, else data/fields.parquet (real), else
 data/fields_fake.parquet. The file is validated against schema.md; a bad or missing file stops
@@ -58,6 +59,7 @@ from fastapi.responses import JSONResponse, Response
 
 from api.causal import router as causal_router
 from api.twin import router as twin_router
+from api.layers import LayerService, router as layers_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from api.planner import config as planner_config
 from api.planner import custom, farm, smart, transition
@@ -1003,6 +1005,20 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
             f"{len(store.fields_geojson) / 1000:,.1f}",
             f"{len(store.fields_geojson_gzip) / 1000:,.1f}",
         )
+        # Phase 4 map layers (api/layers.py): built on first use, nothing is read here. The traits table is
+        # never paired with the fake fields (they reuse real ids), exactly as in /plans.
+        layer_paths = planner_config.settings()
+        app.state.layers = LayerService(
+            store,
+            soil_path=resolve_soil_health_path(
+                os.environ.get("SOIL_HEALTH_PATH"), store.source, REAL_PATH, DEFAULT_SOIL_HEALTH_PATH),
+            traits_path=None if store.is_fake else layer_paths.field_traits_path,
+            history_path=layer_paths.climate_history_path,
+            smart_ok=lambda: (app.state.default_planner
+                              and os.environ.get("PLANNER_ENGINE", "").strip().lower() != "basic"
+                              and _climate_available()),
+            cache_dir=Path(os.environ["LAYERS_CACHE_DIR"]) if os.environ.get("LAYERS_CACHE_DIR") else None,
+        )
         if store.is_fake:
             log.warning(
                 "*** FAKE DATA *** serving the made-up fields in %s. "
@@ -1029,6 +1045,7 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
     app.include_router(router)
     app.include_router(causal_router)  # Phase 2B: /effects, /field/{id}/neighbors
     app.include_router(twin_router)  # Phase 4: /field/{id}/twin
+    app.include_router(layers_router)  # Phase 4: /layers, /layers/{name}
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
     # Local dev: the Vite page on :5173 calls this API on another port. No cookies, so "*" is fine.
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])

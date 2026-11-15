@@ -25,6 +25,16 @@
 // GET /field/{id}/twin. On the map the twin is outlined in a second colour (read from the canvas) and a
 // click on it opens it. Escape closes the view, then the field. Phone width stacks it.
 //
+// Item 5, the map layers (API only; the map screen is a later item): GET /layers and GET /layers/{name}
+// are asked through the app's API prefix and compared, for a spread of fields, with GET /fields (the
+// join order), GET /field/{id}/soil (bare days), and GET /field/{id}/plans (irrigation, and the
+// rotation-change class and score gap).
+//
+// Item 5 (web), map layers: the layer list, the legend and the county column against GET /layers, the canvas colour
+// of fields (read from the canvas) against the legend swatches, the year slider, play / pause / drag, the numbers for the
+// fields in view against an independent count from GET /fields and GET /layers/{name} (whole county, zoomed, panned,
+// empty), layers with one value, selection and farm mode on top, and phone width.
+//
 // Environment: WEB_URL (default http://localhost:5173), E2E_TIMEOUT_MS (default 20000),
 // DRY_FIELD (default KS-013847), IRRIGATED_FIELD (default KS-014376), PATH_FIELD (default
 // KS-004139, a dryland field with four real years of the six crops), BRIDGE_FIELD (default
@@ -1413,6 +1423,466 @@ async function runTwin(browser, { get, shot }) {
   log(`  ✓ twin view at phone width: stacked, no sideways scroll → ${phoneShot}`);
 }
 
+async function runLayers({ get }) {
+  const fields = await (await get("/fields")).json();
+  const fieldsEtag = (await get("/fields")).headers.get("etag");
+  const ids = fields.features.map((f) => f.id);
+  const listing = await (await get("/layers")).json();
+  equal(listing.field_count, ids.length, "layers: field_count is the number of outlines of GET /fields");
+  equal(listing.fields_etag, fieldsEtag, "layers: fields_etag is the ETag of GET /fields");
+  equal(listing.layers.map((l) => l.name).join(), "bare_days,erosion_risk,rotation_change,irrigation", "layers: the four layers, in order");
+  for (const l of listing.layers) {
+    check(l.status === "ready" || l.status === "building", `layers: ${l.name} is ${l.status} (${l.reason}); the real tables are needed for this check`);
+    check(l.method.length > 20 && l.caveat.length > 20 && !FORBIDDEN.test(`${l.title} ${l.method} ${l.caveat}`), `layers: ${l.name} has a method note and a caveat in the agreed wording`);
+    check(!("series" in l), `layers: the listing carries no per-field values (${l.name})`);
+  }
+  const layer = async (name, query = "") => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const response = await get(`/layers/${name}${query}`);
+      if (response.status === 202) {
+        const body = await response.json();
+        check(body.status === "building" && body.progress.total === ids.length, `layers: ${name} answers "building" with its progress while it is worked out`);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+      equal(response.status, 200, `layers: GET /layers/${name}${query}`);
+      return { body: await response.json(), etag: response.headers.get("etag") };
+    }
+    throw new Failure(`layers: ${name} was still building after a minute`);
+  };
+  const sample = [0, 1, Math.floor(ids.length / 4), Math.floor(ids.length / 2), ids.length - 2, ids.length - 1, ids.indexOf(DRY), ids.indexOf(WET)]
+    .filter((i, n, all) => i >= 0 && i < ids.length && all.indexOf(i) === n);
+
+  // bare days and erosion: whole numbers in the outlines' order, a gap stays a gap, classes follow the breaks
+  const { body: bare, etag } = await layer("bare_days");
+  const { body: wind } = await layer("erosion_risk");
+  equal((await get("/layers/bare_days", { headers: { "If-None-Match": etag } })).status, 304, "layers: an unchanged layer answers 304 to its ETag");
+  equal(bare.years.join(), wind.years.join(), "layers: bare days and erosion risk cover the same years");
+  for (const l of [bare, wind]) {
+    equal(l.series.length, l.years.length, `layers: ${l.name} has one series per year`);
+    check(l.breaks_scaled.length >= 2 && l.classes.length === l.breaks_scaled.length + 1, `layers: ${l.name} sends its class breaks`);
+    for (const row of l.series) {
+      equal(row.values.length, ids.length, `layers: ${l.name} ${row.year} has one value per outline`);
+      check(row.values.every((v) => v === null || Number.isInteger(v)), `layers: ${l.name} ${row.year} sends whole numbers or null`);
+      const counts = l.classes.map(() => 0);
+      for (const v of row.values) if (v !== null) counts[l.breaks_scaled.filter((b) => b <= v).length] += 1;
+      equal(row.summary.classes.map((c) => c.fields).join(), counts.join(), `layers: ${l.name} ${row.year} class counts are the breaks applied to the values`);
+      equal(row.summary.fields_no_value, row.values.filter((v) => v === null).length, `layers: ${l.name} ${row.year} counts its fields with no value`);
+    }
+  }
+  for (const i of sample) {
+    const soil = await (await get(`/field/${ids[i]}/soil`)).json();
+    for (const row of bare.series) {
+      const year = soil.years.find((y) => y.year === row.year);
+      const wanted = year?.bare_days == null ? null : Math.round(year.bare_days);
+      check(row.values[i] === wanted, `layers: bare days of ${ids[i]} in ${row.year}: the layer says ${row.values[i]}, the field's own soil answer ${year?.bare_days}`);
+      equal(wind.series.find((w) => w.year === row.year).values[i] === null, wanted === null, `layers: erosion risk of ${ids[i]} in ${row.year} is missing exactly when bare days are`);
+    }
+  }
+  const one = (await layer("erosion_risk", `?year=${wind.years.at(-1)}`)).body;
+  equal(JSON.stringify(one.series), JSON.stringify([wind.series.at(-1)]), "layers: ?year= answers that year only, unchanged");
+  equal((await get("/layers/erosion_risk?year=1999")).status, 400, "layers: a year the layer does not have answers 400");
+  equal((await get("/layers/nope")).status, 404, "layers: an unknown layer answers 404");
+
+  // irrigation and rotation change against each field's own plans
+  const { body: water } = await layer("irrigation");
+  const { body: change } = await layer("rotation_change");
+  const keys = change.classes.map((c) => c.key);
+  const row = change.series[0];
+  equal(row.values.length, ids.length, "layers: rotation change has one value per outline");
+  equal(row.summary.classes.reduce((sum, c) => sum + c.fields, 0), ids.length, "layers: the rotation-change classes cover every field");
+  for (const i of sample) {
+    const plans = await (await get(`/field/${ids[i]}/plans`)).json();
+    equal(water.classes[water.series[0].values[i]].key, plans.settings.irrigated ? "irrigated" : "dryland", `layers: irrigation of ${ids[i]} is what its plans assume`);
+    const key = keys[row.values[i]];
+    equal(key === "unknown", plans.current === null, `layers: ${ids[i]} is "cannot tell" exactly when its plans have no current pattern`);
+    if (plans.current === null) {
+      equal(row.detail[i], null, `layers: ${ids[i]} has no score gap`);
+      continue;
+    }
+    const sameCycle = plans.current.is_candidate && plans.current.cycle.join() === plans.plans[0].cycle.join();
+    equal(key === "same", sameCycle, `layers: ${ids[i]} is "same plan" exactly when its current pattern is our first pick`);
+    if (!sameCycle) equal(row.detail[i], Math.round(1000 * (plans.plans[0].scores.robust - plans.current.scores.robust)), `layers: score gap of ${ids[i]}`);
+    if (key === "clearly_higher" || key === "within_spread") {
+      const spread = (p) => p.spread.overall.high - p.spread.overall.low;
+      const within = Math.round(1000 * Math.max(spread(plans.plans[0]), spread(plans.current)));
+      equal(key === "within_spread", row.detail[i] <= within, `layers: ${ids[i]} is within the spread between climate models exactly when its gap is`);
+    }
+  }
+  const shares = row.summary.classes.map((c) => `${keys[c.index]} ${Math.round(100 * c.share_fields)}%`).join(", ");
+  log(`  ✓ map layers (API): 4 layers for ${ids.length} fields, bare days and erosion ${bare.years[0]}–${bare.years.at(-1)} with breaks ${bare.breaks.join("/")} and ${wind.breaks.join("/")}, ${sample.length} fields checked against /soil and /plans; rotation change: ${shares}`);
+}
+
+// ---- item 5 (web): map layers and the time-lapse ---------------------------------------------------
+
+const hexRgb = (hex) => [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
+const commas = (n, decimals = 0) => n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+const decimalsFor = (scale) => (scale >= 1 ? 0 : Math.round(-Math.log10(scale)));
+/** numpy's default (linear) quantile of a sorted array. */
+function quant(sorted, q) {
+  const at = (sorted.length - 1) * q, lo = Math.floor(at), hi = Math.ceil(at);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (at - lo);
+}
+const bboxOf = (feature) => {
+  const ring = feature.geometry.coordinates[0];
+  const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]);
+  return { w: Math.min(...xs), e: Math.max(...xs), s: Math.min(...ys), n: Math.max(...ys) };
+};
+
+async function runLayersScreen(browser, { get }) {
+  const fields = await (await get("/fields")).json();
+  const features = fields.features;
+  const boxes = features.map(bboxOf);
+  const acresOf = features.map((f) => f.properties.area_ha * 2.47105);
+  const catalog = await (await get("/layers")).json();
+  equal(catalog.field_count, features.length, "layers: the listing is for the fields on the map");
+  const full = {};
+  for (const layer of catalog.layers) {
+    for (let tries = 0; tries < 40; tries++) {
+      const response = await get(`/layers/${layer.name}`);
+      full[layer.name] = await response.json();
+      if (response.status !== 202) break;
+      await new Promise((done) => setTimeout(done, 1000));
+    }
+  }
+  const NONE_GREY = hexRgb("#a9afab");
+
+  const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  page.setDefaultTimeout(TIMEOUT);
+  const monitor = watch(page, "layers");
+  await page.goto(`${WEB_URL}/`, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await page.waitForSelector('[data-testid="app"][data-fields-drawn]', { timeout: TIMEOUT });
+  const control = page.locator('[data-testid="layer-control"]');
+  await control.waitFor();
+
+  // ---- the list
+  const options = await texts(page, '[data-testid="layer-select"] option');
+  const wanted = ["Fields", "Bare days", ...catalog.layers.slice(1).map((l) => l.title)];
+  equal(options.join("|"), wanted.join("|"), "layers: the choices are Fields, then the API's layers in its order");
+  equal(await page.inputValue('[data-testid="layer-select"]'), "fields", "layers: starts on the plain map");
+  equal(await page.locator('[data-testid="layer-legend"]').count(), 0, "layers: no legend on the plain map");
+  equal(await page.locator('[data-testid="layer-year"]').count(), 0, "layers: no year slider on the plain map");
+
+  // Zoom onto a field and read the colour of the canvas at its middle.
+  const paintAt = async (feature) => {
+    const box = bboxOf(feature);
+    await page.evaluate(([lat, lng]) => window.__map.setView([lat, lng], 15, { animate: false }), [(box.s + box.n) / 2, (box.w + box.e) / 2]);
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 60)))));
+    return (await colourAtField(page, feature.geometry)).rgb;
+  };
+  const near = (rgb, hex, what) => {
+    const want = hexRgb(hex);
+    check(rgb[3] > 150 && rgb.slice(0, 3).every((v, i) => Math.abs(v - want[i]) <= 8), `${what}: canvas colour ${rgb.join(",")} is not ${hex}`);
+  };
+  const big = features.map((f, i) => i).filter((i) => features[i].properties.area_ha > 25);
+  const classOfValue = (layer, v) => (v === null ? null : layer.breaks_scaled.filter((b) => b <= v).length);
+  const classesOf = (layer, series) => series.values.map((v) => (layer.kind === "number" ? classOfValue(layer, v) : v));
+
+  // The plain map's colour, before any layer.
+  const plain = await paintAt(features[big[0]]);
+  check(plain[3] > 0 && plain[1] > plain[0] + 20, `layers: the plain map keeps its green fields (${plain.join(",")})`);
+
+  const choose = async (name) => {
+    await page.selectOption('[data-testid="layer-select"]', name);
+    await page.waitForSelector(`[data-testid="layer-control"][data-layer="${name}"][data-state="ready"]`, { timeout: 40000 });
+  };
+  const cellTexts = (testId, selector = "td") => page.locator(`[data-testid="${testId}"] ${selector}`).allTextContents().then((all) => all.map(squash));
+  const cellOf = (row, k) => page.locator(`[data-testid="${row}"] td`).nth(k).textContent().then(squash);
+  const share = (s) => (s === null ? "–" : s > 0 && s < 0.005 ? "under 1%" : `${Math.round(s * 100)}%`);
+
+  // ---- bare days: the legend and the county column are the API's; the canvas is coloured by class
+  await choose("bare_days");
+  const bare = full.bare_days;
+  const bareYears = bare.years;
+  const latest = bareYears.at(-1);
+  equal(await control.getAttribute("data-year"), String(latest), "layers: a yearly layer opens on its latest year");
+  equal(await page.getAttribute('[data-testid="layer-year"]', "min"), String(bareYears[0]), "layers: slider starts at the first year");
+  equal(await page.getAttribute('[data-testid="layer-year"]', "max"), String(latest), "layers: slider ends at the last year");
+  equal(await text(page, "layer-heading"), `${bare.title}, ${latest}`, "layers: legend heading");
+  check((await text(page, "layer-unit")).includes(bare.unit), "layers: the unit is in the legend");
+  equal(await text(page, "layer-caveat"), squash(bare.caveat), "layers: the caveat is the API's sentence");
+  const labels = await texts(page, '[data-testid="layer-class"] .lyr-label');
+  equal(labels.join("|"), bare.classes.map((c) => c.label).join("|"), "layers: legend labels are the API's class labels");
+  const colourOf = async (index) => page.locator('[data-testid="layer-class"] .lyr-swatch').nth(index).evaluate((n) => getComputedStyle(n).backgroundColor);
+
+  const checkCounty = async (layer, series, what) => {
+    const rows = await page.locator('[data-testid="layer-class"]').count();
+    equal(rows, layer.classes.length, `${what}: one legend row per class`);
+    for (const c of series.summary.classes) {
+      const cell = await page.locator('[data-testid="layer-class-county"]').nth(c.index).textContent().then(squash);
+      // the share is worked out from the API's counts (its own share is rounded to three decimals, and rounding twice can be 1% off)
+      const base = layer.kind === "number" ? series.summary.fields_with_value : series.summary.fields;
+      equal(cell, `${commas(c.fields)} · ${share(base ? c.fields / base : null)}`, `${what}: county figure of class ${c.index}`);
+      check(c.share_fields === null || Math.abs(c.share_fields - c.fields / base) <= 0.0005, `${what}: the API's share of class ${c.index} is its count over the total`);
+      // class layers with a second number: the county median of it under the label, as the API gives it
+      const row = page.locator('[data-testid="layer-class"]').nth(c.index);
+      const line = (await row.locator('[data-testid="layer-class-detail"]').count()) ? squash(await row.locator('[data-testid="layer-class-detail"]').textContent()) : null;
+      const median = c.detail_median;
+      if (!layer.detail || median === null || median === undefined || layer.classes[c.index].key === "same") {
+        equal(line, null, `${what}: class ${c.index} has no median line`);
+      } else {
+        const places = layer.detail.value_scale >= 1 ? 0 : Math.round(-Math.log10(layer.detail.value_scale));
+        const shown = median.toLocaleString("en-US", { minimumFractionDigits: places, maximumFractionDigits: places });
+        equal(line, layer.detail.key === "score_gap" ? `county median gap ${shown}` : layer.detail.key === "irrigated_prob" ? `county median chance ${shown}%` : `county median ${shown}${layer.detail.unit === "%" ? "%" : ""}`, `${what}: class ${c.index} median of ${layer.detail.key}`);
+      }
+    }
+    equal(await cellOf("layer-row-fields", 1), commas(series.summary.fields), `${what}: county field count`);
+    if (layer.kind === "number") {
+      const scale = layer.value_scale, d = decimalsFor(scale);
+      equal(await cellOf("layer-row-median", 1), commas(series.summary.median, d), `${what}: county median`);
+      equal(await cellOf("layer-row-spread", 1), `${commas(series.summary.p25, d)} to ${commas(series.summary.p75, d)}`, `${what}: county middle half`);
+      equal(await cellOf("layer-row-acres", 1), commas(series.summary.acres_with_value), `${what}: county acres`);
+    } else {
+      equal(await cellOf("layer-row-acres", 1), commas(series.summary.acres), `${what}: county acres`);
+    }
+  };
+  const seriesOf = (layer, year) => layer.series.find((s) => s.year === year) ?? layer.series[0];
+  await checkCounty(bare, seriesOf(bare, latest), "bare days");
+
+  // Whole county in view: the "in view" column is the county column, computed in the browser.
+  await page.evaluate((box) => window.__map.fitBounds([[box[1], box[0]], [box[3], box[2]]], { animate: false }), fields.bbox);
+  await page.waitForFunction((n) => document.querySelector('[data-testid="layer-summary"]')?.textContent?.startsWith(`${n} of ${n} fields`), commas(features.length));
+  equal(await cellOf("layer-row-fields", 0), await cellOf("layer-row-fields", 1), "layers: all fields in view equals the county count");
+  equal(await cellOf("layer-row-acres", 0), await cellOf("layer-row-acres", 1), "layers: acres in view equals the county acres");
+  equal(await cellOf("layer-row-median", 0), await cellOf("layer-row-median", 1), "layers: median in view equals the county median");
+  for (let k = 0; k < bare.classes.length; k++) {
+    equal(await page.locator('[data-testid="layer-class-view"]').nth(k).textContent().then(squash), await page.locator('[data-testid="layer-class-county"]').nth(k).textContent().then(squash), `layers: class ${k} in view equals the county`);
+  }
+
+  // The colour of a big field of every class, and of a field with no value, at the latest year and another year.
+  const paintCheck = async (layer, year, what) => {
+    const series = seriesOf(layer, year);
+    const classes = classesOf(layer, series);
+    const colours = await Promise.all(layer.classes.map((_, k) => colourOf(k)));
+    const seen = new Set();
+    let tested = 0;
+    for (const i of big) {
+      const c = classes[i];
+      if (seen.has(c) || tested >= 6) continue;
+      seen.add(c);
+      const rgb = await paintAt(features[i]);
+      const swatch = colours[c ?? -1];
+      if (c === null) check(rgb.slice(0, 3).every((v, k) => Math.abs(v - NONE_GREY[k]) <= 8), `${what}: no-value field is grey, got ${rgb.join(",")}`);
+      else {
+        const want = swatch.match(/\d+/g).map(Number);
+        check(rgb[3] > 150 && rgb.slice(0, 3).every((v, k) => Math.abs(v - want[k]) <= 8), `${what}: field ${features[i].id} of class ${c} is ${rgb.join(",")}, legend swatch is ${want.join(",")}`);
+      }
+      tested += 1;
+    }
+    check(tested >= 2, `${what}: found big fields of at least two classes to read (${tested})`);
+  };
+  await paintCheck(bare, latest, `bare days ${latest}`);
+  const shotPath = path.join(SHOTS, "phase4-layers-bare-days.png");
+  await page.evaluate((box) => window.__map.fitBounds([[box[1], box[0]], [box[3], box[2]]], { animate: false }), fields.bbox);
+  await page.waitForTimeout(400);
+
+  // ---- the year slider: another year changes the colours and the county column
+  const other = bareYears[0] === latest ? bareYears[1] : 2020;
+  const classesLatest = classesOf(bare, seriesOf(bare, latest)), classesOther = classesOf(bare, seriesOf(bare, other));
+  await page.locator('[data-testid="layer-year"]').fill(String(other));
+  await page.waitForFunction((y) => document.querySelector('[data-testid="layer-control"]')?.getAttribute("data-year") === String(y), other);
+  equal(await text(page, "layer-year-text"), String(other), "layers: the year shown follows the slider");
+  equal(await text(page, "layer-heading"), `${bare.title}, ${other}`, "layers: heading follows the year");
+  await checkCounty(bare, seriesOf(bare, other), `bare days ${other}`);
+  const changed = big.find((i) => classesLatest[i] !== classesOther[i] && classesOther[i] !== null);
+  check(changed !== undefined, "layers: a big field changes class between the two years");
+  await paintCheck(bare, other, `bare days ${other}`);
+
+  // ---- play, pause, and a drag stops it
+  await page.locator('[data-testid="layer-year"]').fill(String(bareYears[0]));
+  await page.evaluate(() => window.__map.fitBounds(window.__map.getBounds(), { animate: false }));
+  await page.click('[data-testid="layer-play"]');
+  equal(await page.getAttribute('[data-testid="layer-play"]', "aria-pressed"), "true", "layers: play is pressed while it plays");
+  const started = Date.now();
+  await page.waitForFunction((y) => Number(document.querySelector('[data-testid="layer-control"]')?.getAttribute("data-year")) >= y + 2, bareYears[0], { timeout: 6000 });
+  const elapsed = Date.now() - started;
+  check(elapsed > 1500 && elapsed < 3500, `layers: two years took ${elapsed} ms, about a second a year`);
+  await page.click('[data-testid="layer-play"]');
+  const paused = await control.getAttribute("data-year");
+  await page.waitForTimeout(1300);
+  equal(await control.getAttribute("data-year"), paused, "layers: pause holds the year");
+  // dragging stops a running time-lapse
+  await page.click('[data-testid="layer-play"]');
+  const box = await page.locator('[data-testid="layer-year"]').boundingBox();
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
+  equal(await page.getAttribute('[data-testid="layer-play"]', "aria-pressed"), "false", "layers: dragging the slider stops the time-lapse");
+  const dragged = await control.getAttribute("data-year");
+  await page.waitForTimeout(1300);
+  equal(await control.getAttribute("data-year"), dragged, "layers: the year stays where the drag left it");
+  // it stops at the last year, and play from there starts again at the first
+  await page.locator('[data-testid="layer-year"]').fill(String(bareYears.at(-2)));
+  await page.click('[data-testid="layer-play"]');
+  await page.waitForFunction((y) => document.querySelector('[data-testid="layer-control"]')?.getAttribute("data-year") === String(y), latest, { timeout: 4000 });
+  await page.waitForFunction(() => document.querySelector('[data-testid="layer-play"]')?.getAttribute("aria-pressed") === "false", null, { timeout: 4000 });
+  log(`  ✓ time-lapse: plays about a year a second (${elapsed} ms for two), pauses, stops on a drag and at ${latest}`);
+
+  // ---- the numbers follow the view
+  await page.locator('[data-testid="layer-year"]').fill(String(latest));
+  const series = seriesOf(bare, latest);
+  const classes = classesOf(bare, series);
+  const scale = bare.value_scale, d = decimalsFor(scale);
+  const expectedView = (b) => {
+    const idx = [];
+    for (let i = 0; i < boxes.length; i++) if (boxes[i].w <= b.e && boxes[i].e >= b.w && boxes[i].s <= b.n && boxes[i].n >= b.s) idx.push(i);
+    const got = idx.filter((i) => series.values[i] !== null);
+    const sorted = got.map((i) => series.values[i]).sort((a, c) => a - c);
+    const round = (v) => Math.round((v * scale + Number.EPSILON) * 10 ** d) / 10 ** d;
+    return {
+      fields: idx.length,
+      acres: Math.round(got.reduce((sum, i) => sum + acresOf[i], 0)),
+      median: sorted.length ? round(quant(sorted, 0.5)) : null,
+      p25: sorted.length ? round(quant(sorted, 0.25)) : null,
+      p75: sorted.length ? round(quant(sorted, 0.75)) : null,
+      perClass: bare.classes.map((c) => got.filter((i) => classes[i] === c.index).length),
+      withValue: got.length,
+    };
+  };
+  const checkView = async (what) => {
+    const b = await page.evaluate(() => {
+      const m = window.__map.getBounds();
+      return { w: m.getWest(), e: m.getEast(), s: m.getSouth(), n: m.getNorth() };
+    });
+    const want = expectedView(b);
+    await page.waitForFunction((n) => document.querySelector('[data-testid="layer-summary"]')?.textContent?.startsWith(`${n} of `), commas(want.fields), { timeout: 5000 })
+      .catch(async () => { throw new Failure(`${what}: the page says "${await text(page, "layer-summary")}", expected ${commas(want.fields)} fields in view`); });
+    equal(await cellOf("layer-row-fields", 0), commas(want.fields), `${what}: fields in view`);
+    equal(await cellOf("layer-row-acres", 0), commas(want.acres), `${what}: acres in view`);
+    equal(await cellOf("layer-row-median", 0), want.median === null ? "–" : commas(want.median, d), `${what}: median in view`);
+    equal(await cellOf("layer-row-spread", 0), want.median === null ? "–" : `${commas(want.p25, d)} to ${commas(want.p75, d)}`, `${what}: middle half in view`);
+    for (let k = 0; k < want.perClass.length; k++) {
+      const share3 = want.withValue ? want.perClass[k] / want.withValue : null;
+      equal(await page.locator('[data-testid="layer-class-view"]').nth(k).textContent().then(squash), `${commas(want.perClass[k])} · ${share(share3)}`, `${what}: class ${k} in view`);
+    }
+    return want;
+  };
+  await page.evaluate((box) => window.__map.fitBounds([[box[1], box[0]], [box[3], box[2]]], { animate: false }), fields.bbox);
+  const whole = await checkView("whole county");
+  // Zoom into the middle of Garden City, then pan east: the numbers change each time.
+  const gc = [37.9717, -100.8727];
+  await page.evaluate(([lat, lng]) => window.__map.setView([lat, lng], 12, { animate: false }), gc);
+  const zoomed = await checkView("zoomed in");
+  check(zoomed.fields < whole.fields && zoomed.fields > 0, `layers: zooming in changes the count (${zoomed.fields} of ${whole.fields})`);
+  await page.evaluate(() => window.__map.panBy([700, -300], { animate: false }));
+  const panned = await checkView("panned");
+  check(panned.fields !== zoomed.fields || panned.median !== zoomed.median, "layers: panning changes the numbers");
+  await page.evaluate(() => window.__map.setView([30, -100], 12, { animate: false }));
+  const empty = await checkView("empty view");
+  equal(empty.fields, 0, "layers: a view over no field counts none");
+  await page.evaluate(([lat, lng]) => window.__map.setView([lat, lng], 13, { animate: false }), gc);
+  await checkView("near the city");
+  log("  ✓ the numbers for the fields in view match an independent count from /fields and /layers (whole county, zoomed, panned, empty)");
+
+  // ---- layers with one value: the slider is disabled and says why; legend and colours are the API's
+  for (const name of ["rotation_change", "irrigation", "erosion_risk"]) {
+    await choose(name);
+    const layer = full[name];
+    equal(await text(page, "layer-heading"), layer.title + (layer.years ? `, ${layer.years.at(-1)}` : ""), `${name}: heading`);
+    equal(await text(page, "layer-caveat"), squash(layer.caveat), `${name}: caveat`);
+    equal((await texts(page, '[data-testid="layer-class"] .lyr-label')).join("|"), layer.classes.map((c) => c.label).join("|"), `${name}: legend labels`);
+    if (layer.years) {
+      equal(await page.isDisabled('[data-testid="layer-year"]'), false, `${name}: the slider works`);
+      check((await text(page, "layer-wind")).includes(String(layer.inputs.erosion_climate_by_year[String(layer.years.at(-1))])), `${name}: the year's wind factor is shown`);
+    } else {
+      equal(await page.isDisabled('[data-testid="layer-year"]'), true, `${name}: the slider is disabled`);
+      equal(await page.isDisabled('[data-testid="layer-play"]'), true, `${name}: play is disabled`);
+      check((await text(page, "layer-year-reason")).length > 10 && (await text(page, "layer-year-reason")).length < 90, `${name}: a short reason is given`);
+    }
+    await page.evaluate((box) => window.__map.fitBounds([[box[1], box[0]], [box[3], box[2]]], { animate: false }), fields.bbox);
+    await page.waitForFunction((n) => document.querySelector('[data-testid="layer-summary"]')?.textContent?.startsWith(`${n} of ${n} fields`), commas(features.length));
+    await checkCounty(layer, seriesOf(layer, layer.years?.at(-1) ?? null), name);
+    await paintCheck(layer, layer.years?.at(-1) ?? null, name);
+  }
+  // rotation change: a field's class on the map is the class its own /plans answer gives (checked by the API step too)
+  equal(monitor.problems.length, 0, `layers: console errors:\n  ${monitor.problems.join("\n  ")}`);
+
+  // ---- selection, farm mode and the twin on top of a layer
+  await choose("irrigation");
+  const irrigation = full.irrigation;
+  const target = big.find((i) => irrigation.series[0].values[i] === 1) ?? big[0];
+  const other2 = big.find((i) => irrigation.series[0].values[i] === 0 && i !== target);
+  await paintAt(features[target]);
+  const p = await colourAtField(page, features[target].geometry);
+  await page.mouse.click(p.x, p.y);
+  await page.waitForSelector(`[data-testid="panel"][data-field-id="${features[target].id}"]`, { timeout: TIMEOUT });
+  equal(await page.inputValue('[data-testid="layer-select"]'), "irrigation", "layers: the layer stays when a field is opened");
+  equal(await control.getAttribute("data-state"), "ready", "layers: and stays ready");
+  const afterOpen = await paintAt(features[other2]);
+  near(afterOpen, colourSwatchHex(irrigation, 0), "layers: other fields keep their layer colour with a field open");
+  const selected = await paintAt(features[target]);
+  check(selected[3] > 150 && selected.slice(0, 3).every((v, k) => Math.abs(v - hexRgb(colourSwatchHex(irrigation, 1))[k]) <= 8), `layers: the selected field keeps its layer colour (${selected.join(",")})`);
+  // the year survives opening a field
+  await choose("bare_days");
+  await page.locator('[data-testid="layer-year"]').fill(String(other));
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('[data-testid="panel"]', { state: "detached" });
+  equal(await control.getAttribute("data-year"), String(other), "layers: the year stays when the field is closed");
+  // farm mode
+  await page.click('[data-testid="farm-toggle"]');
+  equal(await control.getAttribute("data-layer"), "bare_days", "layers: the layer stays in farm mode");
+  await paintAt(features[target]);
+  const q = await colourAtField(page, features[target].geometry);
+  await page.mouse.click(q.x, q.y);
+  await page.waitForFunction(() => /^1 field picked/.test(document.querySelector('[data-testid="farm-count"]')?.textContent ?? ""));
+  const picked = await paintAt(features[target]);
+  check(picked[3] > 150, "layers: a picked field is still drawn in farm mode");
+  await page.click('[data-testid="farm-clear"]');
+  await page.click('[data-testid="farm-toggle"]');
+  log("  ✓ the layer and year stay when a field is opened and in farm mode; selection and farm picks still work on top");
+
+  await page.evaluate((box) => window.__map.fitBounds([[box[1], box[0]], [box[3], box[2]]], { animate: false }), fields.bbox);
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: shotPath });
+  check(monitor.problems.length === 0, `layers: console errors:\n  ${monitor.problems.join("\n  ")}`);
+  await context.close();
+
+  // ---- phone width
+  const phoneContext = await browser.newContext({ viewport: PHONE, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  const phone = await phoneContext.newPage();
+  phone.setDefaultTimeout(TIMEOUT);
+  const phoneMonitor = watch(phone, "layers phone");
+  await phone.goto(`${WEB_URL}/#${DRY}`, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await phone.waitForSelector('[data-testid="app"][data-fields-drawn]', { timeout: TIMEOUT });
+  await phone.waitForSelector(`[data-testid="panel"][data-field-id="${DRY}"]`, { timeout: TIMEOUT });
+  await phone.selectOption('[data-testid="layer-select"]', "bare_days");
+  await phone.waitForSelector('[data-testid="layer-control"][data-state="ready"]', { timeout: 40000 });
+  equal(await phone.locator('[data-testid="layer-legend"]').count(), 0, "layers phone: the legend starts folded on a phone");
+  await phone.click('[data-testid="layer-details-toggle"]');
+  await phone.waitForSelector('[data-testid="layer-legend"]');
+  await phone.waitForTimeout(400);
+  const fit = await phone.evaluate(() => {
+    const card = document.querySelector('[data-testid="layer-control"]').getBoundingClientRect();
+    const mast = document.querySelector(".masthead").getBoundingClientRect();
+    const map = document.querySelector(".map").getBoundingClientRect();
+    const zoom = document.querySelector(".leaflet-control-zoom")?.getBoundingClientRect();
+    const card2 = document.querySelector('[data-testid="layer-control"]');
+    const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    return {
+      page: document.documentElement.scrollWidth, inside: card.left >= map.left && card.right <= map.right && card.top >= map.top && card.bottom <= map.bottom,
+      withMast: overlap(card, mast), withZoom: zoom ? overlap(card, zoom) : false, sideways: card2.scrollWidth - card2.clientWidth,
+      height: card.height, mapHeight: map.height,
+    };
+  });
+  check(fit.page <= PHONE.width, `layers phone: the page scrolls sideways (${fit.page}px)`);
+  check(fit.inside, "layers phone: the card stays inside the map");
+  check(!fit.withMast && !fit.withZoom, "layers phone: the card does not cover the title card or the zoom buttons");
+  check(fit.sideways <= 0, `layers phone: the card scrolls sideways by ${fit.sideways}px`);
+  check(fit.height <= fit.mapHeight * 0.5, `layers phone: the card is ${Math.round(fit.height)}px of a ${Math.round(fit.mapHeight)}px map`);
+  equal(await phone.inputValue('[data-testid="layer-select"]'), "bare_days", "layers phone: the layer stays with a field open");
+  await phone.screenshot({ path: path.join(SHOTS, "phase4-layers-phone.png") });
+  check(phoneMonitor.problems.length === 0, `layers phone: console errors:\n  ${phoneMonitor.problems.join("\n  ")}`);
+  await phoneContext.close();
+  log("  ✓ map layers: list, legend, colours, year slider, time-lapse, numbers for the view, selection and farm on top, phone width → e2e/screenshots/phase4-layers-bare-days.png, phase4-layers-phone.png");
+}
+
+const colourSwatchHex = (layer, index) => {
+  const keyed = { dryland: "#d9a441", irrigated: "#1b7f8a" };
+  return keyed[layer.classes[index].key];
+};
+
 async function run(browser) {
   const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
   const page = await context.newPage();
@@ -1802,6 +2272,8 @@ async function run(browser) {
   await runFarm(browser, { get, apiPrefix, defaults });
   await runFarmScreen(browser, { get, apiPrefix, shot });
   await runTwin(browser, { get, shot });
+  await runLayers({ get: (pathAndQuery, init) => fetch(`${apiPrefix}${pathAndQuery}`, init) });
+  await runLayersScreen(browser, { get });
 }
 
 let browser;
