@@ -69,6 +69,30 @@ export interface PlanScores {
   water: number;
   money: number;
   overall: number;
+  /** smart planner only */
+  risk?: number;
+  /** smart planner only: the number plans are ranked on */
+  robust?: number;
+}
+
+/** Lowest, middle and highest value across the climate models. */
+export interface Spread {
+  low: number;
+  mid: number;
+  high: number;
+}
+
+export interface PlanNumbers {
+  bare_days: number;
+  erosion_index?: number;
+  /** water pumped a year, mm (0 for dryland) */
+  irrigation_mm: number;
+  /** share 0..1 of the crops' water need that is met */
+  water_met_share: number;
+  /** dollars per acre per year */
+  profit_per_acre: number;
+  /** share 0..1 of planted crops that fail */
+  failed_share: number;
 }
 
 export interface Plan {
@@ -78,12 +102,62 @@ export interface Plan {
   /** each 0..1, higher is better */
   scores: PlanScores;
   reason: string;
+  // The rest comes from the smart planner only.
+  /** in how many climate models the plan holds up */
+  futures?: { holds: number; total: number };
+  spread?: { overall?: Spread; profit_per_acre?: Spread };
+  numbers?: PlanNumbers;
+  rank?: number;
+}
+
+/** The field's own last four years, scored like a plan (smart planner). */
+export interface CurrentPattern extends Plan {
+  rules_broken?: string[];
+  /** [first, last] year of the pattern */
+  years?: [number, number];
+  is_candidate?: boolean;
+}
+
+export type Scenario = "ssp245" | "ssp585";
+
+export interface PlannerSettings {
+  /** normalised to add up to 1 */
+  weights: { soil: number; water: number; money: number; risk: number };
+  scenario: Scenario;
+  horizon: number;
+  /** [first, last] year averaged */
+  window: [number, number];
+  irrigated: boolean;
+  /** "guess" or "override" */
+  irrigation_source: string;
+  irrigation_basis?: string | null;
+  soil_note?: string;
+  holds_up_rule?: string;
+  ranking_rule?: string;
+  profit_basis?: string;
+  models?: string[];
+}
+
+export interface ClimateSummary {
+  label: string;
+  changes: { summer_rain_agree?: number; models?: number; [key: string]: number | undefined };
+  range?: { summer_rain_pct?: [number, number]; [key: string]: [number, number] | undefined };
+  window?: [number, number];
+  models?: number;
 }
 
 /** GET /field/{field_id}/plans */
 export interface FieldPlans {
   field_id: string;
+  /** "smart" (future-weather planner) or "basic"; missing on old servers */
+  engine?: "smart" | "basic";
   plans: Plan[];
+  // smart engine only
+  settings?: PlannerSettings;
+  climate?: ClimateSummary;
+  current?: CurrentPattern | null;
+  current_note?: string | null;
+  candidates?: number;
 }
 
 export interface SatelliteYear {

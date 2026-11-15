@@ -1,14 +1,20 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { api } from "../api";
 import { cropLabel } from "../crops";
+import { usePlans } from "../hooks/usePlans";
+import type { PlansState } from "../hooks/usePlans";
 import { useResource } from "../hooks/useResource";
 import type { Resource } from "../hooks/useResource";
 import { formatOneDecimal, formatPercent, hectaresToAcres, plural } from "../lib/format";
+import { plansQuery, spreadDomain } from "../lib/planner";
+import type { PlannerChoices } from "../lib/planner";
 import { organicMatterClass, slopeClass } from "../thresholds";
-import type { FieldDetail, FieldPlans, FieldSatellite, FieldSoil, Streak } from "../types";
+import type { FieldDetail, FieldSatellite, FieldSoil, Streak } from "../types";
 import { Neighbors } from "./Neighbors";
 import { PlanCard } from "./PlanCard";
+import { CurrentPatternRow, ScoringNote } from "./PlanExtras";
+import { PlannerControls } from "./PlannerControls";
 import { SatelliteChart } from "./Satellite";
 import { SoilTimelineChart } from "./SoilTimeline";
 import { Timeline } from "./Timeline";
@@ -24,12 +30,19 @@ interface FieldPanelProps {
   /** Area from the map layer, shown at once while the detail request is in flight. */
   areaHa: number | null;
   onClose: () => void;
+  /** Planner sliders, future and scenario: owned by the app, so they persist across fields. */
+  plannerChoices: PlannerChoices;
+  onPlannerChoices: (next: PlannerChoices) => void;
 }
 
-export function FieldPanel({ fieldId, areaHa, onClose }: FieldPanelProps) {
+export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlannerChoices }: FieldPanelProps) {
   // Two independent requests, started together; each can fail and be retried on its own.
   const [detail, retryDetail] = useResource(fieldId, api.field);
-  const [plans, retryPlans] = useResource(fieldId, api.plans);
+  // The irrigated / dryland override belongs to one field: it is forgotten when another is opened.
+  const [override, setOverride] = useState<{ fieldId: string; value: boolean } | null>(null);
+  const irrigationOverride = override !== null && override.fieldId === fieldId ? override.value : null;
+  const planner = usePlans(fieldId, plansQuery(plannerChoices, irrigationOverride));
+  const plans = planner.resource;
   // A third, optional one: the satellite numbers. Its failure stays inside its own section.
   const [satellite, retrySatellite] = useResource(fieldId, api.satellite);
   // And a fourth: the yearly soil condition table. Same rule: its failure stays in its own section.
@@ -83,7 +96,15 @@ export function FieldPanel({ fieldId, areaHa, onClose }: FieldPanelProps) {
 
       <div className="panel-body" ref={bodyRef} aria-busy={state === "loading"}>
         <DetailSections detail={detail} onRetry={retryDetail} satellite={satellite} onRetrySatellite={retrySatellite} soil={soil} onRetrySoil={retrySoil} />
-        {!unknownField && <PlansSection plans={plans} onRetry={retryPlans} />}
+        {!unknownField && (
+          <PlansSection
+            planner={planner}
+            choices={plannerChoices}
+            onChoices={onPlannerChoices}
+            irrigationOverride={irrigationOverride}
+            onIrrigationOverride={(value) => setOverride(value === null ? null : { fieldId, value })}
+          />
+        )}
         {!unknownField && <Neighbors fieldId={fieldId} />}
       </div>
     </aside>
@@ -356,11 +377,26 @@ function SoilTile({ label, hint, missing, value, classify, testId }: SoilTilePro
 // Rotation plans (GET /field/{id}/plans)
 // ---------------------------------------------------------------------------------------------
 
-function PlansSection({ plans, onRetry }: { plans: Resource<FieldPlans>; onRetry: () => void }) {
+interface PlansSectionProps {
+  planner: PlansState;
+  choices: PlannerChoices;
+  onChoices: (next: PlannerChoices) => void;
+  irrigationOverride: boolean | null;
+  onIrrigationOverride: (value: boolean | null) => void;
+}
+
+function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrigationOverride }: PlansSectionProps) {
+  const plans = planner.resource;
+  const data = plans.status === "ready" ? plans.data : null;
+  // The future-weather planner answered: show its controls and the extra parts of the cards.
+  const smart = data !== null && data.engine === "smart" && data.settings !== undefined && data.climate !== undefined;
+  const settings = smart ? data.settings : undefined;
+  const climate = smart ? data.climate : undefined;
+  const profitDomain = data && smart ? spreadDomain(data.plans.map((plan) => plan.spread?.profit_per_acre)) : undefined;
   return (
     <Section title="Rotation plans" id="section-plans" meta="Next 4 years · scores 0–1, higher is better">
       {plans.status === "error" && (
-        <ErrorNote title="Could not load rotation plans" message={plans.message} onRetry={onRetry} />
+        <ErrorNote title="Could not load rotation plans" message={plans.message} onRetry={planner.retry} />
       )}
       {plans.status === "loading" && (
         <>
@@ -372,16 +408,56 @@ function PlansSection({ plans, onRetry }: { plans: Resource<FieldPlans>; onRetry
           <LoadingNote what="rotation plans" />
         </>
       )}
-      {plans.status === "ready" &&
-        (plans.data.plans.length === 0 ? (
-          <p className="muted">No rotation plans are available for this field.</p>
-        ) : (
-          <ol className="plans" data-testid="plans">
-            {plans.data.plans.map((plan, index) => (
-              <PlanCard key={index} plan={plan} rank={index + 1} />
-            ))}
-          </ol>
-        ))}
+      {data && (
+        <>
+          {settings && climate && (
+            <PlannerControls
+              choices={choices}
+              onChange={onChoices}
+              settings={settings}
+              climate={climate}
+              irrigationOverride={irrigationOverride}
+              onIrrigationOverride={onIrrigationOverride}
+            />
+          )}
+          {planner.updateError !== null && (
+            <p className="plans-update-error" role="alert" data-testid="plans-update-error">
+              <span>Could not update the plans, so these are the last ones we worked out. {planner.updateError}</span>
+              <button type="button" className="link-button" onClick={planner.retry}>
+                Try again
+              </button>
+            </p>
+          )}
+          {/* The previous cards stay up, dimmed, while a newer answer is on its way. */}
+          <div
+            className={planner.updating ? "plans-live is-updating" : "plans-live"}
+            aria-live="polite"
+            aria-busy={planner.updating}
+            data-testid="plans-region"
+            data-engine={data.engine ?? "basic"}
+            data-updating={planner.updating ? "true" : "false"}
+            data-query={planner.shownQuery ?? undefined}
+          >
+            {data.plans.length === 0 ? (
+              <p className="muted">No rotation plans are available for this field.</p>
+            ) : (
+              <ol className="plans" data-testid="plans">
+                {data.plans.slice(0, 3).map((plan, index) => (
+                  <PlanCard key={index} plan={plan} rank={index + 1} irrigated={settings?.irrigated} profitDomain={profitDomain} />
+                ))}
+              </ol>
+            )}
+            {settings && <CurrentPatternRow current={data.current} note={data.current_note} candidates={data.candidates} />}
+          </div>
+          {settings ? (
+            <ScoringNote settings={settings} />
+          ) : (
+            <p className="plans-basic-note muted" data-testid="plans-basic-note">
+              Future-weather planning is not set up on this server, so these plans do not look at the climate ahead.
+            </p>
+          )}
+        </>
+      )}
     </Section>
   );
 }

@@ -7,6 +7,8 @@ import { useResource } from "./hooks/useResource";
 import type { Resource } from "./hooks/useResource";
 import { useSelection } from "./hooks/useSelection";
 import { formatCount, plural } from "./lib/format";
+import { DEFAULT_CHOICES } from "./lib/planner";
+import type { PlannerChoices } from "./lib/planner";
 import type { Health } from "./types";
 
 const loadFields = (_key: string, signal: AbortSignal) => api.fields(signal);
@@ -18,6 +20,8 @@ export default function App() {
   const [health, retryHealth] = useResource("health", loadHealth);
   const { selection, select, clear } = useSelection();
   const [drawn, setDrawn] = useState<number | null>(null);
+  // The planner sliders, future and scenario live here so they carry over from field to field.
+  const [plannerChoices, setPlannerChoices] = useState<PlannerChoices>(DEFAULT_CHOICES);
 
   const fieldData = fields.status === "ready" ? fields.data : null;
   const areaById = useMemo(() => {
@@ -91,7 +95,13 @@ export default function App() {
       </main>
 
       {selection && (
-        <FieldPanel fieldId={selection.id} areaHa={areaById.get(selection.id) ?? null} onClose={clear} />
+        <FieldPanel
+          fieldId={selection.id}
+          areaHa={areaById.get(selection.id) ?? null}
+          onClose={clear}
+          plannerChoices={plannerChoices}
+          onPlannerChoices={setPlannerChoices}
+        />
       )}
     </div>
   );

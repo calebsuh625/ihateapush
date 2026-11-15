@@ -414,6 +414,8 @@ async function checkPanel(page, fieldId, detail, plans, satellite, soil) {
   equal(plans.plans.length, 3, `${fieldId}: plans returned by the API`);
   const cards = panel.locator('[data-testid="plan-card"]');
   equal(await cards.count(), 3, `${fieldId}: plan cards`);
+  // the future-weather planner ("engine": "smart") scores risk as well
+  const scoreKeys = plans.engine === "smart" ? ["soil", "water", "money", "risk"] : ["soil", "water", "money"];
   const overalls = [];
   for (let i = 0; i < 3; i++) {
     const card = cards.nth(i);
@@ -428,14 +430,14 @@ async function checkPanel(page, fieldId, detail, plans, satellite, soil) {
     const overall = ((await card.locator('[data-testid="plan-overall"]').textContent()) ?? "").trim();
     equal(overall, score(plan.scores.overall), `${fieldId}: plan ${i + 1} overall score`);
     const shownScores = (await card.locator(".score-value").allTextContents()).map((s) => s.trim());
-    equal(shownScores.join(" "), ["soil", "water", "money"].map((k) => score(plan.scores[k])).join(" "), `${fieldId}: plan ${i + 1} soil / water / money values`);
+    equal(shownScores.join(" "), scoreKeys.map((k) => score(plan.scores[k])).join(" "), `${fieldId}: plan ${i + 1} ${scoreKeys.join(" / ")} values`);
     overalls.push(Number(overall));
     const meters = await card.locator('[role="meter"]').evaluateAll((nodes) =>
       nodes.map((node) => `${node.getAttribute("aria-label")}=${Number(node.getAttribute("aria-valuenow")).toFixed(2)}`),
     );
     equal(
       meters.join(" "),
-      ["soil", "water", "money"].map((k) => `${titleCase(k)} score=${Math.min(1, Math.max(0, plan.scores[k])).toFixed(2)}`).join(" "),
+      scoreKeys.map((k) => `${titleCase(k)} score=${Math.min(1, Math.max(0, plan.scores[k])).toFixed(2)}`).join(" "),
       `${fieldId}: plan ${i + 1} score bars`,
     );
   }

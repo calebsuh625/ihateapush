@@ -90,9 +90,10 @@ export const api = {
       signal,
     ),
 
-  plans: (fieldId: string, signal?: AbortSignal) =>
+  /** `query` is a ready query string without the "?" (see lib/planner.ts), or empty. */
+  plans: (fieldId: string, signal?: AbortSignal, query = "") =>
     getJson<FieldPlans>(
-      `${fieldPath(fieldId)}/plans`,
+      `${fieldPath(fieldId)}/plans${query ? `?${query}` : ""}`,
       (b) => isObject(b) && b.field_id === fieldId && Array.isArray(b.plans),
       signal,
     ),

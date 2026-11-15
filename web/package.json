@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "node --test tests/*.test.mjs",
     "e2e": "node e2e/smoke.mjs",
-    "e2e:states": "node e2e/states.mjs"
+    "e2e:states": "node e2e/states.mjs",
+    "e2e:planner": "node e2e/planner.mjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
