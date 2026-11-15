@@ -387,7 +387,7 @@ ww); sorghum (milo, grain sorghum); alfalfa (lucerne); fallow (idle, summer fall
     "spread": {"overall": {"low": 0.448, "mid": 0.498, "high": 0.582}, "profit_per_acre": {"low": -6.0, "mid": 16.0, "high": 41.0}},
     "numbers": {"bare_days": 97.3, "erosion_index": 1.788, "irrigation_mm": 0.0, "irrigation_in": 0.0,
                 "water_met_share": 0.545, "profit_per_acre": 17.0, "failed_share": 0.223},
-    "rank": 15, "rank_of": 18,
+    "rank": 15, "rank_of": 18, "rankable": true,
     "is_candidate": false, "same_as_pick": null,
     "rules_broken": ["Our plans avoid winter wheat straight after corn, sorghum or soybeans without irrigation (...)."],
     "scored_as": ["corn", "sorghum", "winter wheat", "fallow"]
@@ -435,8 +435,17 @@ ww); sorghum (milo, grain sorghum); alfalfa (lucerne); fallow (idle, summer fall
   (inches pumped when irrigated, share of need met by rain on dryland), `profit`, `failed`. A column is
   marked unless another column is ahead of it in every climate model with a different figure at the
   precision shown; an empty list means nothing separates the columns. `robust` marks the highest value.
-  When yours is fallow every year the app shows "no crop" instead of a share for `failed` and (dryland)
-  `water_use`, and column 0 is never marked in those rows.
+  When yours is fallow every year (not rankable, below) column 0 is never marked in any row and our
+  picks are marked among themselves.
+- **A rotation that plants no crop in any year is not rankable.** Then `yours.rankable` is `false`,
+  `yours.rank` and `yours.rank_of` are `null`, `comparison.verdict` is `"not_compared"`,
+  `comparison.models` is `null`, `comparison.rows`, `priorities` and `priority_sentences` are empty, and
+  `comparison.headline` is one sentence built from its own figures: "This rotation plants no crop in any
+  year, so it returns nothing (it costs about $14 an acre a year to keep fallow) and leaves the soil bare
+  about 104 days a year; it is not ranked or compared with our plans as a cropping plan." `yours.scores`
+  and `yours.numbers` still carry what the engine computes (water and risk scores of 1.0 only because
+  there is no crop); the app shows "not ranked" and "no crop" in their place. In every other answer
+  `rankable` is `true` and the fields are as described here.
 - `comparison` is yours against `plans[0]`. `rows` always has `soil`, `water`, `money`, `risk`, `holds`
   in that order. `yours`, `ours` and `diff` (yours minus ours, between the rounded values) are in `unit`:
   bare days a year; inches pumped a year or the share of crop water need met by rain; dollars an acre a
@@ -456,6 +465,123 @@ Errors: `400 {"detail": "<one plain sentence>"}` for a crop that is not one of t
 them), fewer than 2 or more than 6 years, no rotation, and the bad settings `/plans` refuses; `404` no such
 field; `503 {"detail": "<one plain sentence>"}` when only the basic planner is available (no climate
 tables, `PLANNER_ENGINE=basic`, a custom planner) or the engine failed. The app hides the feature on 503.
+
+## `GET /field/{id}/transition` (Phase 4: transition path)
+
+The year-by-year path from the field's real last years to a rotation, scored against carrying on as now.
+Smart planner only (`api/planner/transition.py`). Query: `plan` = 1, 2 or 3 (that pick of `/plans` for the
+same settings; the default is 1) **or** `target` = a rotation of 2 to 6 crops, read like `rotation` of
+`/score`; `years` = how many years ahead, 4 to 12 (default 8); plus every parameter of `/plans`, with the
+same defaults and checks.
+
+```json
+{
+  "field_id": "KS-004139", "engine": "smart",
+  "settings": { "...": "exactly the settings block of /plans" },
+  "years": 8,
+  "target": {"source": "plan", "plan": 2, "name": "Sorghum – Fallow (alternating)",
+             "cycle": ["sorghum", "fallow", "sorghum", "fallow"], "rules_broken": []},
+  "history": [{"year": 2022, "crop": "sorghum"}, {"year": 2023, "crop": "fallow"}, {"year": 2024, "crop": "winter wheat"}],
+  "status": "path",
+  "summary": "The rotation can start in 2025 with fallow (year 2 of the cycle). Of the 2 years of the cycle that can follow winter wheat (2024), this start returns the most over the 8 years.",
+  "path": {
+    "bridge_years": 0, "already_there": false,
+    "entry": {"n": 1, "year": 2025, "crop": "fallow", "cycle_year": 2},
+    "options": 2,
+    "years": [
+      {"n": 1, "year": 2025, "crop": "fallow", "after": "winter wheat", "role": "plan", "cycle_year": 2,
+       "return": {"mid": -14, "low": -14, "high": -14}, "yield": null, "yield_unit": null,
+       "irrigation_mm": 0.0, "irrigation_in": 0.0, "water_met_share": null, "bare_days": 130.0, "fail_chance": null}
+    ],
+    "total_return": {"mid": 469, "low": 294, "high": 611}
+  },
+  "blocked": [],
+  "carry_on": {
+    "name": "Sorghum – Fallow – Winter wheat (3-year cycle)", "pattern": ["sorghum", "fallow", "winter wheat"],
+    "repeating": true, "basis_years": [2021, 2024],
+    "years": [
+      {"n": 1, "year": 2025, "crop": "sorghum", "after": "winter wheat", "role": "carry_on", "cycle_year": 1,
+       "return": {"mid": 88, "low": 47, "high": 122}, "yield": 59.4, "yield_unit": "bu/acre",
+       "irrigation_mm": 0.0, "irrigation_in": 0.0, "water_met_share": 0.621, "bare_days": 48.9, "fail_chance": 0.186}
+    ],
+    "total_return": {"mid": 287, "low": 133, "high": 434}
+  },
+  "carry_on_note": null,
+  "difference": {
+    "years": [
+      {"n": 1, "year": 2025, "return": {"mid": -102, "low": -136, "high": -61},
+       "cumulative": {"mid": -102, "low": -136, "high": -61}, "bare_days": 81.1, "cumulative_bare_days": 81.1}
+    ],
+    "payback": {"status": "paid_back", "n": 4, "year": 2028, "lowest": {"n": 1, "value": -102, "year": 2025},
+                "models_ahead_at_end": 6, "models": 6},
+    "total": {"mid": 181, "low": 157, "high": 206},
+    "total_sentence": "After 8 years this path is about $181 an acre ahead of carrying on as now ($157 to $206 across the climate models); it is level or ahead in 6 of the 6 climate models."
+  },
+  "long_run": {
+    "plan": {"return": {"mid": 59, "low": 37, "high": 76}, "bare_days": 130.6, "irrigation_mm": 0.0,
+             "irrigation_in": 0.0, "water_met_share": 0.735, "failed_share": 0.117},
+    "carry_on": {"return": {"mid": 36, "low": 17, "high": 54}, "bare_days": 81.0, "irrigation_mm": 0.0,
+                 "irrigation_in": 0.0, "water_met_share": 0.656, "failed_share": 0.139},
+    "difference": {"return": {"mid": 23, "low": 20, "high": 27}, "verdict": "plan",
+                   "models": {"plan_ahead": 6, "carry_on_ahead": 0, "total": 6},
+                   "bare_days": 49.6, "failed_share": -0.022}
+  },
+  "sentences": {
+    "short_term": "Short term: at its lowest point, after 2025 (year 1), this path is about $102 an acre behind carrying on as now (−$136 to −$61 across the climate models).",
+    "long_term": "Long term: once established, the plan returns about $23 an acre a year more than carrying on as now ($20 to $27 across the climate models), and the switch has paid back by 2028 (year 4); it also leaves the soil bare about 50 more days a year."
+  },
+  "not_modelled": ["Equipment, storage, contracts, lease and crop insurance terms, and the learning curve of a crop that is new to the farm.", "..."],
+  "notes": ["Every year is scored with the average weather of 2015–2034 in each of the 6 climate models (the future chosen for the plans), not with a forecast for that calendar year.", "..."]
+}
+```
+
+(Values from the live server on 2026-11-15, default settings; the `years` lists trimmed to one entry.)
+
+- `{mid, low, high}` everywhere: the mean over the climate models, the lowest model and the highest.
+  Dollars are whole dollars an acre, return over direct costs.
+- `target`: `source` is `"plan"` (then `plan` is the card number) or `"own"`. `rules_broken`: the "Our
+  plans avoid ..." sentences the rotation itself breaks every round; they are not held against the path.
+- `history`: the field's last recorded years as they are, at most three, oldest first.
+- `status`: `"path"`; `"already_there"` (the last three real years, or a whole cycle if longer, follow
+  the rotation; `path` is then its next years and `carry_on` is the same cycle, so every difference is
+  zero); `"no_path"` (nothing valid within two bridge years: `path`, `difference`, `sentences` are null and
+  `blocked` names the rules); `"no_history"` (the last recorded year is not one of the six crops, or there
+  is no history: everything below `summary` is null or empty). `summary` is always one or two plain
+  sentences saying which.
+- `path.years[]`: `n` (1-based), `year` (the last recorded year plus `n`), `crop`, `after` (the crop the
+  year before; for year 1 the last real crop), `role` (`"bridge"` or `"plan"`), `cycle_year` (1-based year
+  of `target.cycle`, null for a bridge year), `return`, `yield` in `yield_unit` an acre (null for fallow),
+  `irrigation_mm` / `irrigation_in` pumped, `water_met_share` (share of the crop's water need that is met;
+  null for fallow), `bare_days` (that crop after that previous crop, no rotation-type shift), `fail_chance`
+  (chance the yield is under half of normal; null for fallow). `path.entry` is the first year of the
+  rotation after `bridge_years` (0 to 2) bridge years; `options` counts the valid ways in with that many
+  bridge years. `total_return`: the sum over the span.
+- `blocked`: with a bridge, the rules in the way of starting the rotation straight away; with no path,
+  also what waiting on the present crop would break. Empty otherwise.
+- `carry_on`: the current pattern continued. `pattern` is what repeats (next year is `pattern[0]`);
+  `repeating` false means the last four years (`basis_years`) are not a repeating pattern and are repeated
+  as they are, and `carry_on_note` says so. `years[]` as in `path` with `role: "carry_on"`. Null, with a
+  `carry_on_note`, when fewer than four real years of the six crops are on record; then `difference`,
+  `long_run` and `sentences` are null too.
+- `difference.years[]`: path minus carry on. `return.mid` is the difference of the two rounded returns
+  shown; `low` / `high` are the lowest and highest climate model of the difference itself (both face the
+  same weather in a model). `cumulative` is the running total. `bare_days` and `cumulative_bare_days` the
+  same for bare days; `irrigation_in` only on irrigated fields.
+- `difference.payback.status`: `"paid_back"` (the running total is below zero at some point and at or
+  above zero from year `n` / `year` to the end), `"never_behind"`, `"not_within_span"` (below zero at the
+  end), `"no_difference"`. `lowest` is the lowest running total and its year; `models_ahead_at_end` counts
+  the climate models whose running total is at or above zero at the end.
+- `long_run`: each rotation as a repeating cycle, as a plan card scores it (for a plan target
+  `long_run.plan.return.mid` is the card's `numbers.profit_per_acre`). `difference.verdict`: `"plan"` or
+  `"carry_on"` when that side returns more in every climate model, `"too_close"` when they disagree,
+  `"same"` when the two rounded figures are equal. `irrigation_in` only on irrigated fields; `failed_share`
+  only when both plant a crop.
+- `sentences`, `summary`, `total_sentence`, `not_modelled` and `notes` are shown by the app word for word.
+
+Errors: `400 {"detail": "<one plain sentence>"}` for `years` outside 4 to 12, a `plan` that is not 1 to 3,
+both `plan` and `target`, a target `/score` would refuse, and the bad settings `/plans` refuses; `404` no
+such field; `503 {"detail": "<one plain sentence>"}` when only the basic planner is available or the
+engine failed.
 
 ## `GET /climate`
 

@@ -23,6 +23,7 @@ import type { Slot } from "../lib/custom";
 import { formatScore } from "../lib/format";
 import { RANKING_SCORE_LABEL, RANKING_SCORE_TITLE, formatDollars, formatInches, formatShare, wellQualifier } from "../lib/planner";
 import type { FieldScore, Plan } from "../types";
+import { HowToGetThere } from "./TransitionPath";
 import "./OwnRotation.css";
 
 interface OwnRotationProps {
@@ -341,7 +342,7 @@ export function OwnRotation({ fieldId, plansQuery, slots, onSlots, currentCycle,
                 </button>
               </p>
             )}
-            <ScoreResult score={result.data} />
+            <ScoreResult score={result.data} fieldId={fieldId} plansQuery={plansQuery} />
           </>
         )}
       </div>
@@ -378,28 +379,41 @@ interface Row {
 const NO_FIGURE = "no figure";
 /** A rotation that is fallow every year has no crop to water or to lose, so those cells say so. */
 const NO_CROP = "no crop";
+/** ...and it is not ranked: with no crop it is not a cropping plan (the API sends `yours.rankable: false`). */
+const NOT_RANKED = "not ranked";
 const plantsNothing = (plan: Plan) => (plan.cycle ?? plan.rotation).every((crop) => crop === "fallow");
 
 /** The table rows for yours and our picks, each figure formatted the way the plan cards format it. */
 function tableRows(score: FieldScore): { scores: Row[]; figures: Row[] } {
   const columns: Plan[] = [score.yours, ...score.plans.slice(0, 3)];
   const irrigated = score.settings.irrigated;
-  const each = (cell: (plan: Plan) => Cell | string): Cell[] =>
-    columns.map((plan) => {
-      const made = cell(plan);
+  // Yours plants nothing: no ranking score, and no water or risk score (they would be full marks only
+  // because there is no crop to run short of water or to fail).
+  const unranked = score.yours.rankable === false;
+  const each = (cell: (plan: Plan, column: number) => Cell | string): Cell[] =>
+    columns.map((plan, column) => {
+      const made = cell(plan, column);
       return typeof made === "string" ? { text: made } : made;
     });
   const scoreRow = (key: "soil" | "water" | "money" | "risk", label: string): Row => ({
     key,
     label,
-    cells: each((plan) => (typeof plan.scores[key] === "number" ? formatScore(plan.scores[key] as number) : NO_FIGURE)),
+    cells: each((plan, column) =>
+      unranked && column === 0 && (key === "water" || key === "risk")
+        ? NO_CROP
+        : typeof plan.scores[key] === "number"
+          ? formatScore(plan.scores[key] as number)
+          : NO_FIGURE,
+    ),
   });
   const scores: Row[] = [
     {
       key: "robust",
       label: RANKING_SCORE_LABEL,
       title: RANKING_SCORE_TITLE,
-      cells: each((plan) => formatScore(typeof plan.scores.robust === "number" ? plan.scores.robust : plan.scores.overall)),
+      cells: each((plan, column) =>
+        unranked && column === 0 ? NOT_RANKED : formatScore(typeof plan.scores.robust === "number" ? plan.scores.robust : plan.scores.overall),
+      ),
     },
     scoreRow("soil", "Soil protection"),
     scoreRow("water", "Water"),
@@ -432,12 +446,13 @@ function tableRows(score: FieldScore): { scores: Row[]; figures: Row[] } {
   return { scores, figures };
 }
 
-function ScoreResult({ score }: { score: FieldScore }) {
+function ScoreResult({ score, fieldId, plansQuery }: { score: FieldScore; fieldId: string; plansQuery: string }) {
   const { yours, comparison } = score;
   const picks = score.plans.slice(0, 3);
   const columns = [yours, ...picks];
   const { scores, figures } = tableRows(score);
   const isOurFirst = yours.same_as_pick === 1;
+  const unranked = yours.rankable === false;
   const renderRows = (rows: Row[]) =>
     rows.map((row) => {
       const marked = score.marks[row.key] ?? [];
@@ -515,13 +530,13 @@ function ScoreResult({ score }: { score: FieldScore }) {
       )}
 
       <div className="own-why" data-testid="own-why">
-        <h4>{isOurFirst ? "How yours compares" : "How yours compares with our first pick"}</h4>
+        <h4>{unranked ? "Why yours is not ranked" : isOurFirst ? "How yours compares" : "How yours compares with our first pick"}</h4>
         <div className="own-headline" data-testid="own-headline">
           {comparison.headline.map((sentence, index) => (
             <p key={index}>{sentence}</p>
           ))}
         </div>
-        {!isOurFirst && (
+        {!isOurFirst && comparison.rows.length > 0 && (
           <ul className="own-compare" data-testid="own-compare">
             {comparison.rows.map((row) => (
               <li key={row.key} data-verdict={row.verdict} data-testid={`own-compare-${row.key}`}>
@@ -534,12 +549,16 @@ function ScoreResult({ score }: { score: FieldScore }) {
             ))}
           </ul>
         )}
-        <h4>When would yours come first?</h4>
-        <div className="own-priorities" data-testid="own-priorities">
-          {comparison.priority_sentences.map((sentence, index) => (
-            <p key={index}>{sentence}</p>
-          ))}
-        </div>
+        {comparison.priority_sentences.length > 0 && (
+          <>
+            <h4>When would yours come first?</h4>
+            <div className="own-priorities" data-testid="own-priorities">
+              {comparison.priority_sentences.map((sentence, index) => (
+                <p key={index}>{sentence}</p>
+              ))}
+            </div>
+          </>
+        )}
         {yours.rules_broken.length > 0 && (
           <>
             <h4>What our plans avoid</h4>
@@ -558,6 +577,8 @@ function ScoreResult({ score }: { score: FieldScore }) {
           </ul>
         )}
       </div>
+      {/* The way from what the field grows now to this rotation. Not for one that plants nothing. */}
+      {!unranked && <HowToGetThere fieldId={fieldId} plansQuery={plansQuery} target={{ rotation: score.understood }} name={yours.name} />}
     </>
   );
 }

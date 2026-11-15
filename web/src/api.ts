@@ -1,6 +1,6 @@
 // The one place the app talks to the backend. Every call returns typed JSON or throws ApiError
 // (or the browser's AbortError when the caller cancelled the request).
-import type { FieldCollection, FieldDetail, FieldPlans, FieldSatellite, FieldScore, FieldSoil, Health } from "./types";
+import type { FieldCollection, FieldDetail, FieldPlans, FieldSatellite, FieldScore, FieldSoil, FieldTransition, Health } from "./types";
 
 const configured: string | undefined = import.meta.env.VITE_API_URL;
 
@@ -110,6 +110,21 @@ export const api = {
         Array.isArray(b.plans) &&
         isObject(b.marks) &&
         isObject(b.comparison),
+      signal,
+    ),
+
+  /** The year-by-year path to a rotation. `query` comes from transitionQuery (lib/transition.ts). */
+  transition: (fieldId: string, signal: AbortSignal | undefined, query: string) =>
+    getJson<FieldTransition>(
+      `${fieldPath(fieldId)}/transition?${query}`,
+      (b) =>
+        isObject(b) &&
+        b.field_id === fieldId &&
+        typeof b.status === "string" &&
+        typeof b.summary === "string" &&
+        isObject(b.target) &&
+        Array.isArray(b.history) &&
+        Array.isArray(b.not_modelled),
       signal,
     ),
 

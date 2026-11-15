@@ -256,6 +256,7 @@ Base URL `http://127.0.0.1:8010` (interactive docs at `/docs`).
 | `GET /field/{id}` | one field: outline, `crop_history` as an object, organic matter, slope, area, and stats (distinct crops, longest same-crop streak, % of years in corn) |
 | `GET /field/{id}/plans` | the planner's top 3 rotations with soil / water / money / overall scores and a one-line reason; with the Phase 3 tables also risk, "holds up in X of 6 futures", and the future weather assumed (see [Phase 3](#phase-3-smart-planner-and-future-weather)) |
 | `GET /field/{id}/score?rotation=...` | Phase 4: the farmer's own rotation scored like the plans, next to our top 3, with a comparison (see [Phase 4](#phase-4); 503 without the Phase 3 tables) |
+| `GET /field/{id}/transition?plan=1` | Phase 4: the year-by-year path from what the field grows now to one of our plans (`plan=1|2|3`) or to the farmer's own rotation (`target=...`), against carrying on as now (see [Phase 4](#phase-4); 503 without the Phase 3 tables) |
 | `GET /climate` | Phase 3: the future weather the planner assumes, per scenario and year |
 | `GET /field/{id}/satellite` | per-year `ndvi_peak`, `cover_frac` and `n_obs`, plus averages and the trend per decade; `"available": false` with a reason if the satellite file has not been built |
 | `GET /field/{id}/soil` | per-year `om_pred`, `confidence`, `n_obs` and `bare_days` for 2016–2024, the soil-survey value, which signal to trust, the typical noise and a plain verdict; `"available": false` with a reason if the soil table has not been built |
@@ -741,8 +742,13 @@ Limits:
   is scored" apply unchanged (no yield effect of the previous crop beyond soil water, today's prices).
 - A rotation our rules would never recommend can still score well, because the rules are agronomy the
   crop model cannot see (see Phase 3). Continuous corn under irrigation would be number 2 of 106 on
-  KS-014376 today; the section says which rule it breaks rather than hiding the score. A rotation that
-  plants nothing gets full marks on water and risk, and the answer says why.
+  KS-014376 today; the section says which rule it breaks rather than hiding the score.
+- A rotation that plants no crop in any year (fallow every year) is **not rankable**. With nothing planted
+  the engine's water and risk scores are 1.00, which once put it "first, ahead of all 17" on dryland. It
+  now gets no rank, no comparison, no "would come first" sentence and no mark in its column
+  (`yours.rankable: false`, `rank: null`); instead one sentence with its own figures says that it plants
+  nothing, returns nothing (what the fallow costs) and leaves the soil bare about N days a year. The table
+  shows "not ranked" and "no crop" where a score would mislead.
 - On dryland the sign of the dollar figures depends on the price years and the fallow cost; the answer
   carries that sentence as a note.
 - Cycles of 5 or 6 years are scored but can never be "one of ours": the planner compares 3- and 4-year
@@ -753,3 +759,86 @@ Limits:
 
 Checks: `tests/test_custom_rotation.py`, `web/tests/custom.test.mjs`, `npm --prefix web run e2e:phase4`
 (part of `make e2e`; compares the table, the marks and every sentence with a direct API call).
+
+### Transition path (item 2)
+
+A farm cannot switch overnight: next year's crop follows this year's. "How to get there", on each plan card
+and under the build-your-own result, opens the year-by-year way from what the field grows now to that
+rotation:
+
+- a strip of years: the field's last three real years (greyed), then the path, bridge years marked, each
+  year with its crop and its return an acre over direct costs (lowest to highest climate model under it);
+- two sentences built from the numbers: what the switch costs short term and what it gains long term;
+- against "carry on as now" (the field's current pattern continued): a small chart of the running total of
+  the difference (bar = lowest to highest climate model, dot = their average, the payback year shaded) and
+  a table with both returns, the difference and the running total for every year;
+- behind two folds: water, bare days and the chance the crop fails for every year; and what is left out.
+
+It follows the planner controls like the cards do (priorities, future, scenario, irrigation switch) and
+can show 4 to 12 years (8 to start with). Nothing is asked of the server until a path is opened.
+
+```
+GET /field/{id}/transition?plan=1|2|3            (+ years=8 and the query parameters of /plans)
+GET /field/{id}/transition?target=corn,soybeans  (the farmer's own rotation, 2 to 6 crops as typed)
+```
+
+Code: `api/planner/transition.py` (path search, year-by-year scoring, difference, words),
+`Engine.crop_year` in `api/planner/smart.py` (one crop after one previous crop, per climate model),
+`api/main.py` (endpoint), `web/src/components/TransitionPath.tsx`, `web/src/lib/transition.ts`. Answer
+shape: schema.md.
+
+How the path is found:
+
+- It starts from the field's real last years (`crop_history`) and picks the year of the target cycle to
+  start in. Every step from the last real crop onward is checked against the planner's rules in the form
+  that involves the crops before it: no wheat, fallow or soybeans straight after itself; no third year in
+  a row of corn or of sorghum; an alfalfa stand is not ended before its third year (the real stand's years
+  count); on dryland no wheat straight after corn, sorghum or soybeans, no alfalfa, no soybeans and no
+  corn within two years of corn; under irrigation no fallow within three years of fallow.
+- When no year of the cycle can follow the field's last crops, up to two **bridge years** come first (in
+  the county's fields today that is almost always a young alfalfa stand that has to reach its third year).
+- Fewest bridge years first; among those, the start that returns the most over the years shown; then
+  fewer bare days.
+- A field whose last three years (or a whole cycle, if longer) already follow the rotation is **already
+  there**: the answer says so and shows its next years. When nothing valid exists within two bridge years
+  the answer says so and names the rules in the way.
+- What the target rotation itself breaks every round (a farmer's own rotation may) is not held against
+  the path; it is listed separately.
+
+How it is scored:
+
+- Each year is the engine's own figure for that crop after the crop before it, in the climate window of
+  the chosen future (the same settings as the cards): return with the lowest and highest of the six
+  climate models, water pumped or the share of water need rain covers, bare days, chance the crop fails.
+- "Carry on as now": the last four real years repeat with period 1, 2 or 3 (or 4 when the years before
+  confirm it); otherwise those four years are repeated as they are, and the answer says so.
+- The difference is paired by climate model. The switch "has paid back" in the first year from which the
+  running total stays at or above zero to the end of the span; otherwise the answer says it has not.
+- The long-run difference compares the two as repeating cycles (the plan cards' own numbers) and names a
+  winner on returns only when all six climate models agree; otherwise "too close to call" with the count.
+
+Limits:
+
+- Not modelled, and listed in every answer: equipment, storage, contracts, lease and insurance terms, the
+  learning curve of a new crop; carry-over other than soil water (residue, weeds, disease, herbicide
+  plant-back); runs of dry or wet years (every year gets the window's average weather, so this is not a
+  forecast for 2027); price and cost changes; the weaker first year and the seeding cost of a new alfalfa
+  stand.
+- Two of the planner's rules are per cycle ("one corn year in a cycle" on dryland, "one fallow year in
+  four" under irrigation). Year by year they are read as "no corn within two years of corn" and "no fallow
+  within three years of fallow": our reading, stated here and in the module.
+- "The start that returns the most over the years shown" depends on the span: with a fallow year in the
+  cycle, a start that fits one more crop year into the span wins.
+- About one field in eight ends its record with a crop the planner has no numbers for (grass/pasture,
+  triticale, a double crop). There the answer is one sentence saying so, and no path. With fewer than
+  four real years of the six crops there is a path but nothing to compare it with.
+- Year-by-year bare days are the county averages for that crop after the crop before it; the long-run
+  figure also carries the Phase 2B rotation-type shift where one stands out, as the cards do.
+- On dryland the sign of the dollar figures depends on the price years and the fallow cost; the answer
+  carries that sentence as a note.
+- Without the climate tables (basic planner) the endpoint answers 503 and the app does not offer the
+  button. An opened path belongs to one field and is closed when another field is opened.
+
+Checks: `tests/test_transition.py` (each rule, entry year, bridge years, already there, impossible,
+hand-checked arithmetic, the endpoint), `web/tests/transition.test.mjs`, `npm --prefix web run e2e:phase4`
+(part of `make e2e`; compares the strip, the sentences, the chart and both tables with a direct API call).

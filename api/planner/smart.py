@@ -452,6 +452,36 @@ class Engine:
                           failed=base["failed"], soil=soil, water=base["water"], money=base["money"],
                           risk=base["risk"], holds=base["holds"])
 
+    def crop_year(self, irrigated: bool, scenario: str, horizon: int, crop: str, prev: str) -> dict:
+        """One year of `crop` grown after `prev`, in the climate window of (scenario, horizon): the numbers
+        a plan's score is the average of, one value per climate model (arrays [model]) unless noted.
+
+        profit         return over direct costs, $ an acre
+        yield          in the crop's unit an acre (0 for fallow)
+        irrigation_mm  water pumped (0 on dryland)
+        water_met      share of the crop's water need met; None for fallow (no crop, no need)
+        fail_prob      chance the crop fails (yield under half of normal); None for fallow
+        bare_days      one number: bare days that year after that previous crop (no rotation-type shift)
+
+        The previous crop enters the yield through the kind it is (summer crop, wheat or fallow: the soil
+        water it leaves) and the bare days through the crop itself. Used year by year by transition.py.
+        """
+        futures.check_scenario(scenario)
+        w = self._window(scenario, futures.check_horizon(horizon))
+        p = PRACTICES.index("irrigated" if irrigated else "dryland")
+        c, k = _CROP_INDEX[crop], _KIND_INDEX[CROP_TABLE[prev].as_prev]
+        planted = crop != "fallow"
+        need = w["need_mm"][p][:, c]
+        met = np.where(need > 0, 1.0 - w["shortfall_mm"][p][:, c, k] / np.maximum(need, 1e-9), 1.0)
+        return {
+            "profit": w["profit"][p][:, c, k],
+            "yield": w["yield"][p][:, c, k],
+            "irrigation_mm": w["irrigation_mm"][p][:, c, k],
+            "water_met": met if planted else None,
+            "fail_prob": w["fail_prob"][p][:, c, k] if planted else None,
+            "bare_days": float(self.soil.bare_days(crop, prev, bool(irrigated))),
+        }
+
     # --- the field ---
     def traits_for(self, field_id: str) -> FieldTraits | None:
         return self.traits.get(field_id)

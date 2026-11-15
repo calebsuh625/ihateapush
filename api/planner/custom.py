@@ -28,6 +28,14 @@ same. The same test decides which figures the app's side-by-side table marks (`m
 
 `comparison.priorities` answers "when would mine come first?": each of the four priorities is tried
 on its own (that one is all that matters) and the rotation's place among the candidates is reported.
+
+Nothing planted
+---------------
+A rotation that is fallow every year is NOT rankable. With no crop, the engine's water and risk scores
+are 1.00 (nothing can run short of water or fail), which once put it first of all on dryland. It gets
+no rank, no comparison rows, no "would come first" sentences and no marks in its column; the answer
+carries `yours.rankable = false` and one plain sentence (`nothing_planted_sentence`) with its own
+figures: what the fallow costs and how many days a year the soil sits bare.
 """
 from __future__ import annotations
 
@@ -367,6 +375,8 @@ def table_marks(sides: Sequence[_Side], irrigated: bool, plants_nothing: bool = 
     A column is marked unless some other column is ahead of it in every climate model with a different
     figure at the precision shown; a row where nothing separates the columns has no marks. The ranking
     score is the exception: the highest one is marked, because that is what the order is.
+    `plants_nothing`: yours is fallow every year, so it is left out: no mark in column 0 in any row, and
+    our picks are marked among themselves.
     """
     def shown_water(side: _Side):
         return _inches(float(side.irrigation.mean())) if irrigated else _pct(float(side.water_met.mean()))
@@ -383,25 +393,22 @@ def table_marks(sides: Sequence[_Side], irrigated: bool, plants_nothing: bool = 
         "profit": (lambda s: s.profit, True, lambda s: round(float(s.profit.mean()))),
         "failed": (lambda s: s.failed, False, lambda s: _pct(float(s.failed.mean()))),
     }
+    # yours (column 0) plants nothing: it is not compared, so it gets no mark and cannot take one from ours
+    compared = [(j, side) for j, side in enumerate(sides) if not (plants_nothing and j == 0)]
     marks = {}
     for key, (values, higher, shown) in rows.items():
         best = []
-        for j, side in enumerate(sides):
+        for j, side in compared:
             beaten = any(
                 k != j and shown(other) != shown(side)
                 and versus(values(side), values(other), higher)["verdict"] == "ours"
-                for k, other in enumerate(sides))
+                for k, other in compared)
             if not beaten:
                 best.append(j)
-        marks[key] = best if len(best) < len(sides) else []
-    if plants_nothing:
-        # yours (column 0) is fallow every year: the app shows "no crop" for the share of its crops that
-        # fail and (dryland) the share of their water need met by rain, so there is no figure to mark
-        for key in ("failed",) if irrigated else ("failed", "water_use"):
-            marks[key] = [j for j in marks[key] if j != 0]
-    top = max(round(side.robust, 6) for side in sides)
-    best = [j for j, side in enumerate(sides) if round(side.robust, 6) == top]
-    marks["robust"] = best if len(best) < len(sides) else []
+        marks[key] = best if len(best) < len(compared) else []
+    top = max(round(side.robust, 6) for _, side in compared)
+    best = [j for j, side in compared if round(side.robust, 6) == top]
+    marks["robust"] = best if len(best) < len(compared) else []
     return marks
 
 
@@ -412,10 +419,18 @@ def _list(words: Sequence[str]) -> str:
     return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
 
 
-NOTHING_PLANTED_NOTE = (
-    "A rotation that plants nothing gets full marks on water and risk only because there is no crop to run short "
-    "of water or to fail."
-)
+def nothing_planted(cycle: Sequence[str]) -> bool:
+    """True when no year of the rotation plants a crop (fallow every year)."""
+    return all(crop == "fallow" for crop in cycle)
+
+
+def nothing_planted_sentence(profit: float, bare_days: float) -> str:
+    """The one sentence a rotation with no planted crop gets instead of a rank. `profit` is its return
+    over direct costs ($ an acre a year: minus the fallow charge), `bare_days` its bare days a year."""
+    cost = round(abs(profit))
+    charge = f" (it costs about ${cost:,.0f} an acre a year to keep fallow)" if profit <= -0.5 else ""
+    return (f"This rotation plants no crop in any year, so it returns nothing{charge} and leaves the soil bare "
+            f"about {_days(bare_days):.0f} days a year; it is not ranked or compared with our plans as a cropping plan.")
 
 
 def headline(yours: dict, pick: int | None, candidates: int, overall: dict, rows: list) -> list:
@@ -439,8 +454,6 @@ def headline(yours: dict, pick: int | None, candidates: int, overall: dict, rows
         first = (f"Yours is not one of the {candidates} rotations we compare ({why}). Scored the same way, {place} "
                  "with these priorities.")
     out = [first]
-    if all(crop == "fallow" for crop in yours["cycle"]):
-        out.append(NOTHING_PLANTED_NOTE)
     n = overall["total"]
     if overall["verdict"] == "ours":
         out.append(f"Our first pick scores higher overall in all {n} climate models.")
@@ -542,24 +555,24 @@ def score_rotation(field: FieldInput, rotation: Sequence[str], *, weights: Weigh
 
     side = _Side(mine, m, weights)
     ours = [_Side(ev, i, weights) for i in pick_at]
-    rows = compare_rows(side, ours[0], is_irrigated, plants_nothing=all(crop == "fallow" for crop in cycle))
-    overall = versus(side.overall, ours[0].overall, same=pick == 1)
-    places, place_sentences = priority_places(ev, mine, m, at is not None)
+    nothing = nothing_planted(cycle)
     notes = [CYCLE_NOTE]
     if not is_irrigated:
         notes.append(DRYLAND_MONEY_NOTE)
-    return {
-        "field_id": field.field_id,
-        "engine": "smart",
-        "understood": list(cycle),
-        "settings": result.settings,
-        "yours": yours,
-        "plans": [plan.to_dict() for plan in result.plans],
-        "candidates": n_candidates,
-        "marks": table_marks([side, *ours], is_irrigated,
-                             plants_nothing=all(crop == "fallow" for crop in cycle)),
-        "marks_note": MARKS_NOTE,
-        "comparison": {
+    yours["rankable"] = not nothing
+    if nothing:
+        # no crop in any year: not a cropping plan, so no rank, no comparison and no "would come first"
+        yours.update({"rank": None, "rank_of": None})
+        comparison = {
+            "against": result.plans[0].name, "verdict": "not_compared", "models": None,
+            "headline": [nothing_planted_sentence(float(side.profit.mean()), side.bare)],
+            "rows": [], "priorities": [], "priority_sentences": [], "notes": notes,
+        }
+    else:
+        rows = compare_rows(side, ours[0], is_irrigated)
+        overall = versus(side.overall, ours[0].overall, same=pick == 1)
+        places, place_sentences = priority_places(ev, mine, m, at is not None)
+        comparison = {
             "against": result.plans[0].name,
             "verdict": overall["verdict"],
             "models": {"yours_ahead": overall["yours_ahead"], "ours_ahead": overall["ours_ahead"],
@@ -569,5 +582,16 @@ def score_rotation(field: FieldInput, rotation: Sequence[str], *, weights: Weigh
             "priorities": places,
             "priority_sentences": place_sentences,
             "notes": notes,
-        },
+        }
+    return {
+        "field_id": field.field_id,
+        "engine": "smart",
+        "understood": list(cycle),
+        "settings": result.settings,
+        "yours": yours,
+        "plans": [plan.to_dict() for plan in result.plans],
+        "candidates": n_candidates,
+        "marks": table_marks([side, *ours], is_irrigated, plants_nothing=nothing),
+        "marks_note": MARKS_NOTE,
+        "comparison": comparison,
     }

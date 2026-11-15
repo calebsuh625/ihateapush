@@ -16,6 +16,7 @@ import {
   wellQualifier,
 } from "../lib/planner";
 import type { Plan, PlanNumbers, PlanScores, Spread } from "../types";
+import { HowToGetThere } from "./TransitionPath";
 import "./Planner.css";
 
 type ScoreKey = "soil" | "water" | "money" | "risk";
@@ -141,10 +142,12 @@ interface PlanCardProps {
   irrigationLimitIn?: number | null;
   /** When given, the card offers "Edit this plan" (it opens in "Try your own rotation"). */
   onEdit?: () => void;
+  /** Smart planner only: the field and the settings the cards were asked with, for "How to get there". */
+  howTo?: { fieldId: string; plansQuery: string };
 }
 
 /** One ranked rotation plan. The future-weather parts appear only when the answer carries them. */
-export function PlanCard({ plan, rank, irrigated = false, profitDomain, candidates, irrigationLimitIn, onEdit }: PlanCardProps) {
+export function PlanCard({ plan, rank, irrigated = false, profitDomain, candidates, irrigationLimitIn, onEdit, howTo }: PlanCardProps) {
   const top = rank === 1;
   const headingId = `plan-${rank}-name`;
   const profit = plan.spread?.profit_per_acre;
@@ -153,6 +156,11 @@ export function PlanCard({ plan, rank, irrigated = false, profitDomain, candidat
   // The smart planner sorts on scores.robust, so that is the number the card leads with.
   const robust = typeof plan.scores.robust === "number" ? plan.scores.robust : null;
   const place = smart ? placeText(plan.rank, candidates, rank) : null;
+  const editButton = onEdit && (
+    <button type="button" className="link-button" data-testid="plan-edit" aria-label={`Edit this plan: ${plan.name}`} onClick={onEdit}>
+      Edit this plan
+    </button>
+  );
   return (
     <li className={top ? "plan plan--top" : "plan"} aria-labelledby={headingId} data-testid="plan-card">
       <div className="plan-head">
@@ -230,12 +238,11 @@ export function PlanCard({ plan, rank, irrigated = false, profitDomain, candidat
 
       {plan.numbers && <NumbersLine numbers={plan.numbers} irrigated={irrigated} />}
 
-      {onEdit && (
-        <p className="plan-edit">
-          <button type="button" className="link-button" data-testid="plan-edit" aria-label={`Edit this plan: ${plan.name}`} onClick={onEdit}>
-            Edit this plan
-          </button>
-        </p>
+      {howTo ? (
+        // keyed by field: an opened path belongs to the field it was opened for
+        <HowToGetThere key={howTo.fieldId} fieldId={howTo.fieldId} plansQuery={howTo.plansQuery} target={{ plan: rank }} name={plan.name} actions={editButton} />
+      ) : (
+        editButton && <p className="plan-edit">{editButton}</p>
       )}
     </li>
   );

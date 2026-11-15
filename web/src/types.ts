@@ -112,7 +112,7 @@ export interface Plan {
   spread?: { overall?: Spread; profit_per_acre?: Spread };
   numbers?: PlanNumbers;
   /** place among all the patterns compared (`candidates`), sorted on scores.robust */
-  rank?: number;
+  rank?: number | null;
 }
 
 /** The field's own last four years, scored like a plan (smart planner). */
@@ -176,14 +176,19 @@ export interface OwnRotation extends Plan {
   is_candidate: boolean;
   /** 1, 2 or 3 when it is that pick of ours; null otherwise */
   same_as_pick: number | null;
-  rank: number;
-  /** what `rank` is out of: the candidates, plus one when yours is not among them */
-  rank_of: number;
+  /** false when no year plants a crop: then there is no rank, no comparison and no mark on yours */
+  rankable?: boolean;
+  /** null when it is not rankable */
+  rank: number | null;
+  /** what `rank` is out of: the candidates, plus one when yours is not among them; null when not rankable */
+  rank_of: number | null;
   /** the cycle the numbers were worked out for (shortest unit, fixed starting year) */
   scored_as: string[];
 }
 
 export type ComparisonVerdict = "ours" | "yours" | "too_close" | "same";
+/** "not_compared": yours plants no crop, so it is not set against our first pick. */
+export type OverallVerdict = ComparisonVerdict | "not_compared";
 
 /** In how many climate models each side is ahead. */
 export interface ModelCount {
@@ -224,8 +229,9 @@ export interface PriorityPlace {
 export interface ScoreComparison {
   /** the name of our first pick, which every row is measured against */
   against: string;
-  verdict: ComparisonVerdict;
-  models: ModelCount;
+  verdict: OverallVerdict;
+  /** null when yours is not compared */
+  models: ModelCount | null;
   headline: string[];
   rows: ComparisonRow[];
   priorities: PriorityPlace[];
@@ -248,6 +254,138 @@ export interface FieldScore {
   marks: Record<string, number[]>;
   marks_note: string;
   comparison: ScoreComparison;
+}
+
+/** A figure across the six climate models: the mean, the lowest model and the highest. */
+export interface ModelSpread {
+  mid: number;
+  low: number;
+  high: number;
+}
+
+/** One year of a path (or of "carry on as now"): the crop after the crop before it. */
+export interface TransitionYear {
+  /** 1-based year of the path */
+  n: number;
+  /** calendar year: the last year on record plus n */
+  year: number;
+  crop: string;
+  /** the crop the year before */
+  after: string;
+  role: "bridge" | "plan" | "carry_on";
+  /** which year of the target cycle (or of the current pattern) this is; null for a bridge year */
+  cycle_year: number | null;
+  /** return over direct costs, $ an acre */
+  return: ModelSpread;
+  /** null for fallow */
+  yield: number | null;
+  yield_unit: string | null;
+  irrigation_mm: number;
+  irrigation_in: number;
+  /** share of the crop's water need that is met; null for fallow */
+  water_met_share: number | null;
+  bare_days: number;
+  /** chance the crop fails; null for fallow */
+  fail_chance: number | null;
+}
+
+export interface TransitionDifferenceYear {
+  n: number;
+  year: number;
+  /** this path minus carrying on as now, that year */
+  return: ModelSpread;
+  /** the running total of that difference */
+  cumulative: ModelSpread;
+  bare_days: number;
+  cumulative_bare_days: number;
+  /** irrigated fields only */
+  irrigation_in?: number;
+}
+
+export interface TransitionPayback {
+  status: "no_difference" | "never_behind" | "paid_back" | "not_within_span";
+  /** the year (1-based) from which the running total stays at or above zero; null unless "paid_back" */
+  n: number | null;
+  year: number | null;
+  lowest: { n: number; year: number; value: number };
+  models_ahead_at_end: number;
+  models: number;
+}
+
+export interface LongRunSide {
+  return: ModelSpread;
+  bare_days: number;
+  irrigation_mm: number;
+  irrigation_in: number;
+  water_met_share: number | null;
+  failed_share: number | null;
+}
+
+export type TransitionStatus = "path" | "already_there" | "no_path" | "no_history";
+
+/** GET /field/{field_id}/transition?plan=1|2|3 or target=... (smart planner only) */
+export interface FieldTransition {
+  field_id: string;
+  engine: "smart";
+  settings: PlannerSettings;
+  /** how many years ahead are scored, 4 to 12 */
+  years: number;
+  target: {
+    source: "plan" | "own";
+    plan: number | null;
+    name: string;
+    cycle: string[];
+    /** what the rotation itself breaks, year after year (not the path's doing) */
+    rules_broken: string[];
+  };
+  /** the field's last real years, at most three, oldest first */
+  history: { year: number; crop: string }[];
+  status: TransitionStatus;
+  /** one or two plain sentences: how the path gets in, or why there is none */
+  summary: string;
+  path: {
+    bridge_years: number;
+    already_there: boolean;
+    entry: { n: number; year: number; crop: string; cycle_year: number };
+    /** how many valid ways in there were with that many bridge years */
+    options: number;
+    years: TransitionYear[];
+    total_return: ModelSpread;
+  } | null;
+  /** "Our plans avoid ..." sentences in the way of starting the rotation straight away */
+  blocked: string[];
+  carry_on: {
+    name: string;
+    pattern: string[];
+    /** false: the last four years are not a repeating pattern and are repeated as they are */
+    repeating: boolean;
+    basis_years: [number, number];
+    years: TransitionYear[];
+    total_return: ModelSpread;
+  } | null;
+  carry_on_note: string | null;
+  difference: {
+    years: TransitionDifferenceYear[];
+    payback: TransitionPayback;
+    total: ModelSpread;
+    total_sentence: string;
+  } | null;
+  /** each rotation as a repeating cycle, once the plan is established */
+  long_run: {
+    plan: LongRunSide;
+    carry_on: LongRunSide;
+    difference: {
+      return: ModelSpread;
+      verdict: "plan" | "carry_on" | "too_close" | "same";
+      models: { plan_ahead: number; carry_on_ahead: number; total: number };
+      bare_days: number;
+      irrigation_in?: number;
+      failed_share?: number;
+    };
+  } | null;
+  sentences: { short_term: string; long_term: string } | null;
+  not_modelled: string[];
+  notes: string[];
 }
 
 /** GET /field/{field_id}/plans */

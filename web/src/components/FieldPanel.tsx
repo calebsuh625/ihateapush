@@ -123,6 +123,8 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
             irrigationOverride={irrigationOverride}
             onIrrigationOverride={(value) => setOverride(value === null ? null : { fieldId, value })}
             onEditPlan={editPlan}
+            fieldId={fieldId}
+            plannerQuery={plannerQuery}
           />
         )}
         {!unknownField && smartPlans && (
@@ -416,9 +418,12 @@ interface PlansSectionProps {
   onIrrigationOverride: (value: boolean | null) => void;
   /** Send a plan's rotation to "Try your own rotation". */
   onEditPlan: (plan: Plan) => void;
+  /** For "How to get there" on each card: the field and the settings the cards are asked with. */
+  fieldId: string;
+  plannerQuery: string;
 }
 
-function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrigationOverride, onEditPlan }: PlansSectionProps) {
+function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrigationOverride, onEditPlan, fieldId, plannerQuery }: PlansSectionProps) {
   const plans = planner.resource;
   const data = plans.status === "ready" ? plans.data : null;
   // The future-weather planner answered: show its controls and the extra parts of the cards.
@@ -485,6 +490,7 @@ function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrig
                     candidates={data.candidates}
                     irrigationLimitIn={settings?.irrigation_limit_in}
                     onEdit={smart ? () => onEditPlan(plan) : undefined}
+                    howTo={smart ? { fieldId, plansQuery: plannerQuery } : undefined}
                   />
                 ))}
               </ol>

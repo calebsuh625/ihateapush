@@ -11,6 +11,9 @@ Endpoints (the frontend is written against exactly these shapes):
                                    soil, water, money, risk, scenario, horizon, irrigated; else the basic one)
     GET /field/{field_id}/score    the farmer's own rotation (?rotation=corn,sorghum,wheat,fallow) scored like
                                    the plans, next to our top picks (smart planner only; 503 without it)
+    GET /field/{field_id}/transition  the year-by-year path from what the field grows now to one of our plans
+                                   (?plan=1|2|3) or to a rotation (?target=corn,soy), against carrying on as
+                                   now (smart planner only; 503 without it)
     GET /climate                   the climate futures the smart planner uses (or {"available": false})
     GET /field/{field_id}/satellite  yearly Landsat greenness for that field (optional side file)
     GET /field/{field_id}/soil     yearly satellite organic matter and bare-soil days (optional side file)
@@ -55,7 +58,7 @@ from fastapi.responses import JSONResponse, Response
 from api.causal import router as causal_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from api.planner import config as planner_config
-from api.planner import custom, smart
+from api.planner import custom, smart, transition
 from api.planner.traits import FieldTraits
 from pipeline import satellite_schema
 from pipeline.soil import health_schema
@@ -734,6 +737,9 @@ async def plans(
     )
 
 
+TRANSITION_NEEDS_CLIMATE = (
+    "Working out a path to a rotation needs the future-weather tables, which are not set up on this server."
+)
 SCORE_NEEDS_CLIMATE = (
     "Scoring your own rotation needs the future-weather tables, which are not set up on this server."
 )
@@ -776,6 +782,53 @@ async def score(
     except Exception as exc:
         log.warning("scoring a rotation failed for %s: %s: %s", field_id, type(exc).__name__, exc)
         raise HTTPException(status_code=503, detail="The planner could not score this rotation just now.") from exc
+    return JSONResponse(body)
+
+
+@router.get("/field/{field_id}/transition", summary="Year-by-year path from what the field grows now to a rotation")
+async def transition_path(
+    request: Request,
+    field_id: str,
+    target: str | None = None,
+    plan: int | None = None,
+    years: int = transition.DEFAULT_SPAN,
+    soil: float | None = None,
+    water: float | None = None,
+    money: float | None = None,
+    risk: float | None = None,
+    scenario: str = planner_config.DEFAULT_SCENARIO,
+    horizon: int = planner_config.TODAY,
+    irrigated: bool | None = None,
+) -> JSONResponse:
+    """Phase 4, item 2 (api/planner/transition.py). `target`: the rotation to get to, 2 to 6 crops as typed;
+    or `plan`: 1, 2 or 3, that pick of /plans for the same settings (the default). `years`: 4 to 12. The
+    other parameters are those of /plans. 400 with one plain sentence, 503 on the basic planner."""
+    record = _record(request, field_id)
+    if not _use_smart(request):
+        raise HTTPException(status_code=503, detail=TRANSITION_NEEDS_CLIMATE)
+    if target is not None and plan is not None:
+        raise _bad_request("Give either a target rotation or a plan number, not both.")
+    cycle = None
+    if target is not None:
+        try:
+            cycle = custom.parse_rotation(target)
+        except custom.RotationError as exc:
+            raise _bad_request(str(exc)) from exc
+    weights = _plain_weights({"soil": soil, "water": water, "money": money, "risk": risk})
+    if scenario not in planner_config.SCENARIOS:
+        raise _bad_request("The scenario must be ssp245 (middle road) or ssp585 (high emissions).")
+    if not planner_config.HORIZON_MIN <= horizon <= planner_config.HORIZON_MAX:
+        raise _bad_request(f"The year must be between {planner_config.HORIZON_MIN} and {planner_config.HORIZON_MAX}.")
+    try:
+        traits = FieldTraits() if _store(request).is_fake else None      # as in /plans: fake ids are not real fields
+        body = transition.transition_path(record.planner_input(), target=cycle, plan=plan, years=years,
+                                          weights=weights, scenario=scenario, horizon=horizon, irrigated=irrigated,
+                                          traits=traits)
+    except ValueError as exc:
+        raise _bad_request(str(exc).split("\n")[0]) from exc
+    except Exception as exc:
+        log.warning("transition path failed for %s: %s: %s", field_id, type(exc).__name__, exc)
+        raise HTTPException(status_code=503, detail="The planner could not work out this path just now.") from exc
     return JSONResponse(body)
 
 

@@ -213,7 +213,9 @@ def test_answer_has_the_documented_shape_and_the_plans_endpoints_settings(engine
     assert body["candidates"] == plans["candidates"] and body["engine"] == "smart"
     assert body["understood"] == [C, S, W, F]
     yours = body["yours"]
-    assert set(yours) == set(plans["plans"][0]) | {"rules_broken", "is_candidate", "same_as_pick", "rank_of", "scored_as"}
+    assert set(yours) == set(plans["plans"][0]) | {"rules_broken", "is_candidate", "same_as_pick", "rank_of", "scored_as",
+                                                   "rankable"}
+    assert yours["rankable"] is True
     assert yours["cycle"] == [C, S, W, F] and len(yours["rotation"]) == 4
     assert set(yours["scores"]) == {"soil", "water", "money", "risk", "overall", "robust"}
     assert yours["futures"]["total"] == 3 and yours["reason"].endswith("climate futures.") or "climate futures" in yours["reason"]
@@ -324,11 +326,66 @@ def test_two_year_and_continuous_rotations(engine):
     corn = score(engine, "corn corn", field=a_field(IRRIGATED_HISTORY), irrigated=True)
     assert corn["yours"]["scored_as"] == [C] * 4 and corn["yours"]["is_candidate"] is False
     assert any("two years in a row of corn" in s for s in corn["yours"]["rules_broken"])
-    nothing = score(engine, "fallow fallow")
-    assert custom.NOTHING_PLANTED_NOTE in nothing["comparison"]["headline"]
-    assert nothing["yours"]["numbers"]["failed_share"] == 0 and nothing["yours"]["futures"]["holds"] == 0
-    # no crop, so no "share of crops that fail" or "share of water need met" figure of yours to mark
-    assert 0 not in nothing["marks"]["failed"] and 0 not in nothing["marks"]["water_use"]
+
+
+# --- a rotation that plants nothing is not rankable (carry-over from the check of item 1) ---------------
+
+def test_nothing_planted_sentence_is_one_sentence_from_its_own_figures():
+    assert custom.nothing_planted((F, F)) and custom.nothing_planted((F,) * 6)
+    assert not custom.nothing_planted((F, W)) and not custom.nothing_planted((C, C))
+    text = custom.nothing_planted_sentence(-14.2, 103.6)
+    assert text == ("This rotation plants no crop in any year, so it returns nothing (it costs about $14 an acre a "
+                    "year to keep fallow) and leaves the soil bare about 104 days a year; it is not ranked or compared "
+                    "with our plans as a cropping plan.")
+    assert text.count(".") == 1 and "profit" not in text and "income" not in text
+    # a fallow year that costs nothing: no charge is made up
+    assert "costs" not in custom.nothing_planted_sentence(0.0, 90.0)
+
+
+def test_marks_leave_out_a_column_that_plants_nothing():
+    ours1, ours2 = side(), side(profit=[55.0, 55.0, 75.0], bare=95.0, soil=[0.4] * 3, holds=2)
+    idle = side(water_met=[1.0] * 3, water=[1.0] * 3, failed=[0.0] * 3, risk=[1.0] * 3, profit=[-14.0] * 3,
+                bare=60.0, soil=[0.62] * 3, robust=0.9, holds=0)
+    marks = custom.table_marks([idle, ours1, ours2], irrigated=False, plants_nothing=True)
+    assert all(0 not in columns for columns in marks.values())      # no better-value mark on yours, in any row
+    # our picks are marked among themselves, as if yours were not in the table
+    assert marks["bare_days"] == [1] and marks["soil"] == [1] and marks["holds"] == [1] and marks["robust"] == []
+    assert marks["water"] == [] and marks["risk"] == [] and marks["failed"] == []
+    # the same column that does plant something would take the marks
+    assert custom.table_marks([idle, ours1, ours2], irrigated=False)["robust"] == [0]
+
+
+@pytest.mark.parametrize("typed, irrigated", [("fallow fallow", None), ("idle, rest, fallow, fallow, fallow", None),
+                                              ("fallow, fallow, fallow", True)])
+def test_a_rotation_with_no_planted_crop_is_not_rankable(engine, typed, irrigated):
+    nothing = score(engine, typed, irrigated=irrigated)
+    yours, comparison = nothing["yours"], nothing["comparison"]
+    assert yours["rankable"] is False and yours["rank"] is None and yours["rank_of"] is None
+    assert yours["is_candidate"] is False and yours["same_as_pick"] is None
+    # one plain sentence instead of a rank, built from its own figures
+    bare, cost = yours["numbers"]["bare_days"], -yours["numbers"]["profit_per_acre"]
+    assert cost > 0
+    assert comparison["headline"] == [custom.nothing_planted_sentence(-cost, bare)]
+    assert f"about ${cost:.0f} an acre a year to keep fallow" in comparison["headline"][0]
+    assert f"bare about {custom._days(bare)} days a year" in comparison["headline"][0]
+    said = " ".join(comparison["headline"] + comparison["priority_sentences"] + comparison["notes"])
+    assert "come first" not in said and "number" not in said.lower() and "ahead" not in said
+    assert comparison["verdict"] == "not_compared" and comparison["models"] is None
+    assert comparison["rows"] == [] and comparison["priorities"] == [] and comparison["priority_sentences"] == []
+    assert comparison["against"] == nothing["plans"][0]["name"]
+    # no better-value mark on yours anywhere; the engine's own figures are still reported
+    assert all(0 not in columns for columns in nothing["marks"].values())
+    assert yours["numbers"]["failed_share"] == 0 and yours["futures"]["holds"] == 0
+    assert any("fallow straight after fallow" in sentence for sentence in yours["rules_broken"])
+    # the picks next to it are untouched
+    plans = smart.rank_plans_smart(a_field(), irrigated=irrigated, engine=engine).to_dict()["plans"]
+    assert nothing["plans"] == plans
+
+
+def test_one_planted_year_is_enough_to_be_ranked(engine):
+    body = score(engine, "fallow, fallow, fallow, wheat")
+    assert body["yours"]["rankable"] is True and isinstance(body["yours"]["rank"], int)
+    assert body["comparison"]["verdict"] in ("ours", "yours", "too_close", "same") and len(body["comparison"]["rows"]) == 5
 
 
 def test_priorities_say_truthfully_when_yours_would_come_first(engine):
