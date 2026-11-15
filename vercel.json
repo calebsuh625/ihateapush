@@ -1,0 +1,36 @@
+{
+  "builds": [
+    {
+      "src": "deploy/vercel/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "api/**",
+          "pipeline/**",
+          "data/*.parquet",
+          "data/*.json"
+        ]
+      }
+    },
+    {
+      "src": "web/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api(/.*)?",
+      "dest": "/deploy/vercel/index.py"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/web/$1"
+    }
+  ]
+}

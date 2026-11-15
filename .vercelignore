@@ -1,0 +1,16 @@
+# What `vercel deploy` uploads. data/ is git-ignored but the API needs its built tables, so they go up;
+# the download cache, other counties, logs and local environments do not.
+.git
+.venv
+node_modules
+web/node_modules
+web/dist
+data/raw
+data/regions
+data/logs
+data/*.log
+data/*.csv
+*.log
+.pytest_cache
+__pycache__
+.claude
