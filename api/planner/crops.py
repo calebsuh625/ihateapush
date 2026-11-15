@@ -127,6 +127,18 @@ _HEAT_LOSS = {
     "alfalfa": {"dryland": 0.002, "irrigated": 0.001},
 }
 
+# --- hot days beyond the record ----------------------------------------------------------------------
+# The heat loss per day was fitted (or assumed) on the hot days of the 2000-2024 record: 25 to 75
+# growing-season days above 35 C, 2 to 33 May-June days above 32 C. The climate models go well past
+# that (one run averages 101 summer hot days in 2050-2060), where a straight line per day is a guess.
+# So the hot days fed to the heat factor are capped at the record's maximum plus a margin: beyond
+# 75 + 10 summer days (33 + 5 for wheat) a year counts as that many and no more. The maxima below are
+# fallbacks: `python -m api.planner.calibrate` writes the record's own maxima into crop_response.json
+# (`heat_cap`), and the planner reads them again from data/climate_history.parquet when it is there.
+# The margins are ours: about one year-to-year standard deviation (14 and 8 days) or less.
+HOT_DAYS_OBSERVED_MAX = {"hot_days": 75.0, "wheat_hot_days": 33.0}
+HOT_DAYS_MARGIN = {"hot_days": 10.0, "wheat_hot_days": 5.0}
+
 # --- normal yields -----------------------------------------------------------------------------------
 # NASS medians 2000-2024 by practice (bu/acre; alfalfa tons/acre): corn, wheat 2000-2018/19, soybeans
 # 2000-2016 and sorghum 2000-2009 are the years NASS split by practice. Alfalfa has no split: 5.3 is

@@ -295,7 +295,7 @@ def test_more_hot_days_never_raise_yield(params_name):
     years = [2001, 2002]
     monthly = monthly_table(years)
     previous = None
-    for hot, wheat_hot in [(0, 0), (20, 10), (45, 21), (70, 35), (110, 55), (200, 61)]:
+    for hot, wheat_hot in [(0, 0), (20, 10), (45, 21), (70, 30), (85, 38)]:          # up to the cap: strictly worse
         out = response.crop_response(yearly_table(years, hot=hot, wheat_hot=wheat_hot), monthly, params)
         if previous is not None:
             for col in YIELD_COLUMNS:
@@ -304,6 +304,11 @@ def test_more_hot_days_never_raise_yield(params_name):
             assert (out.loc[crops, "yield_rel"].to_numpy() < previous.loc[crops, "yield_rel"].to_numpy()).any()
             assert (out["fail_prob"].to_numpy() >= previous["fail_prob"].to_numpy() - 1e-12).all()
         previous = out
+    # beyond the cap more hot days change nothing (never better, and no worse either)
+    for hot, wheat_hot in [(110, 55), (200, 61)]:
+        out = response.crop_response(yearly_table(years, hot=hot, wheat_hot=wheat_hot), monthly, params)
+        for col in YIELD_COLUMNS + ["fail_prob", "heat_factor"]:
+            assert np.array_equal(out[col].to_numpy(), previous[col].to_numpy()), col
     # heat hits irrigated crops too
     cool = response.crop_response(yearly_table(years, hot=10, wheat_hot=5), monthly, params)
     hot = response.crop_response(yearly_table(years, hot=80, wheat_hot=40), monthly, params)
@@ -421,6 +426,86 @@ def test_heat_and_water_factor_arithmetic():
     assert row["water_need_mm"] == pytest.approx(w["water_need_mm"])
 
 
+def test_hot_days_are_capped_at_the_record_plus_a_margin():
+    from api.planner.crops import HOT_DAYS_MARGIN, HOT_DAYS_OBSERVED_MAX
+
+    assert HOT_DAYS_OBSERVED_MAX == {"hot_days": 75.0, "wheat_hot_days": 33.0}
+    assert HOT_DAYS_MARGIN == {"hot_days": 10.0, "wheat_hot_days": 5.0}
+    params = response.default_params()
+    assert params["heat_cap"] == {"hot_days": {"observed_max": 75.0, "margin": 10.0, "cap": 85.0},
+                                  "wheat_hot_days": {"observed_max": 33.0, "margin": 5.0, "cap": 38.0}}
+    assert response.heat_caps(params) == {"hot_days": 85.0, "wheat_hot_days": 38.0}
+    assert response.heat_caps({}) == {"hot_days": 85.0, "wheat_hot_days": 38.0}          # nothing given: the built-in cap
+    years = [2001, 2002]
+    monthly = monthly_table(years)
+    at_cap = response.crop_response(yearly_table(years, hot=85, wheat_hot=38), monthly, params)
+    beyond = response.crop_response(yearly_table(years, hot=124, wheat_hot=61), monthly, params)
+    below = response.crop_response(yearly_table(years, hot=84, wheat_hot=37), monthly, params)
+    numbers = [c for c in response.COLUMNS if c not in response.KEYS + ["unit"]]
+    assert all(np.array_equal(at_cap[c].to_numpy(), beyond[c].to_numpy()) for c in numbers)
+    corn, wheat = pick(beyond, "corn", "dryland").iloc[0], pick(beyond, "winter wheat", "dryland").iloc[0]
+    assert corn["heat_days"] == 85.0 and wheat["heat_days"] == 38.0                       # the days that were counted
+    assert corn["heat_factor"] == pytest.approx(1 - params["series"]["corn"]["dryland"]["heat_loss"] * 85)
+    assert wheat["heat_factor"] == pytest.approx(1 - params["series"]["winter wheat"]["dryland"]["heat_loss"] * 38)
+    assert pick(below, "corn", "dryland")["yield"].iloc[0] > corn["yield"]                # inside the range a day still counts
+    # the cap comes from the observed table when there is one: its maximum plus the margin
+    history = pd.DataFrame({"year": [2000, 2001, 2002], "hot_days": [30.0, 62.0, 41.0], "wheat_hot_days": [9.0, 12.0, 20.0]})
+    assert response.observed_hot_day_max(history) == {"hot_days": 62.0, "wheat_hot_days": 20.0}
+    lower = response.with_observed_heat_cap(params, history)
+    assert response.heat_caps(lower) == {"hot_days": 72.0, "wheat_hot_days": 25.0} and params["heat_cap"]["hot_days"]["cap"] == 85.0
+    capped = response.crop_response(yearly_table(years, hot=124, wheat_hot=61), monthly, lower)
+    assert pick(capped, "corn", "dryland")["heat_days"].iloc[0] == 72.0
+    assert pick(capped, "corn", "dryland")["yield"].iloc[0] > corn["yield"]
+    for nothing in (None, history.iloc[:0], pd.DataFrame({"year": [2000]})):              # no table, or not that table
+        assert response.with_observed_heat_cap(params, nothing) is params
+
+
+def test_irrigation_limit_passes_the_unmet_share_through_the_dryland_rule():
+    years = [2001, 2002]
+    monthly = monthly_table(years, rain=[0.0] * 12)                                       # no rain: everything is pumped
+    yearly = yearly_table(years, hot=45)
+    params = response.default_params()
+    free = response.crop_response(yearly, monthly, params)
+    same = response.crop_response(yearly, monthly, params, irrigation_limit_mm=0)
+    assert free.equals(same) and free.equals(response.crop_response(yearly, monthly, params, irrigation_limit_mm=None))
+    need = pick(free, "corn", "irrigated", 2002)["irrigation_mm"].iloc[0]
+    roomy = response.crop_response(yearly, monthly, params, irrigation_limit_mm=need + 50.0)
+    assert np.allclose(pick(roomy, "corn", "irrigated")["yield"], pick(free, "corn", "irrigated")["yield"])
+    limit = 300.0
+    assert need > limit
+    short = response.crop_response(yearly, monthly, params, irrigation_limit_mm=limit)
+    row, full = pick(short, "corn", "irrigated", 2002).iloc[0], pick(free, "corn", "irrigated", 2002).iloc[0]
+    eff = params["constants"]["pivot_efficiency"]
+    assert row["irrigation_mm_after_summer"] == pytest.approx(limit)                      # pumps the limit and no more
+    assert row["irrigation_net_mm_after_summer"] == pytest.approx(limit * eff)
+    unmet = full["irrigation_net_mm_after_summer"] - limit * eff
+    assert row["shortfall_mm_after_summer"] == pytest.approx(unmet) and unmet > 0
+    ky = params["series"]["corn"]["dryland"]["ky"]                                       # the crop's Ky (textbook here)
+    wf = 1 - ky * unmet / row["water_need_mm"]
+    assert row["water_factor_after_summer"] == pytest.approx(wf) and full["water_factor_after_summer"] == 1.0
+    assert row["yield_rel_after_summer"] == pytest.approx(full["yield_rel_after_summer"] * wf)
+    assert row["heat_factor"] == full["heat_factor"]
+    # every irrigated crop pumps at most the limit and yields no more than without it; dryland is untouched
+    irr, dry = short["practice"] == "irrigated", short["practice"] == "dryland"
+    for k in PREV_KINDS:
+        assert (short.loc[irr, f"irrigation_mm_after_{k}"] <= limit + 1e-9).all()
+        assert (short.loc[irr, f"yield_after_{k}"] <= free.loc[irr, f"yield_after_{k}"] + 1e-9).all()
+        assert (short.loc[irr, f"fail_prob_after_{k}"] >= free.loc[irr, f"fail_prob_after_{k}"] - 1e-12).all()
+    assert short[dry].equals(free[dry])
+    # a tight enough limit makes an irrigated crop fail
+    dust = response.crop_response(yearly, monthly, params, irrigation_limit_mm=50.0)
+    assert pick(dust, "alfalfa", "irrigated")["failed"].all() and not pick(free, "alfalfa", "irrigated")["failed"].any()
+    # the fitted Ky is used where the dryland series has one
+    fitted = response.load_params()
+    got = response.crop_response(yearly, monthly, fitted, irrigation_limit_mm=limit)
+    r2 = pick(got, "corn", "irrigated", 2002).iloc[0]
+    assert r2["water_factor_after_summer"] == pytest.approx(
+        1 - fitted["series"]["corn"]["dryland"]["ky"] * r2["shortfall_mm_after_summer"] / r2["water_need_mm"])
+    for bad in (-1.0, float("nan")):
+        with pytest.raises(ValueError):
+            response.crop_response(yearly, monthly, params, irrigation_limit_mm=bad)
+
+
 # --- parameters: JSON and fallback -------------------------------------------------------------------
 
 def test_missing_json_falls_back_to_the_crops_constants(tmp_path):
@@ -462,12 +547,19 @@ def test_json_values_are_loaded_and_used(tmp_path):
     assert row["irrigation_mm"] == pytest.approx(row["water_need_mm"] / 0.5)                 # pivot efficiency from the file
     low = response.crop_response(yearly_table(years, hot=55), monthly_table(years), params)
     assert (low["failed"] == ((low["yield_rel"] < 0.4) & (low["crop"] != "fallow"))).all()   # fail_below from the file
+    # the hot-day cap: the file's observed maxima (and margins, if it gives them); crops.py for what it leaves out
+    assert response.heat_caps(params) == {"hot_days": 85.0, "wheat_hot_days": 38.0}
+    path.write_text(json.dumps({"series": {}, "heat_cap": {"hot_days": {"observed_max": 60, "margin": 4, "cap": 999},
+                                                           "wheat_hot_days": {"observed_max": 20}}}))
+    assert response.heat_caps(response.load_params(path)) == {"hot_days": 64.0, "wheat_hot_days": 25.0}   # cap = max + margin
 
 
 @pytest.mark.parametrize("text", ["not json at all", "[1, 2, 3]", '{"series": "nope"}', '{"no_series": {}}',
                                   '{"series": {"corn": {"dryland": {"ky": "abc"}}}}',
                                   '{"series": {"corn": {"dryland": {"scale": -1}}}}',
-                                  '{"series": {"corn": {"dryland": {"heat_loss": null}}}}'])
+                                  '{"series": {"corn": {"dryland": {"heat_loss": null}}}}',
+                                  '{"series": {}, "heat_cap": {"hot_days": {"observed_max": "many"}}}',
+                                  '{"series": {}, "heat_cap": {"hot_days": {"observed_max": -3}}}'])
 def test_broken_json_falls_back(tmp_path, text):
     path = tmp_path / "crop_response.json"
     path.write_text(text)
@@ -533,22 +625,33 @@ def test_calibration_keeps_textbook_values_when_it_should():
     e = calibrate.calibrate_series("corn", "dryland", obs.iloc[:9], inputs)["entry"]
     assert (e["status"], e["verdict"], e["free_parameters"]) == ("textbook", "weak", [])
     assert e["ky"] == corn.ky and e["heat_loss"] == corn.heat_loss["dryland"] and e["loo_skill"] is None
+    assert e["status_text"].startswith("Nothing fitted (only 9 usable years)") and "assumption" in e["status_text"]
     # no data at all
     empty = pd.DataFrame({"year": [], "value": [], "level": [], "source": []})
     e = calibrate.calibrate_series("corn", "dryland", empty, inputs)["entry"]
     assert e["status"] == "textbook" and e["normal_yield"] == corn.normal_yield["dryland"] and e["n_years"] == 0
+    assert "no yield data" in e["status_text"] and "assumption" in e["status_text"]
     # yields that have nothing to do with the weather: no skill, textbook, weak
     rng = np.random.default_rng(11)
     noise = obs.assign(value=50 * (1 + 0.2 * rng.standard_normal(len(obs))))
     e = calibrate.calibrate_series("corn", "dryland", noise, inputs)["entry"]
     assert e["status"] == "textbook" and e["verdict"] == "weak"
     assert e["ky"] == corn.ky and e["heat_loss"] == corn.heat_loss["dryland"]
+    assert "assumption" in e["status_text"]
     # a response with no heat in it: the fitted heat loss sits on its bound, so the textbook one is kept
     inputs, obs = synthetic_yields(years, history, monthly, "corn", "dryland", 1.1, 0.0, 50, 0.5, 0.02)
     e = calibrate.calibrate_series("corn", "dryland", obs, inputs)["entry"]
     assert e["heat_loss"] == corn.heat_loss["dryland"] and "heat_loss" not in e["free_parameters"]
     assert e["status"] in ("partly textbook", "textbook")
     assert any("on a bound" in n for n in e["notes"])
+    # and it is called what it is: an assumption the record did not support, not a finding
+    assert "assumption the county record did not support" in e["status_text"]
+    if e["status"] == "partly textbook":
+        assert "Heat loss is an assumption" in e["status_text"] and "Ky is fitted" in e["status_text"]
+    # a series fitted in full says so
+    inputs, obs = synthetic_yields(years, history, monthly, "corn", "dryland", 1.1, 0.006, 50, 0.5, 0.03)
+    e = calibrate.calibrate_series("corn", "dryland", obs, inputs)["entry"]
+    assert e["status"] == "fitted" and e["status_text"] == "Fitted to the county yields."
 
 
 def nass_rows(crop, practice, level, values, stat="yield"):
@@ -611,6 +714,13 @@ def test_calibrate_end_to_end_on_made_up_tables():
     assert params["constants"] == water.DEFAULTS.to_dict()
     json.dumps(params)                                                    # everything is plain JSON
     assert len(calibrate.fit_lines(params)) == 10
+    # the hot-day cap is the most any observed year had, plus the margin of crops.py
+    cap = params["heat_cap"]
+    assert cap["hot_days"]["observed_max"] == history["hot_days"].max() and cap["hot_days"]["margin"] == 10.0
+    assert cap["hot_days"]["cap"] == history["hot_days"].max() + 10.0
+    assert cap["wheat_hot_days"]["cap"] == history["wheat_hot_days"].max() + 5.0
+    assert cap["hot_days"]["years"] == f"{history['year'].min()}-{history['year'].max()}"
+    assert all(params["series"][c][p]["status_text"] for c in CROPS for p in PRACTICES)
     # the result works as parameters, and a calibrated series averages 1 over its years
     merged = response._merge(response.default_params(), params)
     out = response.crop_response(history, monthly, merged)
@@ -648,12 +758,31 @@ def test_tracked_json_is_present_and_sane():
                 assert e["normal_yield"] > 0
                 r = raw["series"][crop][practice]
                 assert r["verdict"] in ("good", "fair", "weak") and r["status"] in ("fitted", "partly textbook", "textbook")
+                assert r["status_text"].endswith(".")
+                assert (r["status"] == "fitted") == (r["status_text"] == "Fitted to the county yields.")
                 if r["status"] == "textbook":
                     assert r["verdict"] == "weak"
                     assert r["ky"] == (CROP_TABLE[crop].ky if practice == "dryland" else 0.0)
                     assert r["heat_loss"] == CROP_TABLE[crop].heat_loss[practice]
                 else:
                     assert r["loo_skill"] > 0 and r["n_years"] >= calibrate.MIN_YEARS and len(r["free_parameters"]) <= 2
+
+
+def test_tracked_json_says_what_is_an_assumption_and_carries_the_heat_cap():
+    if not response.PARAMS_PATH.exists():
+        pytest.skip("api/planner/crop_response.json has not been written yet")
+    raw = json.loads(response.PARAMS_PATH.read_text())
+    wheat = raw["series"]["winter wheat"]["dryland"]
+    if "heat_loss" not in wheat["free_parameters"]:          # the textbook heat loss was kept: say so plainly
+        assert "Heat loss is an assumption the county record did not support" in wheat["status_text"]
+    cap = raw["heat_cap"]
+    assert cap["hot_days"]["cap"] == cap["hot_days"]["observed_max"] + cap["hot_days"]["margin"]
+    assert cap["hot_days"]["margin"] == 10.0 and cap["wheat_hot_days"]["margin"] == 5.0
+    assert response.heat_caps(response.load_params()) == {c: v["cap"] for c, v in cap.items()}
+    if REAL["climate_history"].exists():                     # and it is the record's own maximum
+        history = pd.read_parquet(REAL["climate_history"])
+        assert cap["hot_days"]["observed_max"] == history["hot_days"].max()
+        assert cap["wheat_hot_days"]["observed_max"] == history["wheat_hot_days"].max()
 
 
 def test_real_futures_table_is_fast_and_complete():

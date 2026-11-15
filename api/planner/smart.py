@@ -20,7 +20,9 @@ window. In every future the plan gets four scores, each 0-1, higher is better, e
            erosion index: erosion.py (bare share x the field's soil erodibility x the window's wind
            climate x a slope factor). The climate enters the soil score only through the erosion index.
     water  irrigated: 1 - mm pumped a year / 1000     dryland: share of the crops' water need that rain
-           and stored soil water cover
+           and stored soil water cover. Irrigated plans pump what the crops need up to the irrigation
+           limit (24 inches = 610 mm per acre per year unless IRRIGATION_LIMIT_MM says otherwise); a
+           crop that needs more goes short, yields less and can fail (response.py).
     money  return over direct costs, $ per acre per year (money.py), on a fixed scale per practice:
            irrigated -100 .. 500, dryland -125 .. 125
     risk   1 - expected share of planted crops that fail; a crop fails when its yield is under half of
@@ -34,6 +36,10 @@ scores do not pile up at 0 or 1.
 
 Holds up: a plan holds up in a future when no more than one in four of its planted crops fails AND it
 covers its direct costs on average (`HOLDS_UP_RULE` is returned with every result).
+
+Today (horizon 2025) is one climate whichever scenario is chosen: each model's two runs pooled over
+2015-2034 (futures.py). Every future is measured against that same Today, also the modelled yield
+change per crop that the result carries (`climate.yield_change`).
 
 Ranking: not on the mean alone. rank value ("robust") = half the mean overall score over the futures
 plus half the mean of the worst third of them (the 2 worst of 6). A plan that is fine on average but
@@ -82,7 +88,30 @@ RANKING_RULE = (
     "Plans are ranked on half their average overall score across the climate models plus half their average "
     "in the worst third of the models."
 )
-PROFIT_BASIS = "Profit is price x yield minus direct costs and pumping, per acre per year; land rent and equipment ownership are not taken off."
+YIELD_CHANGE_NOTE = (
+    "Yield changes are what the crop model makes of the future weather alone, against today's model climate. "
+    "They do not include new varieties or any other adaptation."
+)
+MM_PER_INCH = money.MM_PER_INCH
+
+
+def limits_for(irrigation_limit_mm: float) -> list:
+    """What the scoring leaves out, in plain sentences (the app shows them under "How this is scored")."""
+    first, last = futures.window(config.TODAY)
+    if irrigation_limit_mm > 0:
+        well = (f"Irrigated plans assume the well can deliver up to {irrigation_limit_mm / MM_PER_INCH:.0f} inches of water "
+                "an acre every year.")
+    else:
+        well = "Irrigated plans assume the well always delivers all the water the crops need."
+    return [
+        "Yields do not change with the crop grown before, apart from the soil water it leaves behind.",
+        well,
+        "Prices and costs stay at today's levels in every future.",
+        "On dryland the water, money and risk scores move together, because all three follow how much of the crops' "
+        "water need rain covers.",
+        f"\"Today\" is a model climate for {first}-{last}, a little hotter than the 2000-2024 record.",
+    ]
+
 
 _RESPONSE_COLUMNS = ("yield", "fail_prob", "irrigation_mm", "shortfall_mm")
 _KIND_INDEX = {kind: i for i, kind in enumerate(PREV_KINDS)}
@@ -136,7 +165,7 @@ class PlanResult:
     reason: str
     futures: dict      # {"holds": 5, "total": 6}
     spread: dict       # {"overall": {low, mid, high}, "profit_per_acre": {low, mid, high}} across the futures
-    numbers: dict      # bare_days, erosion_index, irrigation_mm, water_met_share, profit_per_acre, failed_share
+    numbers: dict      # bare_days, erosion_index, irrigation_mm, irrigation_in, water_met_share, profit_per_acre, failed_share
     rank: int          # place among all candidates on the robust score (1 = best)
     rules_broken: list = dataclass_field(default_factory=list)   # "current" only: rule sentences it breaks
     extra: dict = dataclass_field(default_factory=dict)   # "current" only: years, previous_crop, is_candidate
@@ -209,7 +238,7 @@ class Evaluation:
     bare: np.ndarray           # [plan]
     erosion: np.ndarray
     irrigation: np.ndarray
-    water_met: np.ndarray      # share of water need met by rain and stored water (1.0 under irrigation)
+    water_met: np.ndarray      # share of water need met (irrigated: below 1 only when the irrigation limit binds)
     profit: np.ndarray
     failed: np.ndarray
     soil: np.ndarray
@@ -243,12 +272,18 @@ class Engine:
 
     def __init__(self, yearly, monthly, *, params: dict | None = None, economics: money.Economics | None = None,
                  soil: soil_effect.SoilEffectProvider | None = None, traits: Mapping | None = None,
-                 observed: dict | None = None, source: str = ""):
+                 observed: dict | None = None, source: str = "", irrigation_limit_mm: float | None = None):
+        """`irrigation_limit_mm`: the most mm pumped per acre per year; None = the economics file's value
+        (610 mm), 0 = no limit."""
         from api.planner.response import crop_response, load_params
 
         self.climate = futures.Climate(yearly)
         self.params = params if params is not None else load_params()
         self.economics = economics if economics is not None else money.load_economics()
+        limit = self.economics.irrigation_limit_mm if irrigation_limit_mm is None else irrigation_limit_mm
+        if isinstance(limit, bool) or not isinstance(limit, (int, float)) or not math.isfinite(limit) or limit < 0:
+            raise ValueError(f"irrigation limit {limit!r}: expected mm per acre per year, 0 for no limit")
+        self.irrigation_limit_mm = float(limit)
         self.soil = soil if soil is not None else soil_effect.CropAverageProvider()
         self.traits = dict(traits or {})
         self.observed = observed
@@ -258,7 +293,7 @@ class Engine:
 
         c = self.climate
         rows = yearly[yearly["scenario"].isin(c.scenarios)]
-        table = crop_response(rows, monthly, self.params)
+        table = crop_response(rows, monthly, self.params, irrigation_limit_mm=self.irrigation_limit_mm)
         si = table["scenario"].map({s: i for i, s in enumerate(c.scenarios)}).to_numpy()
         mi = table["model"].map({m: i for i, m in enumerate(c.models)}).to_numpy()
         yi = np.searchsorted(c.years, table["year"].to_numpy(dtype=int))
@@ -274,6 +309,11 @@ class Engine:
         need = np.zeros(shape)
         need[pi, si, mi, yi, ci] = table["water_need_mm"].to_numpy(dtype=float)
         self._response["need_mm"] = need
+        typical = np.zeros(shape)       # yield after the county's usual previous crop: for the yield-change note
+        typical[pi, si, mi, yi, ci] = table["yield"].to_numpy(dtype=float)
+        self._response["yield_typical"] = typical
+        # 1.0 in a year the irrigation limit leaves a crop short (irrigated only; the mean is how often it binds)
+        self._response["short"] = (self._response["shortfall_mm"] > 1e-6).astype(float)
         price = np.array([self.economics.price(crop) for crop in CROPS])
         normals = money.normal_yields(self.params)
         cost = np.array([[self.economics.cost(crop, practice, normals[crop][practice]) for crop in CROPS]
@@ -321,9 +361,35 @@ class Engine:
         """{name: [practice, model, crop, (kind)]} window means, plus "erosion_climate": [model]."""
         s = self.climate._scenario_index(scenario)
         years = self.climate.year_slice(horizon)
-        out = {name: arr[:, s, :, years].mean(axis=2) for name, arr in self._response.items()}
-        out["erosion_climate"] = self.climate.data["erosion_climate"][s, :, years].mean(axis=1)
+        if horizon == config.TODAY:     # one Today: every scenario's run of a model pooled (futures.py)
+            out = {name: arr[:, :, :, years].mean(axis=(1, 3)) for name, arr in self._response.items()}
+        else:
+            out = {name: arr[:, s, :, years].mean(axis=2) for name, arr in self._response.items()}
+        out["erosion_climate"] = self.climate.averages(scenario, horizon)["erosion_climate"]
         return out
+
+    def yield_change(self, irrigated: bool, scenario: str, horizon: int) -> dict:
+        """{crop: {"pct", "low", "high"}}: modelled yield in this future against Today, in percent, for the
+        crops this practice's plans grow: the mean over the models and the lowest and highest model. Each
+        model is compared with its own Today; the yield is the one after the county's usual previous crop."""
+        p = PRACTICES.index("irrigated" if irrigated else "dryland")
+        now = self._window(scenario, config.TODAY)["yield_typical"][p]          # [model, crop]
+        then = self._window(scenario, horizon)["yield_typical"][p]
+        grown = self.candidate_set(irrigated).shares.sum(axis=0) > 0
+        out = {}
+        for ci, crop in enumerate(CROPS):
+            if crop == "fallow" or not grown[ci]:
+                continue
+            pct = (then[:, ci] / np.maximum(now[:, ci], 1e-9) - 1.0) * 100.0
+            out[crop] = {"pct": int(round(float(pct.mean()))), "low": int(round(float(pct.min()))),
+                         "high": int(round(float(pct.max())))}
+        return out
+
+    def limit_binds(self, scenario: str, horizon: int) -> dict:
+        """{crop: share of irrigated crop-years in which the irrigation limit leaves the crop short}
+        (after the county's usual kind of previous crop for irrigated fields, a summer crop)."""
+        w = self._window(scenario, horizon)["short"][PRACTICES.index("irrigated")]     # [model, crop, kind]
+        return {crop: float(w[:, ci, _KIND_INDEX["summer"]].mean()) for ci, crop in enumerate(CROPS) if crop != "fallow"}
 
     def _base_uncached(self, irrigated: bool, scenario: str, horizon: int, plans_key) -> dict:
         """Everything about a plan set in a (scenario, horizon) that does not depend on the field."""
@@ -344,12 +410,9 @@ class Engine:
         need = (w["need_mm"][p][:, plans.crop] * real[None]).sum(axis=2).T
         n_planted = np.maximum(plans.planted.sum(axis=1), 1.0)
         failed = (over_years("fail_prob") * plans.planted[None]).sum(axis=2).T / n_planted[:, None]
-        if irrigated:
-            water_met = np.ones_like(profit)
-            water = _clip01(1.0 - irrigation / config.IRRIGATION_WORST_MM)
-        else:
-            water_met = np.where(need > 0, 1.0 - shortfall / np.maximum(need, 1e-9), 1.0)
-            water = _clip01(water_met)
+        # share of the crops' water need that is met; under irrigation it is below 1 only when the limit binds
+        water_met = np.where(need > 0, 1.0 - shortfall / np.maximum(need, 1e-9), 1.0)
+        water = _clip01(1.0 - irrigation / config.IRRIGATION_WORST_MM) if irrigated else _clip01(water_met)
         lo, hi = config.MONEY_SCALE["irrigated" if irrigated else "dryland"]
         return {
             "plans": plans, "profit": profit, "irrigation": irrigation, "water_met": water_met, "failed": failed,
@@ -393,28 +456,39 @@ class Engine:
 # --- words ---------------------------------------------------------------------------------------------
 
 def _money_words(profit: float) -> str:
+    """Return over direct costs, never "earns": land and machinery ownership are not taken off."""
     amount = round(abs(profit))
     if profit >= 0.5:
-        return f"earns about ${amount:,.0f} an acre a year"
+        return f"returns about ${amount:,.0f} an acre a year over direct costs"
     if profit <= -0.5:
-        return f"loses about ${amount:,.0f} an acre a year"
-    return "about breaks even"
+        return f"falls about ${amount:,.0f} an acre short of its direct costs"
+    return "about covers its direct costs"
+
+
+def _failure_words(failed: float) -> str:
+    """How often crops fail, never rounded down across the holds-up line (more than 1 in 4)."""
+    for n in (2, 3, 4):
+        if failed > 1.0 / n + 1e-9:
+            return f"more than 1 crop in {n} fails"
+    return f"about 1 crop in {max(4, round(1 / failed)):.0f} fails"
 
 
 def reason_for(numbers: dict, scores: dict, holds: int, total: int, irrigated: bool,
                crop_failures: int = 0) -> str:
-    """One plain sentence from the plan's own numbers, its strongest side first, under 200 characters.
+    """One plain sentence from the plan's own numbers, its strongest side first, under
+    `config.MAX_REASON_CHARS` (220) characters.
 
     `crop_failures`: in how many futures too many crops fail (then the sentence says how often they do;
     when a plan fails to hold up only because it loses money, the money clause already says so).
+    Water is given in inches, the unit the county's irrigators use (the mm stay in `numbers`).
     """
     clauses = {
         "soil": f"leaves the soil bare about {numbers['bare_days']:.0f} days a year",
         "money": _money_words(numbers["profit_per_acre"]),
     }
     if irrigated:
-        mm = numbers["irrigation_mm"]
-        clauses["water"] = (f"pumps about {round(mm, -1):,.0f} mm of water a year" if mm >= 10
+        inches = numbers["irrigation_mm"] / MM_PER_INCH
+        clauses["water"] = (f"pumps about {round(inches):.0f} inches of water a year" if inches >= 0.5
                             else "needs almost no pumped water")
     else:
         clauses["water"] = f"rain covers about {100 * numbers['water_met_share']:.0f}% of its crops' water need"
@@ -422,7 +496,7 @@ def reason_for(numbers: dict, scores: dict, holds: int, total: int, irrigated: b
     parts = [clauses[name] for name in sorted(names, key=lambda name: (-scores[name], names.index(name)))]
     last = f"holds up in {holds} of {total} climate futures"
     failed = numbers["failed_share"]
-    extra = f" (about 1 crop in {max(2, round(1 / failed)):.0f} fails)" if crop_failures > 0 and failed > 0.02 else ""
+    extra = f" ({_failure_words(failed)})" if crop_failures > 0 and failed > 0.02 else ""
 
     def sentence(clauses_used, tail):
         text = ", ".join(clauses_used) + " and " + tail + "."
@@ -452,6 +526,7 @@ def _plan_result(ev: Evaluation, i: int, weights: Weights, rank: int, irrigated:
         "bare_days": round(float(ev.bare[i]), 1),
         "erosion_index": round(float(ev.erosion[i].mean()), 3),
         "irrigation_mm": round(float(ev.irrigation[i].mean()), 0),
+        "irrigation_in": round(float(ev.irrigation[i].mean()) / MM_PER_INCH, 1),
         "water_met_share": round(float(ev.water_met[i].mean()), 3),
         "profit_per_acre": round(float(ev.profit[i].mean()), 0),
         "failed_share": round(float(ev.failed[i].mean()), 3),
@@ -571,7 +646,7 @@ def rank_plans_smart(field: FieldInput, *, weights: Weights | Mapping | None = N
         else:                      # the four years as they happened: year 1 follows what really came before
             one = engine.evaluate(is_irrigated, scenario, horizon, rotations=[rotation], first_prev=before,
                                   wei=wei, weg=weg, slope_pct=field.slope_pct)
-            broken = cand.rules_broken(rotation, is_irrigated, cyclic=False)
+            broken = cand.rules_broken(rotation, is_irrigated, cyclic=False, gentle=True)
         value = round(float(one.robust(weights)[0]), 6)
         rank = 1 + int((keys > value).sum())
         current = _plan_result(one, 0, weights, rank, is_irrigated, rotation=rotation, rules_broken=broken,
@@ -592,10 +667,17 @@ def rank_plans_smart(field: FieldInput, *, weights: Weights | Mapping | None = N
         "soil_note": soil_info.get("note", ""),
         "holds_up_rule": HOLDS_UP_RULE,
         "ranking_rule": RANKING_RULE,
-        "profit_basis": PROFIT_BASIS,
+        "profit_basis": money.profit_basis(engine.economics),
+        "irrigation_limit_mm": round(engine.irrigation_limit_mm, 0) if engine.irrigation_limit_mm > 0 else None,
+        "irrigation_limit_in": (round(engine.irrigation_limit_mm / MM_PER_INCH, 1)
+                                if engine.irrigation_limit_mm > 0 else None),
+        "yield_change_note": YIELD_CHANGE_NOTE,
+        "limits": limits_for(engine.irrigation_limit_mm),
         "models": list(engine.climate.models),
     }
-    return SmartResult(field_id=field.field_id, settings=settings, climate=engine.climate.describe(scenario, horizon),
+    climate = engine.climate.describe(scenario, horizon)
+    climate["yield_change"] = engine.yield_change(is_irrigated, scenario, horizon)
+    return SmartResult(field_id=field.field_id, settings=settings, climate=climate,
                        plans=plans, current=current, current_note=current_note, candidates=len(ev.plans.cycles))
 
 
@@ -611,7 +693,7 @@ def _stamp(settings: config.Settings) -> tuple:
     paths = [settings.climate_futures_path, settings.climate_monthly_path, settings.climate_history_path,
              settings.field_traits_path, settings.soil_health_path, settings.fields_path, settings.effects_path,
              settings.soil_cache_path, settings.economics_path, PARAMS_PATH]
-    out = [settings.soil_effect_source]
+    out = [settings.soil_effect_source, settings.irrigation_limit_mm]
     for path in paths:
         try:
             st = Path(path).stat()
@@ -628,14 +710,19 @@ def load_engine(settings: config.Settings | None = None) -> Engine:
     settings = settings or config.settings()
     yearly = climate_schema.load_futures(settings.climate_futures_path)
     monthly = climate_schema.load_monthly(settings.climate_monthly_path)
-    observed = None
+    from api.planner.response import load_params, with_observed_heat_cap
+
+    observed, history = None, None
     try:
-        observed = futures.observed_values(climate_schema.load_history(settings.climate_history_path))
-    except Exception:   # the observed table is only context for GET /climate
+        history = climate_schema.load_history(settings.climate_history_path)
+        observed = futures.observed_values(history)
+    except Exception:   # the observed table is context for GET /climate and the source of the hot-day cap
         observed = None
-    return Engine(yearly, monthly, economics=money.load_economics(settings.economics_path),
+    # the hot-day cap from the record itself when the table is there; else what the calibration wrote
+    params = with_observed_heat_cap(load_params(), history)
+    return Engine(yearly, monthly, params=params, economics=money.load_economics(settings.economics_path),
                   soil=soil_effect.load_provider(settings), traits=load_traits(settings.field_traits_path),
-                  observed=observed, source=climate_schema.SOURCE)
+                  observed=observed, source=climate_schema.SOURCE, irrigation_limit_mm=settings.irrigation_limit_mm)
 
 
 def get_engine() -> Engine:

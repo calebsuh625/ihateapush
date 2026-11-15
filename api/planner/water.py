@@ -29,7 +29,8 @@ The rules, in order
    The sum of what it got is the rain-fed ET; need minus rain-fed ET is the gap.
 5. Dryland: the gap is the `shortfall_mm` (it drives the FAO-33 water factor in response.py).
    Irrigated: the gap is the net irrigation need; pumped water = gap / `pivot_efficiency` (0.85,
-   centre pivot with drop nozzles, K-State irrigation guides).
+   centre pivot with drop nozzles, K-State irrigation guides). This module knows no pumping limit:
+   the planner's limit per acre per year is applied in response.py, on these numbers.
 
 Months missing before the start of a series (the look-back reaches up to 18 months before planting,
 and the tables start in October 1999) are filled with that series' own calendar-month mean.

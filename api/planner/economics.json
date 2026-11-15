@@ -272,15 +272,49 @@
   },
   "fallow": {
    "irrigated": {
-    "per_acre": 55.0,
+    "per_acre": 14.0,
     "status": "rough, unverified",
-    "source": "Our estimate: K-State publishes no fallow budget. Three herbicide passes at about $18 each (glyphosate, dicamba and 2,4-D at the prices in the K-State 2027 wheat-sorghum-fallow budgets, about $12.50, plus about $5.60 of fuel, labour and repairs per spraying pass).",
+    "source": "Our estimate, for one herbicide pass: glyphosate 32 oz, dicamba 12 oz and 2,4-D 16 oz at the prices in the K-State 2027 budgets ($4.19 + $3.74 + $4.59 = $12.52) plus $1.39 of fuel, labour and repairs for one spraying pass (a quarter of the budgets' spraying lines, which cover four passes). K-State publishes no fallow budget; three passes over a fallow year is our assumption, and two of them are already in the cost of the wheat that follows (see double_count_check).",
+    "double_count_check": {
+     "read_on": "2026-11-15",
+     "status": "verified",
+     "found": "The K-State 2027 western Kansas wheat budget (the durum budget used for dryland wheat; the irrigated wheat budget has the same list) already carries weed control for the period before planting: glyphosate 64 oz (two passes; it cannot be sprayed on growing wheat) with dicamba 12 oz and 2,4-D 16 oz, $16.70 of chemicals, four spraying passes in all ($5.57 of labour, diesel and repairs) and one field-cultivator pass ($11.75). The north-central wheat budget, which follows a crop and not a fallow, has $4.80 of herbicide. The W-S-F sorghum and W-C-F corn budgets carry two 'burndown' passes ($25.12 for sorghum) for the stubble period between wheat harvest and their own planting, which is not a fallow year in the planner, and charge cash rent on 1.5 acres per planted acre (rent is a fixed cost and not in the planner's direct costs).",
+     "double_counted": "Two of the three herbicide passes behind the old $55. The old figure also priced one spraying pass at $5.60, which is the budgets' spraying cost for all four passes; one pass is about $1.39.",
+     "old_value": 55.0,
+     "old_basis": "three passes at $12.52 of chemicals + $5.60 of application each",
+     "new_basis": "one pass at $12.52 + $1.39 = $13.91, rounded to $14; the other two are in the wheat budget",
+     "cannot_tell": "Whether K-State means the wheat budget's two passes and one tillage pass to be all of the fallow-period weed control (then the right charge is $0) or expects more passes in a long fallow. No footnote says.",
+     "pdfs": [
+      "Durum Wheat Cost-Return Budget in Western KS_Average yields_Nov-01-2026.pdf",
+      "Grain Sorghum (W-S-F Rotation) Cost-Return Budget in Southwest Kansas__Nov-01-2026.pdf",
+      "Soybean Cost-Return Budget (W-SB-F Rotation) in Southwest Kansas__Nov-01-2026.pdf",
+      "Wheat (Rotation) Cost-Return Budget in North Central KS__Nov-01-2026.pdf",
+      "Irrigated Wheat Cost-Return Budget in Western KS_Limited irrigation_Nov-01-2026.pdf"
+     ]
+    },
     "per_yield_unit": 0.0
    },
    "dryland": {
-    "per_acre": 55.0,
+    "per_acre": 14.0,
     "status": "rough, unverified",
-    "source": "Our estimate: K-State publishes no fallow budget. Three herbicide passes at about $18 each (glyphosate, dicamba and 2,4-D at the prices in the K-State 2027 wheat-sorghum-fallow budgets, about $12.50, plus about $5.60 of fuel, labour and repairs per spraying pass).",
+    "source": "Our estimate, for one herbicide pass: glyphosate 32 oz, dicamba 12 oz and 2,4-D 16 oz at the prices in the K-State 2027 budgets ($4.19 + $3.74 + $4.59 = $12.52) plus $1.39 of fuel, labour and repairs for one spraying pass (a quarter of the budgets' spraying lines, which cover four passes). K-State publishes no fallow budget; three passes over a fallow year is our assumption, and two of them are already in the cost of the wheat that follows (see double_count_check).",
+    "double_count_check": {
+     "read_on": "2026-11-15",
+     "status": "verified",
+     "found": "The K-State 2027 western Kansas wheat budget (the durum budget used for dryland wheat; the irrigated wheat budget has the same list) already carries weed control for the period before planting: glyphosate 64 oz (two passes; it cannot be sprayed on growing wheat) with dicamba 12 oz and 2,4-D 16 oz, $16.70 of chemicals, four spraying passes in all ($5.57 of labour, diesel and repairs) and one field-cultivator pass ($11.75). The north-central wheat budget, which follows a crop and not a fallow, has $4.80 of herbicide. The W-S-F sorghum and W-C-F corn budgets carry two 'burndown' passes ($25.12 for sorghum) for the stubble period between wheat harvest and their own planting, which is not a fallow year in the planner, and charge cash rent on 1.5 acres per planted acre (rent is a fixed cost and not in the planner's direct costs).",
+     "double_counted": "Two of the three herbicide passes behind the old $55. The old figure also priced one spraying pass at $5.60, which is the budgets' spraying cost for all four passes; one pass is about $1.39.",
+     "old_value": 55.0,
+     "old_basis": "three passes at $12.52 of chemicals + $5.60 of application each",
+     "new_basis": "one pass at $12.52 + $1.39 = $13.91, rounded to $14; the other two are in the wheat budget",
+     "cannot_tell": "Whether K-State means the wheat budget's two passes and one tillage pass to be all of the fallow-period weed control (then the right charge is $0) or expects more passes in a long fallow. No footnote says.",
+     "pdfs": [
+      "Durum Wheat Cost-Return Budget in Western KS_Average yields_Nov-01-2026.pdf",
+      "Grain Sorghum (W-S-F Rotation) Cost-Return Budget in Southwest Kansas__Nov-01-2026.pdf",
+      "Soybean Cost-Return Budget (W-SB-F Rotation) in Southwest Kansas__Nov-01-2026.pdf",
+      "Wheat (Rotation) Cost-Return Budget in North Central KS__Nov-01-2026.pdf",
+      "Irrigated Wheat Cost-Return Budget in Western KS_Limited irrigation_Nov-01-2026.pdf"
+     ]
+    },
     "per_yield_unit": 0.0
    }
   }
@@ -289,5 +323,16 @@
   "irrigated": "https://agmanager.info/node/34292",
   "dryland": "https://agmanager.info/node/34291"
  },
- "cost_rule": "The planner's cost for a crop is the K-State middle-yield budget (per_acre) moved to the county's normal yield (api/planner/crop_response.json) along the line through the low- and high-yield columns of the same budget: per_acre + per_yield_unit x (normal yield - budget_yield). K-State scales fertiliser and harvest with the yield goal, and its yield goals are above the county's normal yields. The low and high columns leave out custom work that the middle column includes (alfalfa haying, some fertiliser application), so they are used for the slope only."
+ "cost_rule": "The planner's cost for a crop is the K-State middle-yield budget (per_acre) moved to the county's normal yield (api/planner/crop_response.json) along the line through the low- and high-yield columns of the same budget: per_acre + per_yield_unit x (normal yield - budget_yield). K-State scales fertiliser and harvest with the yield goal, and its yield goals are above the county's normal yields. The low and high columns leave out custom work that the middle column includes (alfalfa haying, some fertiliser application), so they are used for the slope only.",
+ "cost_year": 2027,
+ "irrigation_limit": {
+  "mm": 609.6,
+  "inches": 24.0,
+  "acre_feet_per_acre": 2.0,
+  "status": "verified",
+  "source": "Kansas Administrative Regulations 5-3-19(a), Division of Water Resources: for irrigation rights applied for before 22 September 2000 in the area from range 21 west to the western border of Kansas (Finney County and all of Groundwater Management District 3), the maximum reasonable annual quantity is two acre-feet of water per acre irrigated. Nearly all rights in the county are older than that.",
+  "url": "https://www.law.cornell.edu/regulations/kansas/K-A-R-5-3-19",
+  "read_on": "2026-11-15",
+  "note": "This is the regulation's ceiling, used as the most a well may pump per acre per year. A field's own water right can be for less, later applications use a county value from the map of K.A.R. 5-3-24 (not read), and many wells in the county can no longer deliver their full right. Override with IRRIGATION_LIMIT_MM (0 or none = no limit)."
+ }
 }

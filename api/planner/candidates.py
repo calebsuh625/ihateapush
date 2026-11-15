@@ -17,13 +17,24 @@ wheat after wheat at the seam, so the no-wheat-after-wheat rule would throw it o
 could never recommend, or fairly score, what most dryland farmers do. A 3-year plan is still shown
 as the next four years (`show`), so every plan has four entries as before.
 
-The rules (`RULES`): each is one predicate with one sentence. "One year in four" rules are read as a
-share of the cycle (a 3-year cycle with a corn year grows corn one year in three, which is more than
-one in four). `rules_broken(sequence, irrigated)` returns the sentences a cycle breaks. With
-`cyclic=False` the years are read as they happened, not as a cycle (no seam, and an alfalfa run that
-touches either end may be part of a longer stand): that is how a field's last four years are told
-what they break. `cover crop` is not a candidate crop: there is no satellite, yield or history data
-for it.
+The rules (`RULES`): each is one predicate with one sentence. "One year in four" (irrigated fallow)
+is read as a share of the cycle. `rules_broken(sequence, irrigated)` returns the sentences a cycle
+breaks. With `cyclic=False` the years are read as they happened, not as a cycle (no seam, and an
+alfalfa run that touches either end may be part of a longer stand): that is how a field's last four
+years are told what they break, and with `gentle=True` the sentences are worded for that use ("Our
+plans avoid ..."): the field's own pattern is still scored, it is not told off.
+
+Three rules are agronomy the crop model cannot see, because in the model the previous crop changes
+a yield only through stored soil water (no disease, no weeds, no calendar):
+* dryland wheat straight after corn, sorghum or soybeans: the summer crop is cut in October and
+  wheat has to be sown by then, into soil the summer crop has just emptied. In the county's own
+  record 85% of dryland wheat follows fallow and 1.4% follows sorghum. Without this rule the model's
+  first dryland plan was wheat-sorghum with no fallow at all.
+* more than one dryland corn year per cycle. (It was "one corn year in four", which shut out the
+  3-year wheat-corn-fallow, the rotation the dryland corn cost budget is written for.)
+* more than two years in a row of corn, or of sorghum, counted around the cycle: the planner should
+  not hand out a monoculture as a rotation plan.
+`cover crop` is not a candidate crop: there is no satellite, yield or history data for it.
 """
 from __future__ import annotations
 
@@ -53,6 +64,36 @@ def _at_most_one_year_in_four(crop: str) -> Callable[..., bool]:
     return lambda sequence, cyclic=True: 4 * sum(1 for c in sequence if c == crop) <= len(sequence)
 
 
+def _at_most_one_year(crop: str) -> Callable[..., bool]:
+    return lambda sequence, cyclic=True: sum(1 for c in sequence if c == crop) <= 1
+
+
+def _never_after(crop: str, previous: tuple) -> Callable[..., bool]:
+    return lambda sequence, cyclic=True: not any(
+        prev in previous and this == crop for prev, this in _pairs(sequence, cyclic))
+
+
+def longest_run(sequence: Sequence[str], crop: str, cyclic: bool = True) -> int:
+    """Most years in a row of `crop`. Cyclic: counted around the cycle, so a cycle of nothing but that
+    crop never ends (returned as twice its length, more than any limit)."""
+    n = len(sequence)
+    if cyclic and all(c == crop for c in sequence):
+        return 2 * n
+    best = run = 0
+    for c in (tuple(sequence) * 2 if cyclic else sequence):
+        run = run + 1 if c == crop else 0
+        best = max(best, run)
+    return min(best, n)
+
+
+GRAIN_CROPS = ("corn", "sorghum")
+MAX_GRAIN_RUN = 2
+
+
+def _no_long_grain_run(sequence: Sequence[str], cyclic: bool = True) -> bool:
+    return all(longest_run(sequence, crop, cyclic) <= MAX_GRAIN_RUN for crop in GRAIN_CROPS)
+
+
 def _alfalfa_is_a_stand(sequence: Sequence[str], cyclic: bool = True) -> bool:
     """Alfalfa years form one unbroken run of at least three (or there is no alfalfa, or only alfalfa).
 
@@ -77,6 +118,7 @@ class Rule:
     applies: str                  # "all", "irrigated" or "dryland"
     text: str                     # one plain sentence
     ok: Callable[..., bool]       # ok(sequence, cyclic=True)
+    gentle: str = ""              # the same rule said to a farmer whose field breaks it: "Our plans avoid ..."
 
     def applies_to(self, irrigated: bool) -> bool:
         return self.applies == "all" or self.applies == ("irrigated" if irrigated else "dryland")
@@ -85,31 +127,47 @@ class Rule:
 RULES: tuple[Rule, ...] = (
     Rule("no_wheat_after_wheat", "all",
          "No winter wheat straight after winter wheat (disease and weeds build up).",
-         _no_repeat("winter wheat")),
+         _no_repeat("winter wheat"),
+         "Our plans avoid winter wheat straight after winter wheat (disease and weeds build up)."),
     Rule("no_fallow_after_fallow", "all",
          "No fallow straight after fallow (two bare years in a row).",
-         _no_repeat("fallow")),
+         _no_repeat("fallow"),
+         "Our plans avoid fallow straight after fallow (two bare years in a row)."),
     Rule("no_soybeans_after_soybeans", "all",
          "No soybeans straight after soybeans (disease builds up and little residue is left).",
-         _no_repeat("soybeans")),
+         _no_repeat("soybeans"),
+         "Our plans avoid soybeans straight after soybeans (disease builds up and little residue is left)."),
     Rule("alfalfa_stand", "all",
          "Alfalfa only as a stand of three or more years in a row (it takes a year to establish).",
-         _alfalfa_is_a_stand),
+         _alfalfa_is_a_stand,
+         "Our plans avoid alfalfa stands shorter than three years (it takes a year to establish)."),
+    Rule("no_long_grain_run", "all",
+         "No more than two years in a row of corn, or of sorghum (one grain crop year after year is not a rotation).",
+         _no_long_grain_run,
+         "Our plans avoid more than two years in a row of corn, or of sorghum (one grain crop year after year is not "
+         "a rotation)."),
     Rule("dryland_no_alfalfa", "dryland",
          "No alfalfa without irrigation (rain covers well under half of what it needs here).",
-         lambda sequence, cyclic=True: "alfalfa" not in sequence),
+         lambda sequence, cyclic=True: "alfalfa" not in sequence,
+         "Our plans avoid alfalfa without irrigation (rain covers well under half of what it needs here)."),
     Rule("dryland_no_soybeans", "dryland",
          "No soybeans without irrigation (dryland soybeans are hardly grown in the county).",
-         lambda sequence, cyclic=True: "soybeans" not in sequence),
+         lambda sequence, cyclic=True: "soybeans" not in sequence,
+         "Our plans avoid soybeans without irrigation (dryland soybeans are hardly grown in the county)."),
     Rule("dryland_one_corn_year", "dryland",
-         "Without irrigation, at most one corn year in four.",
-         _at_most_one_year_in_four("corn")),
-    Rule("dryland_no_corn_after_corn", "dryland",
-         "Without irrigation, no corn straight after corn.",
-         _no_repeat("corn")),
+         "Without irrigation, at most one corn year in a cycle.",
+         _at_most_one_year("corn"),
+         "Our plans avoid more than one corn year in a cycle without irrigation."),
+    Rule("dryland_wheat_after_fallow", "dryland",
+         "Without irrigation, no winter wheat straight after corn, sorghum or soybeans (there is no time to sow it and "
+         "no stored water; wheat follows fallow).",
+         _never_after("winter wheat", ("corn", "sorghum", "soybeans")),
+         "Our plans avoid winter wheat straight after corn, sorghum or soybeans without irrigation (there is no time "
+         "to sow it and no stored water; wheat follows fallow)."),
     Rule("irrigated_one_fallow_year", "irrigated",
          "Under irrigation, at most one fallow year in four.",
-         _at_most_one_year_in_four("fallow")),
+         _at_most_one_year_in_four("fallow"),
+         "Our plans avoid more than one fallow year in four under irrigation."),
 )
 
 
@@ -124,13 +182,15 @@ def _check(sequence: Sequence[str]) -> tuple:
     return sequence
 
 
-def rules_broken(sequence: Sequence[str], irrigated: bool, cyclic: bool = True) -> list[str]:
+def rules_broken(sequence: Sequence[str], irrigated: bool, cyclic: bool = True, gentle: bool = False) -> list[str]:
     """The sentences of the rules this sequence breaks on an irrigated / dryland field ([] = allowed).
 
     cyclic=True reads it as a plan (year 1 follows the last year); cyclic=False as years that happened.
+    gentle=True gives the "Our plans avoid ..." wording, for a field's own pattern.
     """
     sequence = _check(sequence)
-    return [rule.text for rule in RULES if rule.applies_to(irrigated) and not rule.ok(sequence, cyclic)]
+    return [(rule.gentle or rule.text) if gentle else rule.text
+            for rule in RULES if rule.applies_to(irrigated) and not rule.ok(sequence, cyclic)]
 
 
 def allowed(sequence: Sequence[str], irrigated: bool) -> bool:
@@ -220,4 +280,4 @@ def matching_candidate(last_years: Sequence[str], irrigated: bool, before: str |
 
 def describe_rules() -> list[dict]:
     """The rule list for docs and the API: key, who it applies to, sentence."""
-    return [{"key": rule.key, "applies": rule.applies, "text": rule.text} for rule in RULES]
+    return [{"key": rule.key, "applies": rule.applies, "text": rule.text, "gentle": rule.gentle} for rule in RULES]

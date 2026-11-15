@@ -1,4 +1,4 @@
-"""Money: what a crop-year earns, in dollars per acre.
+"""Money: what a crop-year returns over its direct costs, in dollars per acre.
 
     profit = price x yield  -  direct costs per acre  -  pumping cost per mm x mm pumped
 
@@ -26,13 +26,21 @@ its source:
   It is a fixed cost per acre for the crop and practice: it does not move with the weather.
 * pumping: the same budgets: natural gas $3.27 per acre-inch (300-foot well, $4.58 per Mcf) plus
   irrigation labour $0.89 per acre-inch = $4.16 per acre-inch = $0.164 per mm.
-* fallow: K-State publishes no fallow budget; $55 an acre is our own estimate (three herbicide passes
-  priced from the chemical and spraying lines of the wheat-sorghum-fallow budgets). Marked
-  "rough, unverified" in the file.
+* fallow: K-State publishes no fallow budget; $14 an acre is our own estimate for ONE herbicide pass
+  (glyphosate, dicamba and 2,4-D at the budgets' prices, $12.52, plus $1.39 to apply it). It was $55
+  for three passes until the budgets were read line by line (2026-11-15): the western Kansas wheat
+  budget already carries two glyphosate passes and a tillage pass before planting, so a fallow year
+  followed by wheat paid for them twice, and the old figure priced one spraying pass at what the
+  budgets charge for four. What was found is in the file (`double_count_check`); the number stays
+  "rough, unverified" because how many passes a fallow year needs is still our assumption.
+* irrigation limit: the most water that can be pumped per acre per year (`irrigation_limit` in the
+  file: 24 inches = 610 mm, the ceiling Kansas regulation 5-3-19 sets for older irrigation rights in
+  western Kansas). The planner pumps no more than that; see response.py for what it does to yields.
 
 Things this leaves out on purpose: costs do not fall in a bad year (the crop is paid for before
-the weather is known), crop insurance pays nothing back in a failed year, there are no government
-payments, and prices and costs do not change in the future.
+the weather is known), crop insurance pays nothing back in a failed year (its premium is in the
+costs), there are no government payments, and prices and costs do not change in the future.
+`profit_basis(economics)` is the sentence the app shows about all this.
 """
 from __future__ import annotations
 
@@ -55,7 +63,7 @@ BUILTIN_COSTS = {
     "winter wheat": {"irrigated": 259.34, "dryland": 233.92},
     "sorghum": {"irrigated": 353.65, "dryland": 225.85},
     "alfalfa": {"irrigated": 465.65, "dryland": 275.15},
-    "fallow": {"irrigated": 55.0, "dryland": 55.0},
+    "fallow": {"irrigated": 14.0, "dryland": 14.0},
 }
 BUILTIN_SLOPES = {      # $ per acre per yield unit (bu, or ton for alfalfa)
     "corn": {"irrigated": 1.4647, "dryland": 1.5505},
@@ -74,6 +82,8 @@ BUILTIN_BUDGET_YIELDS = {
     "fallow": {"irrigated": 0.0, "dryland": 0.0},
 }
 BUILTIN_PUMP_PER_MM = 0.1639
+BUILTIN_IRRIGATION_LIMIT_MM = 609.6    # 24 inches (2 acre-feet per acre), Kansas regulation 5-3-19(a); 0 = no limit
+BUILTIN_COST_YEAR = 2027
 MIN_COST_SHARE = 0.5     # the yield-matched cost never drops below this share of the middle budget
 
 
@@ -86,6 +96,9 @@ class Economics:
     budget_yields: dict = field(default_factory=dict)   # crop -> practice -> the budget's yield goal
     source: str = "builtin"      # "json" or "builtin"
     raw: dict = field(default_factory=dict, compare=False)
+    irrigation_limit_mm: float = BUILTIN_IRRIGATION_LIMIT_MM   # most mm pumped per acre per year; 0 = no limit
+    price_years: tuple = DEFAULT_PRICE_YEARS
+    cost_year: int = BUILTIN_COST_YEAR
 
     def price(self, crop: str) -> float:
         return float(self.prices.get(crop, 0.0))
@@ -122,12 +135,23 @@ def load_economics(path: str | Path | None = None) -> Economics:
         numbers = (list(prices.values()) + [v for c in costs.values() for v in c.values()] + [pump]
                    + [v for c in slopes.values() for v in c.values()]
                    + [v for c in budget_yields.values() for v in c.values()])
-        if any(not (n == n) or n < 0 or n == float("inf") for n in numbers):
+        limit = float((raw.get("irrigation_limit") or {}).get("mm", BUILTIN_IRRIGATION_LIMIT_MM))
+        years = tuple(int(y) for y in (raw["prices"].get("years") or DEFAULT_PRICE_YEARS))
+        cost_year = int(raw.get("cost_year", BUILTIN_COST_YEAR))
+        if any(not (n == n) or n < 0 or n == float("inf") for n in numbers + [limit]) or len(years) != 2:
             raise ValueError("negative or non-finite number")
     except (OSError, ValueError, TypeError, KeyError):
         return builtin_economics()
     return Economics(prices=prices, costs=costs, pump_per_mm=pump, slopes=slopes, budget_yields=budget_yields,
-                     source="json", raw=raw)
+                     source="json", raw=raw, irrigation_limit_mm=limit, price_years=years, cost_year=cost_year)
+
+
+def profit_basis(economics: Economics) -> str:
+    """One plain sentence on what the dollar figure is and is not (shown under "How this is scored")."""
+    first, last = economics.price_years
+    return (f"Dollars are return over direct costs, per acre per year: crop prices of {first}-{last}, Kansas State "
+            f"University's {economics.cost_year} cost budgets and the cost of pumping. Land and machinery ownership are "
+            "not taken off, and no crop insurance payments are counted, so it is not take-home pay.")
 
 
 def profit(crop: str, practice: str, yield_per_acre, irrigation_mm, economics: Economics,
@@ -156,6 +180,8 @@ def describe(economics: Economics, normals: dict | None = None) -> dict:
         "prices": {c: economics.price(c) for c in PRICE_CROPS},
         "budget_costs": {c: dict(economics.costs[c]) for c in CROPS},
         "pump_per_mm": economics.pump_per_mm,
+        "irrigation_limit_mm": economics.irrigation_limit_mm,
+        "profit_basis": profit_basis(economics),
     }
     if normals is not None:
         out["costs"] = {c: {p: round(economics.cost(c, p, normals[c][p]), 2) for p in PRACTICES} for c in CROPS}
@@ -238,6 +264,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{practice} direct costs $/acre, K-State middle budget -> at the county's normal yield: "
               + ", ".join(f"{c} {economics.cost(c, practice):.0f} -> {info['costs'][c][practice]:.0f}" for c in CROPS))
     print(f"pumping: ${economics.pump_per_mm:.3f} per mm (${economics.pump_per_mm * MM_PER_INCH:.2f} per acre-inch)")
+    limit = economics.irrigation_limit_mm
+    print("irrigation limit: " + (f"{limit:.0f} mm ({limit / MM_PER_INCH:.0f} inches) per acre per year" if limit else "none"))
     return 0
 
 

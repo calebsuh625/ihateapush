@@ -18,6 +18,8 @@ Two kinds of things live here:
       NASS_PATH               data/nass_finney.parquet
       PLANNER_SOIL_CACHE_PATH data/planner_bare_days.json
       ECONOMICS_PATH          api/planner/economics.json
+      IRRIGATION_LIMIT_MM     the most water that can be pumped per acre per year, mm. Unset = the value in
+                              economics.json (24 inches = 610 mm); 0 or "none" = no limit.
 
 * the planner's own numbers: default weights, the window rule, the reference scales of the four
   scores, the holds-up rule, the ranking blend. They are constants, not fitted, and each one has
@@ -65,6 +67,7 @@ class Settings:
     nass_path: Path
     soil_cache_path: Path
     economics_path: Path
+    irrigation_limit_mm: float | None = None    # None = not set (use economics.json); 0 = no limit
 
 
 def settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -74,7 +77,25 @@ def settings(env: Mapping[str, str] | None = None) -> Settings:
     if source not in SOIL_SOURCES:
         raise ValueError(f"SOIL_EFFECT_SOURCE={source!r}: expected one of {', '.join(SOIL_SOURCES)}")
     paths = {name: Path(env.get(var) or default) for name, (var, default) in _PATHS.items()}
-    return Settings(soil_effect_source=source, **paths)
+    return Settings(soil_effect_source=source, irrigation_limit_mm=irrigation_limit(env.get("IRRIGATION_LIMIT_MM")),
+                    **paths)
+
+
+def irrigation_limit(text: str | None) -> float | None:
+    """IRRIGATION_LIMIT_MM as a number of mm: None when unset (the economics.json value applies),
+    0.0 for "0" or "none" (no limit). Anything else that is not a number of mm is an error, not a guess."""
+    text = (text or "").strip().lower()
+    if not text:
+        return None
+    if text in ("none", "no", "off"):
+        return 0.0
+    try:
+        value = float(text)
+    except ValueError:
+        value = float("nan")
+    if not (value == value) or value < 0 or value == float("inf"):
+        raise ValueError(f"IRRIGATION_LIMIT_MM={text!r}: expected mm per acre per year, or 0 / none for no limit")
+    return value
 
 
 # --- the farmer's priorities ---------------------------------------------------------------------------
@@ -94,10 +115,21 @@ SUMMARY_HORIZONS = tuple(range(2025, 2061, 5))   # the stops of the app's future
 WINDOW_BACK, WINDOW_FORWARD = 10, 9
 WINDOW_FIRST_YEAR, WINDOW_LAST_YEAR = 2015, 2060
 
-# The one-line label says "about the same summer rain" unless the change is at least this big AND at
-# least this share of the models agree on its direction (5 of 6). The models do not agree on rain.
-RAIN_SMALL_PCT = 3.0
+# "Today" is ONE climate for both scenarios: per model, its two runs (ssp245 and ssp585) pooled over
+# the today window. The runs hardly differ in forcing before 2035; what did differ was the weather
+# they happened to draw, and that moved profits by about $10 an acre between the two scenario toggles.
+TODAY_LABEL = "Today's climate (model average, {first}-{last})"
+
+# The one-line label. Summer rain: when fewer than this share of the models (5 of 6) agree on the
+# direction it says "models disagree on summer rain"; when they agree, a direction is claimed only for
+# a mean change of at least RAIN_SMALL_PCT, otherwise "about the same summer rain". 10% is about the
+# spread between overlapping 20-year means of single runs (3%, the first value, was inside that noise).
+RAIN_SMALL_PCT = 10.0
 RAIN_AGREE_SHARE = 0.8
+# Crop water demand is mentioned when growing-season reference ET changes by at least this much.
+ET0_NOTE_PCT = 2.0
+# The hot-day count of the climate tables: growing-season days above this (the label gives both units).
+HOT_DAY_C, HOT_DAY_F = 35, 95
 
 # --- bare days (soil_effect.py) ------------------------------------------------------------------------
 # A (previous crop -> crop) cell is pulled towards its crop's average as if the average were this many
@@ -118,7 +150,8 @@ EFFECTS_MIN_PAIRS = 20
 
 # soil = 0.6 x bare-days part + 0.4 x wind-erosion part:
 #   bare-days part = 1 at 0 bare days a year, 0 at BARE_DAYS_WORST or more [candidates: 6 to 138 days;
-#     a dryland fallow year alone is 143].
+#     a dryland fallow year alone is 143]. (Ranges in brackets were measured again on 2026-11-15, after
+#     the agronomy rules, the hot-day cap and the irrigation limit; the scales were left as they were.)
 #   erosion part   = 1 at index 0, 0 at EROSION_WORST or more (erosion.py: 1.0 = the county's commonest
 #     soil bare all year in the 2000-2024 wind climate) [loam: 0.02 to 0.6; the sandiest 7% of fields have
 #     4.5 times the loam's index, so 2.0 keeps wheat-sorghum on sand (about 0.6) apart from
@@ -129,19 +162,21 @@ EROSION_WORST = 2.0
 
 # water:
 #   irrigated: 1 when nothing is pumped, 0 at IRRIGATION_WORST_MM pumped a year, averaged over the
-#     plan's years [154 to 894 mm; alfalfa today about 690 mm].
+#     plan's years [148 to 610 mm with the 24-inch irrigation limit, which alfalfa reaches in most
+#     years; without a limit up to 894 mm, so the scale still fits when the limit is switched off].
 #   dryland: the share of the crops' water need that rain and stored soil water cover, as it is
-#     [0.38 to 0.80].
+#     [0.37 to 0.84].
 IRRIGATION_WORST_MM = 1000.0
 
 # money: profit is return over direct costs, $ per acre per year (money.py). One fixed scale per
 # practice, because an irrigated acre and a dryland acre differ by a factor of about ten and a field is
-# one or the other: (profit at score 0, profit at score 1) [irrigated 5 to 400; dryland -104 to 82].
+# one or the other: (profit at score 0, profit at score 1) [irrigated 31 to 391; dryland -89 to 82].
 MONEY_SCALE = {"irrigated": (-100.0, 500.0), "dryland": (-125.0, 125.0)}
 
 # risk: failed share = expected share of planted crops that fail (yield under half of normal; fallow
 # years are not planted and not counted). The score is simply the share that does not fail: 1 at no
-# failures, 0 at RISK_WORST_SHARE [dryland 0.03 to 0.67; irrigated 0 to 0.11].
+# failures, 0 at RISK_WORST_SHARE [dryland 0.02 to 0.60; irrigated 0 to 0.16: with the irrigation limit
+# a crop that goes short can fail].
 RISK_WORST_SHARE = 1.0
 
 # --- "holds up" ----------------------------------------------------------------------------------------
@@ -163,4 +198,7 @@ WORST_FRACTION = 1.0 / 3.0
 SAME_CHOICE_YEARS = 1.0
 TOP_PLANS = 3
 
-MAX_REASON_CHARS = 200
+# A plan's reason is one sentence. It was 200 characters; the money clause now says what the dollars
+# are ("returns about $36 an acre a year over direct costs"), so the longest sentence, with the note on
+# failed crops, is about 213.
+MAX_REASON_CHARS = 220

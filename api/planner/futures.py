@@ -11,16 +11,25 @@ Window rule (design note addendum):
 "Today" is h = 2025, so 2015-2034. h = 2060 gives 2050-2060: eleven years instead of twenty, so that
 end is noisier. Ten-year windows of six single model runs were too noisy to use.
 
-"What changes" numbers: each model is compared with ITS OWN today window (so a model that runs wet
-is compared with its own wet baseline), then the six changes are averaged; `range` gives the lowest
-and highest model. Temperatures and day counts change by a difference, rain and reference ET by a
-percentage.
+ONE Today. At h = 2025 the scenario does not matter: each model's two runs (ssp245 and ssp585) are
+pooled over 2015-2034, so there are still six futures, each from forty model-years, and the answer
+is identical under both scenario toggles. (The two runs of a model hardly differ in forcing before
+2035, but each drew its own weather, and scored apart they gave Todays about $10 an acre apart.)
+Pooling was the simpler of the two fixes on the table (the other: use the ssp245 runs for both).
+Today is a MODEL climate: it has 6 to 9 more hot days a year than the 2000-2024 record.
 
-The one-line label reads like "+1.2°C, about the same summer rain, 15 more 35°C+ days". Summer rain
-is called "less" or "more" only when the mean change is at least 3% AND at least 5 of the 6 models
-agree on the direction; otherwise it says "about the same summer rain", because the models do not
-agree on rain and the label must not pretend they do. (`changes["summer_rain_agree"]` says how many
-models share the direction of the mean, so the app can show the disagreement.)
+"What changes" numbers: each model in the chosen scenario is compared with ITS OWN pooled Today (so a
+model that runs wet is compared with its own wet baseline, and both scenarios are measured against the
+same Today), then the six changes are averaged; `range` gives the lowest and highest model.
+Temperatures and day counts change by a difference, rain and reference ET by a percentage.
+
+The one-line label reads like
+    "+1.9°C, models disagree on summer rain, crops need 6% more water, 25 more days above 35°C (95°F)".
+Summer rain: "models disagree on summer rain" when fewer than 5 of the 6 models agree on the
+direction; when they agree, "N% less / more summer rain" for a mean change of 10% or more, otherwise
+"about the same summer rain". The crop-water clause appears when growing-season reference ET changes
+by 2% or more. (`changes["summer_rain_agree"]` says how many models share the direction of the mean.)
+At h = 2025 the label is "Today's climate (model average, 2015-2034)".
 """
 from __future__ import annotations
 
@@ -83,25 +92,51 @@ def _round(value: float, digits: int = 1) -> float:
     return round(float(value), digits)
 
 
+def today_label() -> str:
+    first, last = window(config.TODAY)
+    return config.TODAY_LABEL.format(first=first, last=last)
+
+
 def label_for(changes: dict, horizon: int) -> str:
-    """The one-line label for a `changes` dict (see the module docstring for the rain rule)."""
+    """The one-line label for a `changes` dict (see the module docstring for the rules)."""
     if horizon == config.TODAY:
-        return "Today's climate"
+        return today_label()
     parts = [f"{changes['tmean_c']:+.1f}°C"]
     pct = changes["summer_rain_pct"]
     agree = changes.get("summer_rain_agree", 0) / max(1, changes.get("models", 1))
-    if abs(pct) >= config.RAIN_SMALL_PCT and agree >= config.RAIN_AGREE_SHARE:
+    if agree < config.RAIN_AGREE_SHARE:
+        parts.append("models disagree on summer rain")
+    elif abs(pct) >= config.RAIN_SMALL_PCT:
         parts.append(f"{abs(round(pct)):.0f}% {'less' if pct < 0 else 'more'} summer rain")
     else:
         parts.append("about the same summer rain")
+    et0 = changes.get("et0_pct", 0.0)
+    if abs(et0) >= config.ET0_NOTE_PCT:
+        parts.append(f"crops need {abs(round(et0)):.0f}% {'more' if et0 > 0 else 'less'} water")
     hot = round(changes["hot_days"])
+    above = f"above {config.HOT_DAY_C}°C ({config.HOT_DAY_F}°F)"
     if hot >= 1:
-        parts.append(f"{hot:.0f} more 35°C+ days")
+        parts.append(f"{hot:.0f} more {'day' if hot == 1 else 'days'} {above}")
     elif hot <= -1:
-        parts.append(f"{-hot:.0f} fewer 35°C+ days")
+        parts.append(f"{-hot:.0f} fewer {'day' if hot == -1 else 'days'} {above}")
     else:
-        parts.append("about as many 35°C+ days")
+        parts.append(f"about as many days {above}")
     return ", ".join(parts)
+
+
+def rain_agreement(rain_changes: np.ndarray) -> int:
+    """How many models share the direction of the mean summer-rain change.
+
+    When the mean has no direction, the larger camp is counted; when no model changes at all (every
+    change is zero) they all agree that nothing changes.
+    """
+    rain_changes = np.asarray(rain_changes, dtype=float)
+    if np.all(np.abs(rain_changes) < 1e-9):
+        return int(rain_changes.size)
+    direction = np.sign(round(float(rain_changes.mean()), 9))
+    if direction == 0:
+        return int(max((rain_changes > 0).sum(), (rain_changes < 0).sum()))
+    return int((np.sign(rain_changes) == direction).sum())
 
 
 class Climate:
@@ -153,12 +188,15 @@ class Climate:
         return self.scenarios.index(scenario)
 
     def averages(self, scenario: str, horizon: int) -> dict:
-        """{column: array over models} of window means: the per-future averages."""
+        """{column: array over models} of window means: the per-future averages. At Today the model's
+        runs under every scenario are pooled, so the scenario makes no difference there."""
         s, years = self._scenario_index(scenario), self.year_slice(horizon)
+        if check_horizon(horizon) == config.TODAY:
+            return {column: arr[:, :, years].mean(axis=(0, 2)) for column, arr in self.data.items()}
         return {column: arr[s, :, years].mean(axis=1) for column, arr in self.data.items()}
 
     def changes_by_model(self, scenario: str, horizon: int) -> dict:
-        """{change key: array over models}, each model against its own today window."""
+        """{change key: array over models}, each model against its own pooled Today."""
         now, then = self.averages(scenario, config.TODAY), self.averages(scenario, horizon)
         out = {}
         for key, (column, kind) in CHANGES.items():
@@ -172,9 +210,7 @@ class Climate:
         """Mean change over the models, plus `range` (lowest, highest model) and the rain agreement."""
         by_model = self.changes_by_model(scenario, horizon)
         out = {key: _round(values.mean(), 2 if key == "tmean_c" else 1) for key, values in by_model.items()}
-        rain = by_model["summer_rain_pct"]
-        direction = np.sign(rain.mean())
-        out["summer_rain_agree"] = int((np.sign(rain) == direction).sum()) if direction != 0 else 0
+        out["summer_rain_agree"] = rain_agreement(by_model["summer_rain_pct"])
         out["models"] = len(self.models)
         out["range"] = {key: [_round(values.min(), 2 if key == "tmean_c" else 1),
                               _round(values.max(), 2 if key == "tmean_c" else 1)] for key, values in by_model.items()}
@@ -213,9 +249,11 @@ class Climate:
             "window_rule": (f"about twenty years around the chosen year: from {config.WINDOW_BACK} years before to "
                             f"{config.WINDOW_FORWARD} after, cut at {config.WINDOW_FIRST_YEAR} and "
                             f"{config.WINDOW_LAST_YEAR}; changes are each model against its own "
-                            f"{window(config.TODAY)[0]}-{window(config.TODAY)[1]}"),
-            "baseline": {"horizon": config.TODAY, "window": list(window(config.TODAY)),
-                         "values": {s: self.values(s, config.TODAY) for s in self.scenarios}[first],
+                            f"{window(config.TODAY)[0]}-{window(config.TODAY)[1]}, its runs under both scenarios pooled"),
+            # one Today for every scenario: `values_by_scenario` is kept for older clients and repeats `values`
+            "baseline": {"horizon": config.TODAY, "window": list(window(config.TODAY)), "label": today_label(),
+                         "pooled_scenarios": list(self.scenarios),
+                         "values": self.values(first, config.TODAY),
                          "values_by_scenario": {s: self.values(s, config.TODAY) for s in self.scenarios}},
             "horizons": list(config.SUMMARY_HORIZONS),
             "scenarios": scenarios,

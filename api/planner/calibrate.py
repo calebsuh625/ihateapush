@@ -31,6 +31,11 @@ Honesty rules
   skill = 1 - (squared error of the model) / (squared error of the trend alone).
   Skill at or below zero: all textbook, "weak".
 * Verdict: good (skill 0.5 or more), fair (0.2 to 0.5), weak (below 0.2, or nothing fitted).
+* Every series carries a plain `status_text`. A number that went back to its textbook value is called
+  what it is: an assumption the county record did not support (dryland wheat's heat loss is the one
+  that matters: fitted freely it came out near zero, and the textbook 1 % a day was kept).
+* `heat_cap`: the most hot days any observed year had, plus the margin of crops.py. The planner does
+  not let the heat factor see more hot days than that (response.py).
 
 Which yields
 ------------
@@ -228,6 +233,10 @@ def _grids(crop: str, practice: str):
     return ky_grid, h_grid
 
 
+_TEXTBOOK_WORDS = {True: "the heat loss is the textbook value, an assumption.",
+                   False: "the heat loss and Ky are textbook values, an assumption."}
+
+
 def calibrate_series(crop: str, practice: str, obs: pd.DataFrame, inputs: dict) -> dict:
     """Fit one crop x practice following the honesty rules. Returns the JSON entry plus year-by-year rows."""
     c = CROP_TABLE[crop]
@@ -254,6 +263,7 @@ def calibrate_series(crop: str, practice: str, obs: pd.DataFrame, inputs: dict) 
         "textbook": {"ky": ky0, "heat_loss": h0},
     }
     notes, attempts = [], []
+    status_text = "Fitted to the county yields."
 
     def attempt(label, kg, hg):
         f = fit_structure(years, y, days, ratios, weights, kg, hg, irrigated)
@@ -264,35 +274,54 @@ def calibrate_series(crop: str, practice: str, obs: pd.DataFrame, inputs: dict) 
     chosen, free = None, []
     if n < MIN_YEARS:
         notes.append(f"only {n} usable years (fewer than {MIN_YEARS}): nothing fitted" if n else "no yield data: nothing fitted")
+        status_text = (f"Nothing fitted ({'only ' + str(n) + ' usable years' if n else 'no yield data'}): "
+                       + _TEXTBOOK_WORDS[irrigated])
     else:
         full = attempt("both free" if not irrigated else "heat loss free", ky_grid, h_grid)
         if irrigated:
             if full["h_on_edge"]:
                 notes.append(f"fitted heat loss {full['heat_loss']:.4f} is on a bound: textbook kept")
+                status_text = (f"Heat loss is an assumption the county record did not support: fitted freely it came out "
+                               f"at {100 * full['heat_loss']:.2f}% a day, on a bound, so the textbook {100 * h0:g}% a day "
+                               "was kept.")
             else:
                 chosen, free = full, ["heat_loss"]
         elif not full["ky_on_edge"] and not full["h_on_edge"]:
             chosen, free = full, ["ky", "heat_loss"]
         elif full["ky_on_edge"] and full["h_on_edge"]:
             notes.append(f"fitted ky {full['ky']:.2f} and heat loss {full['heat_loss']:.4f} are both on a bound: textbook kept")
+            status_text = ("Ky and heat loss are assumptions the county record did not support: fitted freely both "
+                           "landed on a bound, so the textbook values were kept.")
         elif full["ky_on_edge"]:
             notes.append(f"fitted ky {full['ky']:.2f} is on a bound (allowed {ky_grid[0]:.2f}-{ky_grid[-1]:.2f}): "
                          f"FAO ky {ky0} kept, heat loss refitted")
             second = attempt("ky textbook", np.array([ky0]), h_grid)
             if second["h_on_edge"]:
                 notes.append(f"refitted heat loss {second['heat_loss']:.4f} is on a bound too: textbook kept")
+                status_text = ("Ky and heat loss are assumptions the county record did not support: fitted freely each "
+                               "landed on a bound, so the textbook values were kept.")
             else:
                 chosen, free = second, ["heat_loss"]
+                status_text = (f"Ky is the FAO textbook value {ky0:g}, an assumption: fitted freely it landed on a bound "
+                               f"({full['ky']:.2f}). The heat loss is fitted to the county yields.")
         else:
             notes.append(f"fitted heat loss {full['heat_loss']:.4f} is on a bound (allowed {h_grid[0]:.4f}-{h_grid[-1]:.4f}): "
                          f"textbook heat loss {h0} kept, ky refitted")
             second = attempt("heat loss textbook", ky_grid, np.array([h0]))
             if second["ky_on_edge"]:
                 notes.append(f"refitted ky {second['ky']:.2f} is on a bound too: textbook kept")
+                status_text = ("Ky and heat loss are assumptions the county record did not support: fitted freely each "
+                               "landed on a bound, so the textbook values were kept.")
             else:
                 chosen, free = second, ["ky"]
+                status_text = (f"Heat loss is an assumption the county record did not support: the textbook "
+                               f"{100 * h0:g}% a day was kept although, fitted freely, it came out at "
+                               f"{100 * full['heat_loss']:.2f}% a day (R2 {full['r2']:.2f} against {second['r2']:.2f} with "
+                               "the textbook value). Ky is fitted to the county yields.")
         if chosen is not None and not chosen["loo_skill"] > 0:
             notes.append(f"leave-one-out skill {chosen['loo_skill']:.2f} is not above zero: textbook kept")
+            status_text = ("Nothing fitted (the fit predicted left-out years no better than the trend): "
+                           + _TEXTBOOK_WORDS[irrigated])
             chosen, free = None, []
 
     rows = None
@@ -325,6 +354,7 @@ def calibrate_series(crop: str, practice: str, obs: pd.DataFrame, inputs: dict) 
             rows = pd.DataFrame({"year": years, "obs": y, "normal": normal, "rel_obs": rel_obs, "rel_model": rel_model})
         if not n:
             notes.append(f"normal yield {normal} is the crops.py constant")
+    entry["status_text"] = status_text
     entry["notes"] = notes
     entry["attempts"] = attempts
     entry["diagnostics"] = None
@@ -378,14 +408,19 @@ def calibrate(nass: pd.DataFrame, history: pd.DataFrame, monthly: pd.DataFrame,
             if res["rows"] is not None:
                 rows.append(res["rows"])
     entries["fallow"] = {p: {"unit": "", "ky": 0.0, "heat_loss": 0.0, "scale": 1.0, "normal_yield": 0.0,
-                             "resid_sd": None, "status": "textbook", "verdict": "n/a", "notes": ["no crop"]}
+                             "resid_sd": None, "status": "textbook", "status_text": "No crop.", "verdict": "n/a",
+                             "notes": ["no crop"]}
                          for p in PRACTICES}
+    heat_cap = response.heat_cap_entry(response.observed_hot_day_max(history))
+    for column, cap in heat_cap.items():
+        cap["years"] = f"{int(history['year'].min())}-{int(history['year'].max())}"
     params = {
         "written": dt.date.today().isoformat(),
         "written_by": "python -m api.planner.calibrate",
         "model": "yield_rel = scale x max(0, 1 - heat_loss x hot days) x water factor; water factor = "
-                 "max(0, 1 - ky x (1 - rain-fed ET / water need)) for dryland, 1 for irrigated; "
-                 "yield_rel is capped at max_yield_rel; failed = yield_rel < fail_below",
+                 "max(0, 1 - ky x (1 - rain-fed ET / water need)) for dryland, 1 for irrigated (unless the irrigation "
+                 "limit of the planner binds); hot days are capped at heat_cap; yield_rel is capped at max_yield_rel; "
+                 "failed = yield_rel < fail_below",
         "sources": {
             "yields": "USDA NASS, Finney County and Kansas Southwest district, 2000-2024 (data/nass_finney.parquet)",
             "weather": "NASA POWER daily, county centre, 2000-2024 (data/climate_history.parquet, data/climate_monthly.parquet)",
@@ -397,6 +432,9 @@ def calibrate(nass: pd.DataFrame, history: pd.DataFrame, monthly: pd.DataFrame,
         "constants": constants.to_dict(),
         "fail_below": FAIL_BELOW,
         "max_yield_rel": MAX_YIELD_REL,
+        "heat_cap": heat_cap,
+        "heat_cap_note": "Hot days fed to the heat factor are capped at the most any observed year had plus a margin "
+                         "(crops.py HOT_DAYS_MARGIN): the heat loss was fitted, or assumed, inside that range only.",
         "typical_prev": {crop: CROP_TABLE[crop].typical_prev for crop in REAL_CROPS},
         "calibration_rules": {"min_years": MIN_YEARS, "ky_bounds_x_fao": list(KY_RANGE),
                               "heat_loss_bounds": list(HEAT_LOSS_BOUNDS),
@@ -566,7 +604,14 @@ def write_report(path: Path, result: dict, resp: pd.DataFrame, check: dict, open
     add("")
     add("- yield = normal yield x scale x heat factor x water factor.")
     add("- heat factor = 1 - heat loss x hot days (growing-season days above 35 C; winter wheat: May-June days above 32 C).")
-    add("- water factor, dryland = 1 - Ky x (1 - rain-fed ET / water need) (FAO-33); irrigated = 1.")
+    caps = p.get("heat_cap") or response.heat_cap_entry()
+    add("- Hot days are capped before they are used: " + "; ".join(
+        f"{'summer days above 35 C' if col == 'hot_days' else 'May-June days above 32 C'} at {v['cap']:.0f} "
+        f"(the most any year of {v.get('years', 'the record')} had, {v['observed_max']:.0f}, plus {v['margin']:.0f})"
+        for col, v in caps.items()) + ". The heat loss was fitted, or assumed, inside the record's range; the climate "
+        "models reach 120 hot days in single years, and a straight line that far out is a guess.")
+    add("- water factor, dryland = 1 - Ky x (1 - rain-fed ET / water need) (FAO-33); irrigated = 1 "
+        "(in the planner: unless the pumping limit binds; then the unmet share goes through the same rule with the crop's dryland Ky).")
     add(f"- water need = FAO-56 Kc x reference ET x {c['et0_scale']}; rain-fed ET = effective rain (USDA-SCS) plus soil water stored "
         f"before planting ({c['fallow_efficiency']:.0%} of the rain since the previous harvest, at most {c['awc_mm']:.0f} mm), through a monthly bucket.")
     add(f"- failed = modelled yield below {p['fail_below']:.0%} of normal. Fallow never fails. "
@@ -628,7 +673,14 @@ def write_report(path: Path, result: dict, resp: pd.DataFrame, check: dict, open
             if e["status"] != "fitted" or e["verdict"] == "weak":
                 why = "; ".join(e["notes"]) or "low skill"
                 tried = (" Tried: " + " | ".join(e["attempts"]) + ".") if e.get("attempts") else ""
-                add(f"- **{crop} {practice}** ({e['verdict']}, {e['status']}): {why}.{tried}")
+                add(f"- **{crop} {practice}** ({e['verdict']}, {e['status']}): {e.get('status_text', '')} [{why}.]{tried}")
+    wheat = p["series"]["winter wheat"]["dryland"]
+    if "heat_loss" not in wheat.get("free_parameters", []) and wheat.get("n_years", 0) >= MIN_YEARS:
+        add(f"- **Dryland wheat's heat response is an assumption, not a finding.** The planner takes "
+            f"{100 * wheat['heat_loss']:.1f} % of the yield off for every May-June day above 32 C because that is the textbook "
+            "starting value; the county record did not support it (fitted freely the heat loss came out near zero and the "
+            "water term explained the bad years). It is kept on purpose, as the cautious choice for a hotter future, and it "
+            "decides part of the dryland ranking in 2060: with the fitted value wheat-fallow plans lose less.")
     diag = {(crop, practice): p["series"][crop][practice].get("diagnostics") for crop in REAL_CROPS for practice in PRACTICES}
     diag = {k: v for k, v in diag.items() if v and p["series"][k[0]][k[1]]["n_years"] >= MIN_YEARS}
     if diag:
@@ -727,7 +779,11 @@ def write_report(path: Path, result: dict, resp: pd.DataFrame, check: dict, open
         "The 50 % rule on a county average is therefore a strict test; use `fail_prob` for rates.")
     add("- One weather series for the whole county; no hail, freeze, disease or planting-date effects. Water is added up over the "
         "season, so rain that comes too late still counts.")
-    add("- Irrigated crops are assumed fully watered. Wells that cannot keep up in a hot, dry year are not modelled.")
+    add("- In this calibration irrigated crops are fully watered. The planner adds a pumping limit per acre per year on "
+        "top (the unmet share goes through the FAO-33 rule); the limit was not part of the fit, and a well that weakens "
+        "over the years is not modelled.")
+    add("- Hot days beyond the cap count as the cap: the model says nothing about what a year with 100 or 120 hot days "
+        "does that a year with 85 does not.")
     add("- The textbook heat-loss values in crops.py are our rounded reading of the literature, which reports losses per degree-day, not per hot day.")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(L) + "\n")
@@ -843,8 +899,10 @@ def main(argv: list[str] | None = None) -> int:
     scales = textbook_scales(result["inputs"])
 
     lines = fit_lines(params)
+    cap_line = "hot-day cap: " + ", ".join(f"{col} {v['observed_max']:.0f} + {v['margin']:.0f} = {v['cap']:.0f}"
+                                           for col, v in params["heat_cap"].items())
     log = [f"calibrate {dt.datetime.now().isoformat(timespec='seconds')}", ""] + lines + [""]
-    log += ["textbook scale (for crops.py _SCALE): " + json.dumps(scales), ""]
+    log += [cap_line, "", "textbook scale (for crops.py _SCALE): " + json.dumps(scales), ""]
     for crop in REAL_CROPS:
         for practice in PRACTICES:
             e = params["series"][crop][practice]
@@ -872,6 +930,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for line in lines:
         print(line)
+    print(cap_line)
     if openet is not None:
         irr = openet[openet["practice"] == "irrigated"]
         print(f"water need vs OpenET irrigated: {irr['gap_pct'].min():+.0f}% to {irr['gap_pct'].max():+.0f}% "

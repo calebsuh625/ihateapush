@@ -10,11 +10,20 @@ The rules
 
 * heat factor = 1 - heat_loss x hot days, never below 0. Summer crops and alfalfa count growing-season
   days above 35 C (`hot_days`); winter wheat counts May-June days above 32 C (`wheat_hot_days`).
-  Applies to irrigated and dryland crops.
+  Applies to irrigated and dryland crops. The hot days are CAPPED before they are used: at the most
+  the 2000-2024 record ever had plus a margin (summer 75 + 10, wheat 33 + 5; `heat_cap` in the
+  parameters, crops.py for the reason). The heat loss was fitted inside that range; some model years
+  have 120 hot days, and a straight line that far out is a guess.
 * water factor (dryland) = 1 - Ky x (1 - rain-fed ET / water need), never below 0 (FAO-33). Rain-fed ET
   comes from water.py: effective rain plus the soil water stored before planting, through a monthly
-  bucket. Irrigated crops get the water they need: water factor = 1, so irrigated yield does not
-  depend on rain; what rain changes for them is how much has to be pumped.
+  bucket.
+* water factor (irrigated) = 1 while the pumping need is within the irrigation limit: the crop gets
+  what it needs, so its yield does not depend on rain; rain changes how much has to be pumped. With
+  `irrigation_limit_mm` (the most that can be pumped per acre per year; smart.py passes the setting,
+  the default here is no limit) a year that needs more gets the limit and no more, and the unmet part
+  goes through the same FAO-33 rule: 1 - Ky x (unmet need / water need), with the Ky of the crop's
+  dryland series (fitted for corn and wheat, FAO's elsewhere). So a thirsty crop in a hot, dry year
+  yields less and can fail. `irrigation_mm` is what is really pumped; `shortfall_mm` the unmet need.
 * scale puts the level right: it is 1 / (mean of heat x water over the calibration years), so a
   normal year gives 1. It is a level, not a response.
 * yield_rel is capped at 2 (`MAX_YIELD_REL`): no year is credited with more than twice the normal
@@ -49,7 +58,8 @@ import numpy as np
 import pandas as pd
 
 from api.planner import water
-from api.planner.crops import CROP_TABLE, CROPS, FAIL_BELOW, MAX_YIELD_REL, PRACTICES, PREV_KINDS, prev_kind
+from api.planner.crops import (CROP_TABLE, CROPS, FAIL_BELOW, HOT_DAYS_MARGIN, HOT_DAYS_OBSERVED_MAX, MAX_YIELD_REL,
+                               PRACTICES, PREV_KINDS, prev_kind)
 
 PARAMS_PATH = Path(__file__).with_name("crop_response.json")
 
@@ -77,6 +87,47 @@ def column(name: str, prev_crop: str | None) -> str:
 
 # --- parameters --------------------------------------------------------------------------------------
 
+def heat_cap_entry(observed_max: dict | None = None, margin: dict | None = None) -> dict:
+    """{column: {"observed_max", "margin", "cap"}} for the two hot-day columns (crops.py values by default)."""
+    out = {}
+    for column in HOT_DAYS_OBSERVED_MAX:
+        top = float((observed_max or {}).get(column, HOT_DAYS_OBSERVED_MAX[column]))
+        extra = float((margin or {}).get(column, HOT_DAYS_MARGIN[column]))
+        if not (np.isfinite(top) and np.isfinite(extra)) or top < 0 or extra < 0:
+            raise ValueError(f"heat cap for {column}: {top} + {extra}")
+        out[column] = {"observed_max": top, "margin": extra, "cap": top + extra}
+    return out
+
+
+def observed_hot_day_max(history: pd.DataFrame) -> dict:
+    """{column: the most hot days any year of the observed table had} (data/climate_history.parquet)."""
+    return {column: float(history[column].max()) for column in HOT_DAYS_OBSERVED_MAX if column in history.columns}
+
+
+def with_observed_heat_cap(params: dict, history: pd.DataFrame | None) -> dict:
+    """`params` with the cap's maxima read from the observed table; unchanged when there is none."""
+    if history is None or not len(history):
+        return params
+    try:
+        got = observed_hot_day_max(history)
+        if not got:
+            return params
+        known = params.get("heat_cap") or {}
+        margin = {c: v["margin"] for c, v in known.items()}
+        tops = {**{c: v["observed_max"] for c, v in known.items()}, **got}     # a column the table lacks keeps its value
+        return {**params, "heat_cap": heat_cap_entry(tops, margin)}
+    except (KeyError, TypeError, ValueError):
+        return params
+
+
+def heat_caps(params: dict) -> dict:
+    """{column: cap in days} from the parameters (the built-in cap for anything missing)."""
+    given = params.get("heat_cap") or {}
+    fallback = heat_cap_entry()
+    return {column: float((given.get(column) or fallback[column]).get("cap", fallback[column]["cap"]))
+            for column in fallback}
+
+
 def default_params() -> dict:
     """Textbook parameters from crops.py, in the same shape as `crop_response.json`."""
     series = {}
@@ -84,11 +135,12 @@ def default_params() -> dict:
         crop = CROP_TABLE[name]
         series[name] = {
             p: {"ky": crop.ky if p == "dryland" else 0.0, "heat_loss": crop.heat_loss[p], "scale": crop.scale[p],
-                "normal_yield": crop.normal_yield[p], "resid_sd": None, "status": "textbook"}
+                "normal_yield": crop.normal_yield[p], "resid_sd": None, "status": "textbook",
+                "status_text": "Textbook values (crops.py), an assumption: nothing fitted."}
             for p in PRACTICES
         }
     return {"source": "builtin", "constants": water.DEFAULTS.to_dict(), "fail_below": FAIL_BELOW,
-            "max_yield_rel": MAX_YIELD_REL, "series": series}
+            "max_yield_rel": MAX_YIELD_REL, "heat_cap": heat_cap_entry(), "series": series}
 
 
 def _merge(defaults: dict, loaded: dict) -> dict:
@@ -96,13 +148,18 @@ def _merge(defaults: dict, loaded: dict) -> dict:
     out["constants"] = {**defaults["constants"], **(loaded.get("constants") or {})}
     out["fail_below"] = float(loaded.get("fail_below", defaults["fail_below"]))
     out["max_yield_rel"] = float(loaded.get("max_yield_rel", defaults["max_yield_rel"]))
+    given = loaded.get("heat_cap")
+    if isinstance(given, dict):       # the record's maxima as the calibration wrote them; margins too if given
+        out["heat_cap"] = heat_cap_entry(
+            {c: v["observed_max"] for c, v in given.items() if isinstance(v, dict) and "observed_max" in v},
+            {c: v["margin"] for c, v in given.items() if isinstance(v, dict) and "margin" in v})
     series = {}
     for name in CROPS:
         series[name] = {}
         for p in PRACTICES:
             entry = dict(defaults["series"][name][p])
             got = ((loaded.get("series") or {}).get(name) or {}).get(p) or {}
-            for key in ("ky", "heat_loss", "scale", "normal_yield", "resid_sd", "status"):
+            for key in ("ky", "heat_loss", "scale", "normal_yield", "resid_sd", "status", "status_text"):
                 if key in got:
                     entry[key] = got[key]
             series[name][p] = entry
@@ -179,7 +236,8 @@ def _with_series_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 # --- the entry point ---------------------------------------------------------------------------------
 
-def crop_response(yearly: pd.DataFrame, monthly: pd.DataFrame, params: dict | None = None) -> pd.DataFrame:
+def crop_response(yearly: pd.DataFrame, monthly: pd.DataFrame, params: dict | None = None, *,
+                  irrigation_limit_mm: float | None = None) -> pd.DataFrame:
     """Yield, failure and water numbers for every crop and practice in every climate year.
 
     yearly   `data/climate_history.parquet` (observed; no `model` / `scenario` columns needed) or
@@ -191,6 +249,8 @@ def crop_response(yearly: pd.DataFrame, monthly: pd.DataFrame, params: dict | No
              of `yearly` needs its twelve months here; earlier months are used when present. Observed
              and model rows may be mixed in one call (the whole table as it is on disk is fine).
     params   from `load_params()`; loaded from `crop_response.json` (or the built-in constants) if None.
+    irrigation_limit_mm   the most water that can be pumped per acre per year, mm; None or 0 = no limit
+             (every irrigated crop gets its full need). See the module docstring.
 
     Returns one row per (model, scenario, year, crop, practice), sorted by model, scenario, year, then
     crop in the fixed order and practice (irrigated, dryland). Columns: see `COLUMNS` and the module
@@ -200,6 +260,10 @@ def crop_response(yearly: pd.DataFrame, monthly: pd.DataFrame, params: dict | No
     constants = water.WaterConstants.from_dict(params.get("constants"))
     fail_below = float(params.get("fail_below", FAIL_BELOW))
     cap = float(params.get("max_yield_rel", MAX_YIELD_REL))
+    day_caps = heat_caps(params)
+    limit = float(irrigation_limit_mm) if irrigation_limit_mm else 0.0
+    if not np.isfinite(limit) or limit < 0:
+        raise ValueError(f"irrigation_limit_mm = {irrigation_limit_mm!r}: expected a number of mm, 0 or None for no limit")
 
     yearly = _with_series_columns(yearly)
     for col in ("year", "hot_days", "wheat_hot_days"):
@@ -247,7 +311,8 @@ def crop_response(yearly: pd.DataFrame, monthly: pd.DataFrame, params: dict | No
         b = bals[name]
         need = b.need[si, yi]
         eff_rain = b.eff_rain.sum(axis=2)[si, yi] if b.eff_rain.shape[2] else np.zeros(n)
-        days = yearly[crop.heat_column].to_numpy(dtype=float)
+        days = np.minimum(yearly[crop.heat_column].to_numpy(dtype=float), day_caps[crop.heat_column])
+        ky_short = float(params["series"][name]["dryland"]["ky"])    # the crop's Ky when irrigation falls short
         for pi, practice in enumerate(PRACTICES):
             par = params["series"][name][practice]
             unit[ci, pi] = crop.unit
@@ -267,15 +332,25 @@ def crop_response(yearly: pd.DataFrame, monthly: pd.DataFrame, params: dict | No
             weights = crop.typical_prev[practice]
             for k in PREV_KINDS:
                 gap = b.gap(k)[si, yi]
-                wf = np.ones(n) if irrigated else water_factor(b.et_ratio(k)[si, yi], par["ky"])
+                if not irrigated:
+                    wf = water_factor(b.et_ratio(k)[si, yi], par["ky"])
+                    pumped, delivered, unmet = 0.0, 0.0, gap
+                else:
+                    pumped = gap / constants.pivot_efficiency
+                    if limit > 0:
+                        pumped = np.minimum(pumped, limit)
+                    delivered = pumped * constants.pivot_efficiency
+                    unmet = np.maximum(gap - delivered, 0.0)
+                    if limit > 0:        # the unmet share of the need, through the dryland rule
+                        wf = water_factor(np.where(need > 0, 1.0 - unmet / np.maximum(need, 1e-9), 1.0), ky_short)
+                    else:
+                        wf = np.ones(n)
                 rel = np.minimum(par["scale"] * heat * wf, cap)
                 stored = b.stored[k][si, yi]
                 per_kind = {
                     "yield_rel": rel, "yield": par["normal_yield"] * rel, "water_factor": wf, "stored_mm": stored,
                     "fail_prob": fail_probability(rel, par["resid_sd"], fail_below),
-                    "irrigation_net_mm": gap if irrigated else 0.0,
-                    "irrigation_mm": gap / constants.pivot_efficiency if irrigated else 0.0,
-                    "shortfall_mm": 0.0 if irrigated else gap,
+                    "irrigation_net_mm": delivered, "irrigation_mm": pumped, "shortfall_mm": unmet,
                 }
                 w = float(weights.get(k, 0.0))
                 for c, v in per_kind.items():
