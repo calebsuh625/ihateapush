@@ -787,5 +787,7 @@ def test_schema_module_stays_light():
         if isinstance(node, ast.Import):
             imported |= {alias.name.split(".")[0] for alias in node.names}
         elif isinstance(node, ast.ImportFrom):
+            if node.module == "pipeline.region":  # stdlib-only: picks the county's data folder
+                continue
             imported.add((node.module or "").split(".")[0])
     assert imported - set(sys.stdlib_module_names) == {"pandas"}

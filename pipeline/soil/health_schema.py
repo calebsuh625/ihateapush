@@ -32,10 +32,11 @@ import json
 from pathlib import Path
 
 import pandas as pd
+from pipeline.region import DATA_DIR as REGION_DATA_DIR  # noqa: E402  (data/ for Finney, data/regions/<fips>/ otherwise)
 
 ROOT = Path(__file__).resolve().parents[2]
-SOIL_HEALTH_PATH = ROOT / "data" / "soil_health.parquet"
-SOIL_HEALTH_META_PATH = ROOT / "data" / "soil_health_meta.json"
+SOIL_HEALTH_PATH = REGION_DATA_DIR / "soil_health.parquet"
+SOIL_HEALTH_META_PATH = REGION_DATA_DIR / "soil_health_meta.json"
 
 COLUMNS = ["field_id", "year", "om_pred", "n_obs", "confidence", "bare_days"]
 YEARS = tuple(range(2016, 2025))

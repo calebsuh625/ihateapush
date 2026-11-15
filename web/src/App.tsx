@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE, api, apiUrl } from "./api";
 import { FieldMap } from "./components/FieldMap";
 import { ErrorNote, FieldPanel } from "./components/FieldPanel";
-import { APP_NAME, REGION_LABEL } from "./config";
+import { APP_NAME } from "./config";
+import { RegionLabel } from "./components/RegionLabel";
 import { useResource } from "./hooks/useResource";
 import type { Resource } from "./hooks/useResource";
 import { useSelection } from "./hooks/useSelection";
@@ -117,7 +118,7 @@ function DataBadge({ health, fieldCount }: { health: Resource<Health>; fieldCoun
       </p>
     ) : (
       <p className="badge" data-testid="badge" data-fake="false">
-        {formatCount(count)} {plural(count, "field")} · {REGION_LABEL}
+        {formatCount(count)} {plural(count, "field")} · <RegionLabel />
       </p>
     );
   }

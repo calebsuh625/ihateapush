@@ -62,14 +62,15 @@ from pipeline.field_traits_schema import (
     check_field_traits,
     summarize,
 )
+from pipeline.region import DATA_DIR as REGION_DATA_DIR, nass_path  # noqa: E402  (data/ for Finney, data/regions/<fips>/ otherwise)
 
 ROOT = Path(__file__).resolve().parents[1]
-FIELDS_PATH = ROOT / "data" / "fields.parquet"
-NASS_PATH = ROOT / "data" / "nass_finney.parquet"
-CAUSAL_FIELDS_PATH = ROOT / "data" / "causal_fields.parquet"
+FIELDS_PATH = REGION_DATA_DIR / "fields.parquet"
+NASS_PATH = nass_path()
+CAUSAL_FIELDS_PATH = REGION_DATA_DIR / "causal_fields.parquet"
 SSURGO_CACHE = ROOT / "data" / "raw" / "ssurgo"
 OPENET_CACHE = ROOT / "data" / "raw" / "openet"
-LOG_DIR = ROOT / "data" / "logs" / "phase3"
+LOG_DIR = REGION_DATA_DIR / "logs" / "phase3"
 ET_BY_CROP_PATH = LOG_DIR / "openet_by_crop.csv"
 
 # ---- irrigation rule

@@ -23,9 +23,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from pipeline.region import DATA_DIR as REGION_DATA_DIR  # noqa: E402  (data/ for Finney, data/regions/<fips>/ otherwise)
 
 ROOT = Path(__file__).resolve().parents[1]
-FIELD_TRAITS_PATH = ROOT / "data" / "field_traits.parquet"
+FIELD_TRAITS_PATH = REGION_DATA_DIR / "field_traits.parquet"
 
 COLUMNS = ["field_id", "irrigation", "irrigated_prob", "irrigation_basis", "weg", "wei", "et_gs_mm"]
 IRRIGATION = ("irrigated", "dryland")

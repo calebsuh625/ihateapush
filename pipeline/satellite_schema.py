@@ -19,9 +19,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from pipeline.region import DATA_DIR as REGION_DATA_DIR  # noqa: E402  (data/ for Finney, data/regions/<fips>/ otherwise)
 
 ROOT = Path(__file__).resolve().parents[1]
-SATELLITE_PATH = ROOT / "data" / "field_satellite.parquet"
+SATELLITE_PATH = REGION_DATA_DIR / "field_satellite.parquet"
 
 COLUMNS = ["field_id", "year", "ndvi_peak", "cover_frac", "n_obs"]
 GREEN_NDVI = 0.3  # a pixel counts as "green" in a view when its NDVI is at least this

@@ -1,4 +1,5 @@
-"""USDA NASS crop statistics for Finney County, Kansas -> data/nass_finney.parquet.
+"""USDA NASS crop statistics for the region's county ($REGION, default Finney County, Kansas) -> data/nass_finney.parquet
+(other counties: data/regions/<fips>/nass.parquet).
 
     .venv/bin/python -m pipeline.nass            # build (downloads once, then works from the cache)
     .venv/bin/python -m pipeline.nass --check    # validate the table and print the series summary
@@ -56,21 +57,24 @@ import time
 from pathlib import Path
 
 import pandas as pd
+from pipeline.region import DATA_DIR as REGION_DATA_DIR, REGION, nass_district, nass_path  # noqa: E402  (data/ for Finney, data/regions/<fips>/ otherwise)
 
 ROOT = Path(__file__).resolve().parents[1]
-NASS_PATH = ROOT / "data" / "nass_finney.parquet"
+NASS_PATH = nass_path()
 RAW_DIR = ROOT / "data" / "raw" / "nass"
-EXTRACT_PATH = RAW_DIR / "qs_crops_ks_extract.tsv.gz"
-EXTRACT_META_PATH = RAW_DIR / "qs_crops_ks_extract.json"
-LOG_DIR = ROOT / "data" / "logs" / "phase3"
+# One small extract per county (Finney keeps its original name); each holds one county + its district + the state.
+_EXTRACT_STEM = "qs_crops_ks_extract" if REGION.is_default else f"qs_crops_{REGION.state_abbr.lower()}_{REGION.fips}_extract"
+EXTRACT_PATH = RAW_DIR / f"{_EXTRACT_STEM}.tsv.gz"
+EXTRACT_META_PATH = RAW_DIR / f"{_EXTRACT_STEM}.json"
+LOG_DIR = REGION_DATA_DIR / "logs" / "phase3"
 
 DATASETS_URL = "https://www.nass.usda.gov/datasets"
 BASE_URL = "https://www.nass.usda.gov"
 USER_AGENT = "Mozilla/5.0 (crop-rotation-tool; school project; one bulk download)"
 
-STATE_ALPHA = "KS"
-COUNTY_CODE = "055"  # Finney
-ASD_CODE = "30"  # Southwest
+STATE_ALPHA = REGION.state_abbr  # "KS"
+COUNTY_CODE = REGION.county_fips  # "055" = Finney
+ASD_CODE = nass_district()  # NASS agricultural district, "30" = Southwest Kansas
 FIRST_EXTRACT_YEAR = 1990
 YEARS = (2000, 2024)
 PRICE_YEARS = 10

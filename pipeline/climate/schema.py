@@ -35,11 +35,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from pipeline.region import DATA_DIR as REGION_DATA_DIR  # noqa: E402  (data/ for Finney, data/regions/<fips>/ otherwise)
 
 ROOT = Path(__file__).resolve().parents[2]
-FUTURES_PATH = ROOT / "data" / "climate_futures.parquet"
-HISTORY_PATH = ROOT / "data" / "climate_history.parquet"
-MONTHLY_PATH = ROOT / "data" / "climate_monthly.parquet"
+FUTURES_PATH = REGION_DATA_DIR / "climate_futures.parquet"
+HISTORY_PATH = REGION_DATA_DIR / "climate_history.parquet"
+MONTHLY_PATH = REGION_DATA_DIR / "climate_monthly.parquet"
 
 SCENARIOS = ("ssp245", "ssp585")
 OBSERVED = "observed"

@@ -34,9 +34,10 @@ import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
+from pipeline.region import DATA_DIR as REGION_DATA_DIR  # noqa: E402  (data/ for Finney, data/regions/<fips>/ otherwise)
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT / "data"
+DATA_DIR = REGION_DATA_DIR
 FIELDS_PATH = DATA_DIR / "fields.parquet"
 CACHE_DIR = DATA_DIR / "raw" / "climate" / "gddp"
 LOG_DIR = DATA_DIR / "logs" / "phase3"
