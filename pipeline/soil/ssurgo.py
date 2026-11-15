@@ -1006,6 +1006,86 @@ def organic_matter_pct(fields, **options) -> pd.Series:
     return om
 
 
+class _OfflineClient:
+    """Stands in for SDAClient when the network must not be used: any query is an error."""
+
+    url = "offline (cache only)"
+
+    def __init__(self):
+        self.stats = {"queries": 0, "http_requests": 0, "retries": 0}
+
+    def query(self, sql: str, what: str = "SDA query") -> pd.DataFrame:
+        raise SoilDataError(
+            f"{what}: not in the SSURGO cache and the network is switched off (offline=True). "
+            "Run `python pipeline/run_all.py` (or call with offline=False) once to fill data/raw/ssurgo/."
+        )
+
+
+def mapunit_series(attrs: pd.DataFrame) -> pd.Series:
+    """mukey -> name of the map unit's largest component (its soil series), e.g. "Richfield".
+
+    A tie in comppct_r goes to the smaller cokey. Map units without a component are absent.
+    """
+    comp = attrs[attrs["cokey"].notna() & attrs["compname"].notna()].drop_duplicates("cokey")
+    comp = comp.assign(mukey=comp["mukey"].astype(str), pct=comp["comppct_r"].astype(float).fillna(0.0), cokey=comp["cokey"].astype(str))
+    comp = comp.sort_values(["mukey", "pct", "cokey"], ascending=[True, False, True])
+    first = comp.drop_duplicates("mukey").set_index("mukey")["compname"]
+    return first.map(lambda name: str(name).strip() or None)
+
+
+def field_mapunits(
+    fields,
+    *,
+    cache_dir: str | Path | None = None,
+    offline: bool = True,
+    client: SDAClient | None = None,
+    components: str = "all",
+    tiles_per_degree: int = TILES_PER_DEGREE,
+) -> pd.DataFrame:
+    """Each field's SSURGO map-unit make-up, one row per field (same index as `fields`).
+
+    Used to group fields for cross-validation: organic_matter_pct is one representative value per
+    map unit, so two fields on the same map unit carry (almost) the same label.
+
+    Columns:
+      dominant_mukey     the map unit covering most of the field's area (str; None if the field
+                         lies on no map unit polygon). An exact tie goes to the smaller mukey.
+      dominant_share     that map unit's share of the field's area (0-1)
+      n_mapunits         number of distinct map units under the field
+      dominant_muname    its name, e.g. "Richfield silt loam, 0 to 1 percent slopes"
+      dominant_series    the soil series of that map unit: the name of its largest component, e.g.
+                         "Richfield" (None if it has no component). Sister map units share it.
+      dominant_om_pct    the surface organic matter of that map unit alone (percent; NaN if it has none)
+      organic_matter_pct the field's area-weighted value over all its map units, unrounded (what
+                         `organic_matter_pct()` returns before rounding)
+
+    `offline=True` (default) reads only the cached tiles and attributes in `cache_dir`
+    (data/raw/ssurgo/); if something is missing it raises SoilDataError instead of calling Soil Data
+    Access. `offline=False` (or an explicit `client`) fetches and caches what is missing.
+    """
+    cache_dir = Path(cache_dir) if cache_dir is not None else CACHE_DIR
+    if client is None:
+        client = _OfflineClient() if offline else SDAClient()
+    geom = _geoseries(fields)
+    lonlat = geom if geom.crs.to_epsg() == 4326 else geom.to_crs("EPSG:4326")
+    bounds = lonlat.bounds.to_numpy(dtype=float)
+    bounds = bounds[np.isfinite(bounds).all(axis=1)]
+    tiles = tiles_for_bounds(bounds, tiles_per_degree)
+    if len(tiles) > MAX_TILES:
+        raise ValueError(f"the fields touch {len(tiles)} tiles (limit {MAX_TILES}); that is not a county-sized extent")
+    polygons, _ = load_mupolygons(tiles, client, cache_dir, tiles_per_degree=tiles_per_degree)
+    attrs, _ = load_mapunit_attributes(polygons["mukey"].unique(), client, cache_dir)
+    mapunits = mapunit_organic_matter(attrs, components=components)
+    table = field_organic_matter(geom, polygons, mapunits["om_pct"])
+    out = table[["dominant_mukey", "dominant_share", "n_mapunits"]].copy()
+    out["dominant_muname"] = table["dominant_mukey"].map(mapunits["muname"]).to_numpy(dtype=object)
+    out["dominant_series"] = table["dominant_mukey"].map(mapunit_series(attrs)).to_numpy(dtype=object)
+    out["dominant_om_pct"] = table["dominant_mukey"].map(mapunits["om_pct"]).to_numpy(dtype=float)
+    out["organic_matter_pct"] = table["organic_matter_pct"].to_numpy(dtype=float)
+    out.index = geom.index
+    return out
+
+
 # --------------------------------------------------------------------------- independent check
 
 
