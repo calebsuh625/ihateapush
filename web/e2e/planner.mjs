@@ -11,7 +11,18 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { DEFAULT_CHOICES, climateLine, holdsText, plansQuery } from "../src/lib/planner.ts";
+import {
+  DEFAULT_CHOICES,
+  DRYLAND_WATER_TITLE,
+  climateLine,
+  climateRange,
+  formatInches,
+  holdsText,
+  placeText,
+  plansQuery,
+  wellQualifier,
+  yieldChangeLine,
+} from "../src/lib/planner.ts";
 
 const WEB_URL = (process.env.WEB_URL ?? "http://localhost:5173").replace(/\/+$/, "");
 const TIMEOUT = Number.parseInt(process.env.E2E_TIMEOUT_MS ?? "20000", 10) || 20000;
@@ -98,7 +109,19 @@ async function checkCards(page, body, what) {
     const plan = body.plans[i];
     equal(squash(await card.locator('[data-testid="plan-name"]').textContent()), plan.name, `${what}: plan ${i + 1} name`);
     check(await card.locator('[data-testid="plan-name"]').isVisible(), `${what}: plan ${i + 1} name is not visible`);
-    equal(squash(await card.locator('[data-testid="plan-overall"]').textContent()), score(plan.scores.overall), `${what}: plan ${i + 1} overall`);
+    // the big number is what the plans are sorted on, and says so
+    equal(squash(await card.locator('[data-testid="plan-overall"]').textContent()), score(plan.scores.robust), `${what}: plan ${i + 1} ranking score`);
+    const bigLabel = squash(await card.locator('[data-testid="plan-overall-label"]').textContent());
+    check(bigLabel.startsWith("Ranking score") && bigLabel.includes("worse futures"), `${what}: plan ${i + 1} big number is labelled "${bigLabel}"`);
+    // cards 2 and 3 say where they sit in the full list
+    const place = card.locator('[data-testid="plan-place"]');
+    if (i === 0) {
+      equal(plan.rank, 1, `${what}: rank of the first plan in the API answer`);
+      equal(await place.count(), 0, `${what}: the first card needs no place line`);
+    } else {
+      equal(squash(await place.textContent()), placeText(plan.rank, body.candidates, i + 1), `${what}: plan ${i + 1} place in the full list`);
+      check(squash(await place.textContent()).includes(`Number ${plan.rank} of ${body.candidates}`), `${what}: plan ${i + 1} place line lacks its rank`);
+    }
     equal(squash(await card.locator('[data-testid="plan-reason"]').textContent()), plan.reason.trim(), `${what}: plan ${i + 1} reason`);
     const holds = squash(await card.locator('[data-testid="plan-holds"]').textContent());
     check(holds.startsWith("Holds up in"), `${what}: plan ${i + 1} has no "Holds up in" badge ("${holds}")`);
@@ -107,14 +130,45 @@ async function checkCards(page, body, what) {
     const spread = card.locator('[data-testid="plan-spread"]');
     equal(await spread.count(), 1, `${what}: plan ${i + 1} profit spread strip`);
     const p = plan.spread.profit_per_acre;
-    const dollars = (n) => (Math.round(n) < 0 ? `−$${Math.abs(Math.round(n)).toLocaleString("en-US")}` : `$${Math.round(n).toLocaleString("en-US")}`);
+    const dollars = (n) => (Math.round(n) < 0 ? `−$${Math.abs(Math.round(n)).toLocaleString("en-US")}` : `$${Math.abs(Math.round(n)).toLocaleString("en-US")}`); // abs: just under zero rounds to -0, shown as $0
     equal(squash(await spread.locator(".spread-values").textContent()), `Low ${dollars(p.low)}Middle ${dollars(p.mid)}High ${dollars(p.high)}`, `${what}: plan ${i + 1} low / middle / high`);
     const numbers = squash(await card.locator('[data-testid="plan-numbers"]').textContent());
-    check(numbers.includes("bare days a year") && numbers.includes("profit per acre") && numbers.includes("crops fail"), `${what}: plan ${i + 1} numbers line reads "${numbers}"`);
+    check(numbers.includes("bare days a year") && numbers.includes("return per acre") && numbers.includes("crops fail"), `${what}: plan ${i + 1} numbers line reads "${numbers}"`);
     check(numbers.includes(body.settings.irrigated ? "water pumped" : "water need met by rain"), `${what}: plan ${i + 1} shows the wrong water figure ("${numbers}")`);
+    const note = card.locator('[data-testid="plan-holds-note"]');
+    const waterBar = card.locator(".score").nth(1);
+    if (body.settings.irrigated) {
+      // water in inches (mm in the title), and the badge says it assumes the well delivers
+      const water = card.locator('[data-testid="plan-water"]');
+      const inches = formatInches(plan.numbers.irrigation_in, plan.numbers.irrigation_mm);
+      check(/^\d+(\.\d)? in$/.test(inches), `${what}: plan ${i + 1} inches read "${inches}"`);
+      equal(squash(await water.locator("dd").textContent()), inches, `${what}: plan ${i + 1} water pumped, in inches`);
+      equal(await water.getAttribute("title"), `${Math.round(plan.numbers.irrigation_mm)} mm a year`, `${what}: plan ${i + 1} water title in mm`);
+      check(!/\bmm\b/.test(numbers), `${what}: plan ${i + 1} still shows mm ("${numbers}")`);
+      equal(squash(await note.textContent()), wellQualifier(body.settings.irrigation_limit_in), `${what}: plan ${i + 1} holds-up qualifier`);
+      if (body.settings.irrigation_limit_in) check(squash(await note.textContent()).includes(`${Math.round(body.settings.irrigation_limit_in * 10) / 10} inches`), `${what}: plan ${i + 1} qualifier lacks the limit`);
+      equal(await waterBar.getAttribute("title"), null, `${what}: plan ${i + 1} irrigated water bar title`);
+    } else {
+      equal(await note.count(), 0, `${what}: plan ${i + 1} dryland badge has no well qualifier`);
+      equal(await waterBar.getAttribute("title"), DRYLAND_WATER_TITLE, `${what}: plan ${i + 1} dryland water bar title`);
+    }
   }
-  const expectedLine = climateLine(body.climate, body.settings.horizon);
-  equal(await text(page, "climate-line"), expectedLine, `${what}: climate line`);
+  // the climate line is the API's label as is; rain is not mentioned a second time
+  const line = await text(page, "climate-line");
+  equal(line, climateLine(body.climate, body.settings.horizon), `${what}: climate line`);
+  check(line.startsWith(body.climate.label), `${what}: climate line "${line}" does not start with the API label`);
+  equal((line.match(/rain/g) ?? []).length, (body.climate.label.match(/rain/g) ?? []).length, `${what}: mentions of rain in the climate line`);
+  const range = climateRange(body.climate, body.settings.horizon);
+  if (range) equal(await text(page, "climate-range"), range, `${what}: range across the models`);
+  else equal(await page.locator('[data-testid="climate-range"]').count(), 0, `${what}: no model range at Today`);
+  // yield changes for the field's practice, hidden at Today
+  const yields = yieldChangeLine(body.climate.yield_change, body.settings.irrigated, body.settings.horizon);
+  if (body.settings.horizon <= 2025) equal(yields, null, `${what}: yield line at Today`);
+  if (yields) {
+    equal(await text(page, "yield-line"), yields, `${what}: yield-change line`);
+    check(yields.startsWith(body.settings.irrigated ? "Irrigated yields" : "Dryland yields"), `${what}: yield line "${yields}" names the wrong practice`);
+    for (const crop of Object.keys(body.climate.yield_change)) check(yields.includes(crop), `${what}: yield line lacks ${crop}`);
+  } else equal(await page.locator('[data-testid="yield-line"]').count(), 0, `${what}: yield-change line should be hidden`);
 }
 
 async function run(browser) {
@@ -167,7 +221,8 @@ async function run(browser) {
   equal(first.settings.irrigated, false, `${DRY} should be treated as dryland by the API`);
   await checkCards(page, first, "dryland, today");
   const todayLine = await text(page, "climate-line");
-  check(todayLine.startsWith("Today's climate") && todayLine.includes("6 climate models"), `today's climate line reads "${todayLine}"`);
+  check(todayLine.startsWith(first.climate.label) && todayLine.includes("6 climate models"), `today's climate line reads "${todayLine}"`);
+  equal(await page.locator('[data-testid="yield-line"]').count(), 0, "no yield-change line at Today");
   const dryLine = await text(page, "irrigation-line");
   check(dryLine.startsWith("Treated as dryland") && dryLine.includes(first.settings.irrigation_basis), `irrigation line reads "${dryLine}"`);
   equal(await page.locator('[data-testid="irrigation-switch"]').isChecked(), false, "irrigation switch on a dryland field");
@@ -183,6 +238,10 @@ async function run(browser) {
     check(scoringText.includes(first.settings[key]), `scoring note is missing settings.${key}`);
   }
   check(first.settings.models.every((model) => scoringText.includes(model)), "scoring note is missing a model name");
+  const limits = (await scoring.locator('[data-testid="scoring-limits"] li').allTextContents()).map(squash);
+  check(first.settings.limits.length >= 1, "the API answer has no settings.limits");
+  equal(limits.join(" | "), first.settings.limits.join(" | "), "limits listed under How this is scored");
+  check(!/improves? the soil|soil health/i.test(scoringText), "scoring note talks about soil health");
   await scoring.locator("summary").click();
   await toControls(page);
   log(`  ✓ dryland field today: controls, 3 cards with "Holds up in", spread strips, scoring note → ${await shot(page, "phase3-today.png")}`);
@@ -203,11 +262,14 @@ async function run(browser) {
   check(futureLine !== todayLine, "the climate line did not change for 2060");
   check(futureLine.startsWith(futureBody.climate.label), `climate line "${futureLine}" does not start with the API label`);
   check(futureLine.includes(`${futureBody.climate.window[0]}–${futureBody.climate.window[1]}`) && futureLine.includes("6 climate models"), `climate line "${futureLine}" lacks the years or the models`);
+  check(!/do not agree on summer rain/.test(futureLine), `climate line "${futureLine}" adds its own rain sentence to the API label`);
   const [rainLow, rainHigh] = futureBody.climate.range.summer_rain_pct;
-  const agreed = futureBody.climate.changes.summer_rain_agree / futureBody.climate.changes.models >= 0.8;
-  if (rainLow < -0.5 && rainHigh > 0.5 && !agreed) {
-    check(/do not agree on summer rain \(from \d+% less to \d+% more\)/.test(futureLine), `climate line "${futureLine}" hides that the models disagree on rain`);
+  if (rainLow < -0.5 && rainHigh > 0.5) {
+    // the spread across the models is still on screen, as small print
+    check(/summer rain from \d+% less to \d+% more/.test(await text(page, "climate-range")), "the model range for summer rain is not shown");
   }
+  const yieldLine = await text(page, "yield-line");
+  check(/^Dryland yields in this future: .+%/.test(yieldLine), `yield-change line reads "${yieldLine}"`);
   await toControls(page);
   log(`  ✓ 2060 + High emissions: "${futureLine}" → ${await shot(page, "phase3-2060.png")}`);
 
@@ -289,7 +351,8 @@ async function run(browser) {
     equal(await text(page, "current-name"), wetDefault.current.name, "irrigated field: current pattern name");
     const currentText = await text(page, "current-pattern");
     check(currentText.includes(holdsText(wetDefault.current.futures.holds, wetDefault.current.futures.total)), `current pattern row lacks its holds-up count ("${currentText}")`);
-    check(currentText.includes(`Overall${score(wetDefault.current.scores.overall)}`), `current pattern row lacks its overall score ("${currentText}")`);
+    check(currentText.includes(`Ranking score${score(wetDefault.current.scores.robust)}`), `current pattern row lacks its ranking score ("${currentText}")`);
+    check(currentText.includes(wellQualifier(wetDefault.settings.irrigation_limit_in)), `current pattern row lacks the well qualifier ("${currentText}")`);
   }
   await toControls(page);
   const irrigatedShot = await shot(page, "phase3-irrigated.png");
@@ -346,7 +409,7 @@ async function run(browser) {
   await checkCards(phone, await ask(DRY, phoneQuery), "phone, 2060");
   const fit = await phone.evaluate(() => {
     const body = document.querySelector(".panel-body");
-    const clipped = [...document.querySelectorAll(".planner, .planner-row, .planner-ticks, .segmented, .plan, .plan-numbers, .spread, .current, .holds")]
+    const clipped = [...document.querySelectorAll(".planner, .planner-row, .planner-ticks, .segmented, .plan, .plan-numbers, .spread, .current, .holds, .plan-head, .plan-place, .planner-yields, .planner-climate-range")]
       .filter((node) => node.scrollWidth > node.clientWidth + 1)
       .map((node) => node.className);
     const ticks = [...document.querySelectorAll(".planner-ticks span")].map((node) => node.getBoundingClientRect());

@@ -564,3 +564,67 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ---- Phase 3 review fixes: place in the full list, ranking score, small print ---- */
+
+.plan-overall--ranking {
+  align-items: center;
+  gap: var(--s2);
+  cursor: help;
+}
+
+.plan-overall--ranking .plan-overall-label {
+  display: grid;
+  justify-items: end;
+  line-height: 1.25;
+  text-align: right;
+}
+
+.plan-overall-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.plan-place {
+  margin-top: var(--s2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.holds-wrap {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.holds-note {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.planner-climate-range {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.planner-yields {
+  margin-top: var(--s2);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.scoring-limits-title {
+  font-weight: 600;
+}
+
+.scoring-limits {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}

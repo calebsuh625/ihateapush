@@ -5,7 +5,11 @@ import {
   DEFAULT_CHOICES,
   HORIZONS,
   climateLine,
+  climateRange,
+  formatChange,
   formatDollars,
+  formatInches,
+  formatMm,
   formatShare,
   holdsText,
   holdsTone,
@@ -14,11 +18,14 @@ import {
   horizonLabel,
   irrigationReason,
   isDefaultWeights,
+  placeText,
   plansQuery,
-  rainDisagreement,
   scenarioLabel,
   spreadDomain,
   spreadGeometry,
+  wellQualifier,
+  yieldChangeLine,
+  yieldChangeRange,
 } from "../src/lib/planner.ts";
 
 test("the default query spells out the API defaults, in a fixed order", () => {
@@ -108,42 +115,83 @@ test("dollars and shares read plainly", () => {
   assert.equal(formatShare(0.004), "0%");
 });
 
-test("rain disagreement is said only when the models really split", () => {
-  assert.equal(
-    rainDisagreement({ summer_rain_agree: 3, models: 6 }, [-33.2, 10.0]),
-    "the models do not agree on summer rain (from 33% less to 10% more)",
-  );
-  assert.equal(
-    rainDisagreement({ summer_rain_agree: 4, models: 6 }, [-0.3, 31.1]),
-    "the models do not agree on summer rain (from no change to 31% more)",
-  );
-  // 5 of 6 agree: the API's label already states the change
-  assert.equal(rainDisagreement({ summer_rain_agree: 5, models: 6 }, [-7.5, 14.2]), null);
-  // every model on the same side
-  assert.equal(rainDisagreement({ summer_rain_agree: 2, models: 6 }, [2, 14]), null);
-  // today: no change at all
-  assert.equal(rainDisagreement({ summer_rain_agree: 0, models: 6 }, [0, 0]), null);
-  assert.equal(rainDisagreement(undefined, [-5, 5]), null);
-  assert.equal(rainDisagreement({ summer_rain_agree: 1, models: 6 }, undefined), null);
+const FUTURE = {
+  label: "+2.0°C, models disagree on summer rain, crops need 8% more water, 26 more days above 35°C (95°F)",
+  changes: { summer_rain_agree: 3, models: 6 },
+  range: { summer_rain_pct: [-31.6, 13.3], tmean_c: [1.32, 3.26] },
+  window: [2050, 2060],
+  models: 6,
+  yield_change: {
+    corn: { pct: -40, low: -56, high: -25 },
+    "winter wheat": { pct: -17, low: -28, high: -11 },
+    sorghum: { pct: -25, low: -36, high: -12 },
+  },
+};
+const TODAY = {
+  label: "Today's climate (model average, 2015-2034)",
+  changes: { summer_rain_agree: 6, models: 6 },
+  range: { summer_rain_pct: [0, 0], tmean_c: [0, 0] },
+  window: [2015, 2034],
+  models: 6,
+  yield_change: { corn: { pct: 0, low: 0, high: 0 }, sorghum: { pct: 0, low: 0, high: 0 } },
+};
+
+test("the climate line is the API's label as is, with no second rain sentence", () => {
+  const line = climateLine(FUTURE, 2060);
+  assert.equal(line, `${FUTURE.label}. Compared with today; average of 2050–2060 across 6 climate models.`);
+  assert.equal(line.startsWith(FUTURE.label), true);
+  // rain is named once, by the label
+  assert.equal(line.match(/rain/g).length, 1);
+  assert.equal(/do not agree/.test(line), false);
+  const agreed = { ...FUTURE, label: "+0.4°C, 12% more summer rain, 3 more days above 35°C (95°F)", window: [2020, 2039] };
+  assert.equal(climateLine(agreed, 2030), `${agreed.label}. Compared with today; average of 2020–2039 across 6 climate models.`);
+  assert.equal(climateLine(TODAY, 2025), "Today's climate (model average, 2015-2034), from 6 climate models.");
+  assert.equal(climateLine({ label: "Warmer" }, 2040), "Warmer. Compared with today; average across climate models.");
 });
 
-test("the climate line names the change, the years and the models", () => {
-  const future = {
-    label: "+1.9°C, about the same summer rain, 25 more 35°C+ days",
-    changes: { summer_rain_agree: 3, models: 6 },
-    range: { summer_rain_pct: [-33.2, 10.0] },
-    window: [2050, 2060],
-    models: 6,
-  };
+test("the range across the models is small print, and absent at Today", () => {
+  assert.equal(climateRange(FUTURE, 2060), "Range across the models: +1.3 to +3.3°C; summer rain from 32% less to 13% more.");
+  assert.equal(climateRange({ ...FUTURE, range: { summer_rain_pct: [-0.3, 31.1] } }, 2040), "Range across the models: summer rain from no change to 31% more.");
+  assert.equal(climateRange(TODAY, 2025), null);
+  assert.equal(climateRange({ label: "x" }, 2040), null);
+});
+
+test("yield changes are listed hardest hit first, and hidden at Today", () => {
+  assert.equal(yieldChangeLine(FUTURE.yield_change, false, 2060), "Dryland yields in this future: corn −40%, sorghum −25%, winter wheat −17%");
   assert.equal(
-    climateLine(future, 2060),
-    "+1.9°C, about the same summer rain, 25 more 35°C+ days than today (average of 2050–2060, 6 climate models). " +
-      "The models do not agree on summer rain (from 33% less to 10% more).",
+    yieldChangeLine({ corn: { pct: -6, low: -9, high: 0 }, alfalfa: { pct: 2, low: -1, high: 4 }, soybeans: { pct: 0, low: -2, high: 3 } }, true, 2040),
+    "Irrigated yields in this future: corn −6%, soybeans no change, alfalfa +2%",
   );
-  const agreed = { ...future, label: "+0.2°C, 4% more summer rain, 2 more 35°C+ days", changes: { summer_rain_agree: 5, models: 6 }, window: [2020, 2039] };
-  assert.equal(climateLine(agreed, 2030), "+0.2°C, 4% more summer rain, 2 more 35°C+ days than today (average of 2020–2039, 6 climate models).");
-  const today = { label: "Today's climate", changes: { summer_rain_agree: 0, models: 6 }, range: { summer_rain_pct: [0, 0] }, window: [2015, 2034], models: 6 };
-  assert.equal(climateLine(today, 2025), "Today's climate (average of 2015–2034, 6 climate models).");
+  assert.equal(yieldChangeLine(TODAY.yield_change, false, 2025), null);
+  assert.equal(yieldChangeLine(undefined, false, 2060), null);
+  assert.equal(yieldChangeLine({}, false, 2060), null);
+  assert.equal(yieldChangeRange(FUTURE.yield_change), "Lowest to highest model: corn −56% to −25%; sorghum −36% to −12%; winter wheat −28% to −11%.");
+  assert.equal(yieldChangeRange(null), null);
+  assert.equal(formatChange(-41.6), "−42%");
+  assert.equal(formatChange(0.3), "no change");
+});
+
+test("cards 2 and 3 say where they sit in the full list", () => {
+  assert.equal(placeText(7, 115, 2), "Number 7 of 115, the next different choice");
+  assert.equal(placeText(2, 17, 2), "Number 2 of 17, the next different choice");
+  assert.equal(placeText(9, undefined, 3), "Number 9, the next different choice");
+  assert.equal(placeText(1, 115, 1), null);
+  assert.equal(placeText(undefined, 115, 2), null);
+});
+
+test("water is in inches, with mm kept for the title", () => {
+  assert.equal(formatInches(18.3, 465), "18.3 in");
+  assert.equal(formatInches(undefined, 465), "18.3 in");
+  assert.equal(formatInches(24, 609.6), "24 in");
+  assert.equal(formatInches(undefined, undefined), "no figure");
+  assert.equal(formatMm(464.6), "465 mm");
+});
+
+test("irrigated holds-up badges say what they take for granted", () => {
+  assert.equal(wellQualifier(24.0), "if the well delivers up to 24 inches a year");
+  assert.equal(wellQualifier(19.7), "if the well delivers up to 19.7 inches a year");
+  assert.equal(wellQualifier(null), "if the well delivers all the crops need");
+  assert.equal(wellQualifier(undefined), "if the well delivers all the crops need");
 });
 
 test("the irrigation reason says whose call it is", () => {

@@ -1,5 +1,5 @@
 import { formatScore } from "../lib/format";
-import { windowText } from "../lib/planner";
+import { RANKING_SCORE_LABEL, RANKING_SCORE_TITLE, wellQualifier, windowText } from "../lib/planner";
 import type { CurrentPattern, PlannerSettings } from "../types";
 import { HoldsBadge, scoreRows } from "./PlanCard";
 import "./Planner.css";
@@ -9,10 +9,12 @@ export function CurrentPatternRow({
   current,
   note,
   candidates,
+  settings,
 }: {
   current: CurrentPattern | null | undefined;
   note: string | null | undefined;
   candidates: number | undefined;
+  settings?: PlannerSettings;
 }) {
   if (!current) {
     return note ? (
@@ -45,12 +47,21 @@ export function CurrentPatternRow({
             <dd>{formatScore(value)}</dd>
           </div>
         ))}
-        <div className="current-overall">
-          <dt>Overall</dt>
-          <dd>{formatScore(current.scores.overall)}</dd>
-        </div>
+        {typeof current.scores.robust === "number" ? (
+          <div className="current-overall" title={RANKING_SCORE_TITLE}>
+            <dt>{RANKING_SCORE_LABEL}</dt>
+            <dd>{formatScore(current.scores.robust)}</dd>
+          </div>
+        ) : (
+          <div className="current-overall">
+            <dt>Overall</dt>
+            <dd>{formatScore(current.scores.overall)}</dd>
+          </div>
+        )}
       </dl>
-      {current.futures && <HoldsBadge futures={current.futures} />}
+      {current.futures && (
+        <HoldsBadge futures={current.futures} qualifier={settings?.irrigated ? wellQualifier(settings.irrigation_limit_in) : null} />
+      )}
       {broken.length > 0 && (
         <ul className="current-broken" data-testid="current-broken">
           {broken.map((sentence, index) => (
@@ -65,6 +76,7 @@ export function CurrentPatternRow({
 /** Collapsed by default: the rules behind the scores, in the planner's own words. */
 export function ScoringNote({ settings }: { settings: PlannerSettings }) {
   const models = settings.models ?? [];
+  const limits = settings.limits ?? [];
   return (
     <details className="scoring" data-testid="scoring-note">
       <summary>How this is scored</summary>
@@ -74,6 +86,17 @@ export function ScoringNote({ settings }: { settings: PlannerSettings }) {
         {settings.profit_basis && <p>{settings.profit_basis}</p>}
         {settings.soil_note && (
           <p>The soil score is soil protection: fewer bare days a year and lower wind-erosion risk. {settings.soil_note}</p>
+        )}
+        {settings.yield_change_note && <p>{settings.yield_change_note}</p>}
+        {limits.length > 0 && (
+          <>
+            <p className="scoring-limits-title">What the scores leave out</p>
+            <ul className="scoring-limits" data-testid="scoring-limits">
+              {limits.map((sentence, index) => (
+                <li key={index}>{sentence}</li>
+              ))}
+            </ul>
+          </>
         )}
         {models.length > 0 && (
           <p>

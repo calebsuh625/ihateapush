@@ -8,11 +8,14 @@ import {
   WEIGHT_MAX,
   WEIGHT_MIN,
   climateLine,
+  climateRange,
   horizonAt,
   horizonIndex,
   horizonLabel,
   irrigationReason,
   isDefaultWeights,
+  yieldChangeLine,
+  yieldChangeRange,
 } from "../lib/planner";
 import type { PlannerChoices } from "../lib/planner";
 import type { ClimateSummary, PlannerSettings } from "../types";
@@ -35,6 +38,9 @@ export function PlannerControls({ choices, onChange, settings, climate, irrigati
   const id = useId();
   const irrigated = irrigationOverride ?? settings.irrigated;
   const horizonPosition = horizonIndex(choices.horizon);
+  const range = climateRange(climate, settings.horizon);
+  const yields = yieldChangeLine(climate.yield_change, settings.irrigated, settings.horizon);
+  const yieldTitle = [yieldChangeRange(climate.yield_change), settings.yield_change_note].filter(Boolean).join(" ");
 
   return (
     <div className="planner" data-testid="planner-controls">
@@ -124,6 +130,16 @@ export function PlannerControls({ choices, onChange, settings, climate, irrigati
         <p className="planner-climate" data-testid="climate-line">
           {climateLine(climate, settings.horizon)}
         </p>
+        {range && (
+          <p className="planner-climate-range tabular" data-testid="climate-range">
+            {range}
+          </p>
+        )}
+        {yields && (
+          <p className="planner-yields tabular" data-testid="yield-line" title={yieldTitle || undefined}>
+            {yields}
+          </p>
+        )}
       </div>
 
       <div className="planner-irrigation">

@@ -428,7 +428,8 @@ async function checkPanel(page, fieldId, detail, plans, satellite, soil) {
     equal(reason, plan.reason.trim(), `${fieldId}: plan ${i + 1} reason`);
     equal(((await card.locator('[data-testid="plan-name"]').textContent()) ?? "").trim(), plan.name, `${fieldId}: plan ${i + 1} name`);
     const overall = ((await card.locator('[data-testid="plan-overall"]').textContent()) ?? "").trim();
-    equal(overall, score(plan.scores.overall), `${fieldId}: plan ${i + 1} overall score`);
+    // the future-weather planner sorts on scores.robust, and the card leads with that number
+    equal(overall, score(plan.scores.robust ?? plan.scores.overall), `${fieldId}: plan ${i + 1} overall score`);
     const shownScores = (await card.locator(".score-value").allTextContents()).map((s) => s.trim());
     equal(shownScores.join(" "), scoreKeys.map((k) => score(plan.scores[k])).join(" "), `${fieldId}: plan ${i + 1} ${scoreKeys.join(" / ")} values`);
     overalls.push(Number(overall));

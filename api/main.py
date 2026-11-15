@@ -54,6 +54,7 @@ from api.causal import router as causal_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from api.planner import config as planner_config
 from api.planner import smart
+from api.planner.traits import FieldTraits
 from pipeline import satellite_schema
 from pipeline.soil import health_schema
 from pipeline.schema import FAKE_PATH, REAL_PATH, ROOT, SchemaError, load_fields, parse_crop_history
@@ -711,8 +712,12 @@ async def plans(
                 f"The year must be between {planner_config.HORIZON_MIN} and {planner_config.HORIZON_MAX}."
             )
         try:
+            # The fake fields reuse ids that real fields have, so they must never pick up a real field's
+            # row of field_traits.parquet: empty traits = guess irrigation from the fake history alone.
+            traits = FieldTraits() if _store(request).is_fake else None
             result = smart.rank_plans_smart(
-                record.planner_input(), weights=weights, scenario=scenario, horizon=horizon, irrigated=irrigated
+                record.planner_input(), weights=weights, scenario=scenario, horizon=horizon, irrigated=irrigated,
+                traits=traits,
             )
             return JSONResponse(result.to_dict())
         except ValueError as exc:

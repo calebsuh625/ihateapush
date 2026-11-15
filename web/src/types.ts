@@ -87,7 +87,9 @@ export interface PlanNumbers {
   erosion_index?: number;
   /** water pumped a year, mm (0 for dryland) */
   irrigation_mm: number;
-  /** share 0..1 of the crops' water need that is met */
+  /** the same in inches, 1 decimal; missing on older servers */
+  irrigation_in?: number;
+  /** share 0..1 of the crops' water need that is met; can be below 1 when irrigated, if the limit leaves crops short */
   water_met_share: number;
   /** dollars per acre per year */
   profit_per_acre: number;
@@ -107,6 +109,7 @@ export interface Plan {
   futures?: { holds: number; total: number };
   spread?: { overall?: Spread; profit_per_acre?: Spread };
   numbers?: PlanNumbers;
+  /** place among all the patterns compared (`candidates`), sorted on scores.robust */
   rank?: number;
 }
 
@@ -116,6 +119,12 @@ export interface CurrentPattern extends Plan {
   /** [first, last] year of the pattern */
   years?: [number, number];
   is_candidate?: boolean;
+}
+
+export interface YieldChange {
+  pct: number;
+  low: number;
+  high: number;
 }
 
 export type Scenario = "ssp245" | "ssp585";
@@ -135,15 +144,24 @@ export interface PlannerSettings {
   holds_up_rule?: string;
   ranking_rule?: string;
   profit_basis?: string;
+  /** the most water a well is assumed to deliver per acre a year; null when there is no limit */
+  irrigation_limit_mm?: number | null;
+  irrigation_limit_in?: number | null;
+  /** what the yield changes in `climate.yield_change` do and do not include */
+  yield_change_note?: string;
+  /** plain sentences on what the scores leave out */
+  limits?: string[];
   models?: string[];
 }
 
 export interface ClimateSummary {
   label: string;
   changes: { summer_rain_agree?: number; models?: number; [key: string]: number | undefined };
-  range?: { summer_rain_pct?: [number, number]; [key: string]: [number, number] | undefined };
+  range?: { summer_rain_pct?: [number, number]; tmean_c?: [number, number]; [key: string]: [number, number] | undefined };
   window?: [number, number];
   models?: number;
+  /** yield against today for the field's practice, whole percent, with the lowest and highest model */
+  yield_change?: Record<string, YieldChange>;
 }
 
 /** GET /field/{field_id}/plans */

@@ -201,6 +201,37 @@ def test_an_unexpected_error_falls_back_to_basic_and_logs(client, monkeypatch, c
 
 # --- the basic path ----------------------------------------------------------------------------------
 
+def test_fake_fields_never_take_a_real_fields_traits(tables, tmp_path, monkeypatch):
+    """Fake ids (KS-0000xx) also exist as real fields in field_traits.parquet; the fake file must not use them."""
+    traits = pd.DataFrame([{
+        "field_id": DRY, "irrigation": "irrigated", "irrigated_prob": 0.97,
+        "irrigation_basis": "another field's water use", "weg": "1", "wei": 310.0,
+    }])
+    traits_path = tmp_path / "field_traits.parquet"
+    traits.to_parquet(traits_path, index=False)
+    monkeypatch.setenv("FIELD_TRAITS_PATH", str(traits_path))
+    smart.reset()
+
+    # served as real fields: the traits row is used
+    with TestClient(main.create_app()) as c:
+        real = plans(c).json()
+    assert real["engine"] == "smart" and real["settings"]["irrigated"] is True
+    assert real["settings"]["irrigation_basis"] == "another field's water use"
+
+    # the same rows served as the fake file: irrigation is guessed from the field's own history
+    fake = base.write_fields(tmp_path / "fields_fake.parquet")
+    monkeypatch.setenv("FIELDS_PATH", str(fake))
+    smart.reset()
+    with TestClient(main.create_app()) as c:
+        assert c.get("/health").json()["is_fake"] is True
+        body = plans(c).json()
+        assert body["engine"] == "smart"
+        assert body["settings"]["irrigated"] is False and body["settings"]["irrigation_source"] == "guess"
+        assert "another field" not in body["settings"]["irrigation_basis"]
+        assert body["settings"]["irrigation_basis"].startswith("crop history")
+        assert plans(c, irrigated="true").json()["settings"]["irrigated"] is True      # the override still works
+
+
 def old_body(field_id, planner=None):
     from api.planner import rank_plans
     record_input = base.default_rows()

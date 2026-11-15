@@ -443,11 +443,11 @@ function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrig
             ) : (
               <ol className="plans" data-testid="plans">
                 {data.plans.slice(0, 3).map((plan, index) => (
-                  <PlanCard key={index} plan={plan} rank={index + 1} irrigated={settings?.irrigated} profitDomain={profitDomain} />
+                  <PlanCard key={index} plan={plan} rank={index + 1} irrigated={settings?.irrigated} profitDomain={profitDomain} candidates={data.candidates} irrigationLimitIn={settings?.irrigation_limit_in} />
                 ))}
               </ol>
             )}
-            {settings && <CurrentPatternRow current={data.current} note={data.current_note} candidates={data.candidates} />}
+            {settings && <CurrentPatternRow current={data.current} note={data.current_note} candidates={data.candidates} settings={settings} />}
           </div>
           {settings ? (
             <ScoringNote settings={settings} />

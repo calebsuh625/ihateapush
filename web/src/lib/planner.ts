@@ -1,5 +1,5 @@
 // Pure helpers for the planner controls and plan cards: the query the app sends, the "which future"
-// slider, the profit spread strip, the holds-up badge and the climate line.
+// slider, the profit spread strip, the holds-up badge, the climate line and the words on the cards.
 // No imports, so the unit tests can load this file directly.
 
 export type WeightKey = "soil" | "water" | "money" | "risk";
@@ -182,56 +182,140 @@ const rainEnd = (pct: number): string => {
   return `${Math.abs(rounded)}% ${rounded < 0 ? "less" : "more"}`;
 };
 
-/** The API calls a rain change agreed when at least this share of models point the same way. */
-const RAIN_AGREE_SHARE = 0.8;
-
-/**
- * A few words for when the climate models do not agree on summer rain, with their range, e.g.
- * "the models do not agree on summer rain (from 33% less to 10% more)". Null when they agree,
- * when the range does not cross zero, or when the numbers are missing (as at Today).
- */
-export function rainDisagreement(
-  changes: { summer_rain_agree?: number; models?: number } | null | undefined,
-  range: readonly [number, number] | null | undefined,
-): string | null {
-  if (!changes || !range) return null;
-  const [low, high] = range;
-  if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
-  // some drier, some wetter, by a visible amount on at least one side
-  if (!(low < 0 && high > 0) || (Math.round(low) === 0 && Math.round(high) === 0)) return null;
-  const models = changes.models ?? 0;
-  const agree = changes.summer_rain_agree ?? 0;
-  if (models > 0 && agree / models >= RAIN_AGREE_SHARE) return null;
-  return `the models do not agree on summer rain (from ${rainEnd(low)} to ${rainEnd(high)})`;
+/** -42 → "−42%", 3 → "+3%", 0 → "no change" (whole percent, a real minus sign). */
+export function formatChange(pct: number): string {
+  if (!Number.isFinite(pct)) return "no figure";
+  const rounded = Math.round(pct);
+  if (rounded === 0) return "no change";
+  return `${rounded < 0 ? "−" : "+"}${Math.abs(rounded)}%`;
 }
 
 /** "2050–2060" */
 export const windowText = (window: readonly [number, number]): string =>
   window[0] === window[1] ? String(window[0]) : `${window[0]}–${window[1]}`;
 
+interface ClimateLike {
+  label: string;
+  changes?: { models?: number };
+  range?: { summer_rain_pct?: readonly [number, number]; tmean_c?: readonly [number, number] };
+  window?: readonly [number, number];
+  models?: number;
+  yield_change?: Record<string, { pct: number; low: number; high: number }> | null;
+}
+
 /**
- * The line under "Which future?": what changes, the years averaged, how many models, and the rain
- * caveat. At Today it reads as today's climate.
+ * The line under "Which future?": the API's own label, word for word, then what it is measured
+ * against, the years averaged and how many models. Nothing about rain is added here: the label
+ * already says whether the models agree.
  */
-export function climateLine(
-  climate: {
-    label: string;
-    changes?: { summer_rain_agree?: number; models?: number };
-    range?: { summer_rain_pct?: readonly [number, number] };
-    window?: readonly [number, number];
-    models?: number;
-  },
-  horizon: number,
-): string {
+export function climateLine(climate: ClimateLike, horizon: number): string {
   const models = climate.models ?? climate.changes?.models ?? 0;
   const modelText = models > 0 ? `${models} climate ${models === 1 ? "model" : "models"}` : "climate models";
-  const years = climate.window ? `average of ${windowText(climate.window)}` : "";
-  const basis = [years, modelText].filter(Boolean).join(", ");
-  if (horizon <= TODAY_HORIZON) return `Today's climate (${basis}).`;
-  const disagreement = rainDisagreement(climate.changes, climate.range?.summer_rain_pct);
-  const head = `${climate.label} than today (${basis}).`;
-  return disagreement ? `${head} ${disagreement.charAt(0).toUpperCase()}${disagreement.slice(1)}.` : head;
+  if (horizon <= TODAY_HORIZON) return `${climate.label}, from ${modelText}.`;
+  const years = climate.window ? `average of ${windowText(climate.window)} across ${modelText}` : `average across ${modelText}`;
+  return `${climate.label}. Compared with today; ${years}.`;
 }
+
+/**
+ * The lowest and highest model, for the small print under the climate line, e.g.
+ * "Range across the models: +1.3 to +3.3°C; summer rain from 32% less to 13% more."
+ * Null at Today (every change is zero) and when the numbers are missing.
+ */
+export function climateRange(climate: ClimateLike, horizon: number): string | null {
+  if (horizon <= TODAY_HORIZON) return null;
+  const parts: string[] = [];
+  const warm = climate.range?.tmean_c;
+  const degrees = (n: number) => `${n < 0 ? "−" : "+"}${Math.abs(n).toFixed(1)}`;
+  if (warm && Number.isFinite(warm[0]) && Number.isFinite(warm[1])) parts.push(`${degrees(warm[0])} to ${degrees(warm[1])}°C`);
+  const rain = climate.range?.summer_rain_pct;
+  if (rain && Number.isFinite(rain[0]) && Number.isFinite(rain[1])) {
+    const [low, high] = [rainEnd(rain[0]), rainEnd(rain[1])];
+    parts.push(low === high ? `summer rain ${low}` : `summer rain from ${low} to ${high}`);
+  }
+  return parts.length > 0 ? `Range across the models: ${parts.join("; ")}.` : null;
+}
+
+/**
+ * "Dryland yields in this future: corn −42%, sorghum −26%, winter wheat −17%", hardest hit first.
+ * Null at Today (nothing has changed yet) and when the answer has no yield changes.
+ */
+export function yieldChangeLine(
+  yieldChange: Record<string, { pct: number; low: number; high: number }> | null | undefined,
+  irrigated: boolean,
+  horizon: number,
+): string | null {
+  if (!yieldChange || horizon <= TODAY_HORIZON) return null;
+  const crops = Object.entries(yieldChange)
+    .filter(([, change]) => change && Number.isFinite(change.pct))
+    .sort((a, b) => a[1].pct - b[1].pct || a[0].localeCompare(b[0]));
+  if (crops.length === 0) return null;
+  const list = crops.map(([crop, change]) => `${crop} ${formatChange(change.pct)}`).join(", ");
+  return `${irrigated ? "Irrigated" : "Dryland"} yields in this future: ${list}`;
+}
+
+/** The low-high range behind each yield change, for a title: "corn −56% to −25%; sorghum ...". */
+export function yieldChangeRange(
+  yieldChange: Record<string, { pct: number; low: number; high: number }> | null | undefined,
+): string | null {
+  if (!yieldChange) return null;
+  const crops = Object.entries(yieldChange)
+    .filter(([, change]) => change && Number.isFinite(change.low) && Number.isFinite(change.high))
+    .sort((a, b) => a[1].pct - b[1].pct || a[0].localeCompare(b[0]));
+  if (crops.length === 0) return null;
+  return `Lowest to highest model: ${crops.map(([crop, c]) => `${crop} ${formatChange(c.low)} to ${formatChange(c.high)}`).join("; ")}.`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cards: place in the full list, the ranking score, water in inches
+// ---------------------------------------------------------------------------------------------
+
+/** What the big number on a smart card is, in a few words and in full. */
+export const RANKING_SCORE_LABEL = "Ranking score";
+export const RANKING_SCORE_HINT = "leans on the worse futures";
+export const RANKING_SCORE_TITLE =
+  "The score the plans are sorted on: half the average across the climate models, half the average in the worst third of them. The four bars below are plain averages.";
+
+/**
+ * Where a card sits among every pattern compared. Cards 2 and 3 are not places 2 and 3: each is
+ * the best plan that differs enough from the cards above it.
+ * placeText(7, 115, 2) → "Number 7 of 115, the next different choice". Null for the first card
+ * and when the answer has no rank.
+ */
+export function placeText(rank: number | null | undefined, candidates: number | null | undefined, card: number): string | null {
+  if (card <= 1 || typeof rank !== "number" || !Number.isFinite(rank)) return null;
+  const of = typeof candidates === "number" && candidates > 0 ? ` of ${candidates}` : "";
+  return `Number ${rank}${of}, the next different choice`;
+}
+
+const MM_PER_INCH = 25.4;
+
+/** 24 → "24", 18.26 → "18.3" */
+const inchNumber = (inches: number): string => {
+  const rounded = Math.round(inches * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+};
+
+/** Water depth in inches, from the API's inches when it sends them, else from mm. 465 mm → "18.3 in". */
+export function formatInches(inches: number | null | undefined, mm?: number | null): string {
+  const value = typeof inches === "number" && Number.isFinite(inches) ? inches : typeof mm === "number" && Number.isFinite(mm) ? mm / MM_PER_INCH : null;
+  return value === null ? "no figure" : `${inchNumber(value)} in`;
+}
+
+/** "465 mm", for the title next to a figure in inches. */
+export const formatMm = (mm: number): string => (Number.isFinite(mm) ? `${Math.round(mm)} mm` : "no figure");
+
+/**
+ * What the holds-up count takes for granted on an irrigated field: the well keeps delivering.
+ * 24 → "if the well delivers up to 24 inches a year"; no limit → "if the well delivers all the crops need".
+ */
+export function wellQualifier(limitIn: number | null | undefined): string {
+  return typeof limitIn === "number" && Number.isFinite(limitIn) && limitIn > 0
+    ? `if the well delivers up to ${inchNumber(limitIn)} inches a year`
+    : "if the well delivers all the crops need";
+}
+
+/** Title for the water bar on a dryland card: the three scores that follow it move together. */
+export const DRYLAND_WATER_TITLE = "how much of the crops' need rain covers";
 
 /** Why the field is treated as irrigated or dryland, in a few words. */
 export function irrigationReason(source: string, basis: string | null | undefined): string {
