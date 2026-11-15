@@ -173,6 +173,14 @@ def no_ambient_soil_health_file(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "DEFAULT_SOIL_HEALTH_META_PATH", tmp_path / "no_such_soil_meta.json")
 
 
+@pytest.fixture(autouse=True)
+def basic_planner_only(tmp_path, monkeypatch):
+    """No climate tables: the basic planner's body and "climate": false, with or without data/.
+    The smart planner has tests/test_api_smart.py."""
+    monkeypatch.setenv("CLIMATE_FUTURES_PATH", str(tmp_path / "no_such_climate_futures.parquet"))
+    monkeypatch.setenv("CLIMATE_MONTHLY_PATH", str(tmp_path / "no_such_climate_monthly.parquet"))
+
+
 @pytest.fixture()
 def fields_file(tmp_path, monkeypatch) -> Path:
     path = write_fields(tmp_path / "fields.parquet")
@@ -206,6 +214,7 @@ def test_health(client):
         "field_count": 5,
         "satellite": False,
         "soil_health": False,
+        "climate": False,
     }
 
 
@@ -220,6 +229,8 @@ def test_health_reports_fake_data(tmp_path, monkeypatch):
             "field_count": 2,
             "satellite": False,
             "soil_health": False,
+            "climate": False,
+        "climate": False,
         }
 
 
@@ -422,7 +433,7 @@ def test_plans_exactly_per_contract(client, field_id):
     response = client.get(f"/field/{field_id}/plans")
     assert response.status_code == 200
     body = strict_json(response.text)
-    assert list(body) == ["field_id", "plans"]
+    assert list(body) == ["field_id", "engine", "plans"]
     assert body["field_id"] == field_id
     plans = body["plans"]
     assert isinstance(plans, list) and len(plans) == 3
@@ -483,6 +494,7 @@ def test_the_planner_is_a_swappable_seam(fields_file):
         body = c.get("/field/KS-000002/plans").json()
     assert body == {
         "field_id": "KS-000002",
+        "engine": "basic",
         "plans": [
             {
                 "name": "Only wheat",
@@ -567,6 +579,8 @@ def test_app_falls_back_from_real_to_fake(tmp_path, monkeypatch):
             "status": "ok", "source": "fields_fake.parquet", "is_fake": True, "field_count": 2,
             "satellite": False,
             "soil_health": False,
+            "climate": False,
+        "climate": False,
         }  # fmt: skip
 
     write_fields(real)  # the real file appears: it wins
@@ -575,6 +589,8 @@ def test_app_falls_back_from_real_to_fake(tmp_path, monkeypatch):
             "status": "ok", "source": "fields.parquet", "is_fake": False, "field_count": 5,
             "satellite": False,
             "soil_health": False,
+            "climate": False,
+        "climate": False,
         }  # fmt: skip
 
     other = write_fields(tmp_path / "elsewhere.parquet", default_rows()[:1])

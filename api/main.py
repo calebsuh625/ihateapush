@@ -7,7 +7,9 @@ Endpoints (the frontend is written against exactly these shapes):
     GET /health                    which data file is loaded, and how many fields
     GET /fields                    every field outline, simplified, as one GeoJSON FeatureCollection
     GET /field/{field_id}          one field: full outline, crop history, soil numbers, history stats
-    GET /field/{field_id}/plans    the planner's top 3 rotations for that field
+    GET /field/{field_id}/plans    the planner's top 3 rotations for that field (smart planner: optional
+                                   soil, water, money, risk, scenario, horizon, irrigated; else the basic one)
+    GET /climate                   the climate futures the smart planner uses (or {"available": false})
     GET /field/{field_id}/satellite  yearly Landsat greenness for that field (optional side file)
     GET /field/{field_id}/soil     yearly satellite organic matter and bare-soil days (optional side file)
 
@@ -50,6 +52,8 @@ from fastapi.responses import JSONResponse, Response
 
 from api.causal import router as causal_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
+from api.planner import config as planner_config
+from api.planner import smart
 from pipeline import satellite_schema
 from pipeline.soil import health_schema
 from pipeline.schema import FAKE_PATH, REAL_PATH, ROOT, SchemaError, load_fields, parse_crop_history
@@ -618,7 +622,24 @@ async def health(request: Request) -> JSONResponse:
     body = _store(request).health()
     body["satellite"] = request.app.state.satellite is not None
     body["soil_health"] = request.app.state.soil_health is not None
+    body["climate"] = _climate_available()
     return JSONResponse(body)
+
+
+def _climate_available() -> bool:
+    try:
+        return bool(smart.available())
+    except Exception:
+        return False
+
+
+@router.get("/climate", summary="Climate futures used by the smart planner")
+async def climate() -> JSONResponse:
+    try:
+        return JSONResponse(smart.climate_summary())
+    except Exception as exc:
+        log.warning("climate summary failed, reporting it as not built: %s: %s", type(exc).__name__, exc)
+        return JSONResponse({"available": False, "reason": "not_built"})
 
 
 @router.get("/fields", summary="All field outlines (simplified) as GeoJSON")
@@ -638,12 +659,72 @@ async def field(request: Request, field_id: str) -> JSONResponse:
     return JSONResponse(_record(request, field_id).detail())
 
 
+def _use_smart(request: Request) -> bool:
+    """Smart planner only for the default planner, when the climate tables work and PLANNER_ENGINE is not basic."""
+    if not request.app.state.default_planner:
+        return False
+    if os.environ.get("PLANNER_ENGINE", "").strip().lower() == "basic":
+        return False
+    return _climate_available()
+
+
+def _bad_request(detail: str) -> HTTPException:
+    return HTTPException(status_code=400, detail=detail)
+
+
+def _plain_weights(given: dict[str, float | None]) -> dict[str, float]:
+    """The four priorities, a missing one at the planner's default; a plain 400 for bad numbers."""
+    weights = {}
+    for name in planner_config.SCORE_NAMES:
+        value = given[name]
+        if value is None:
+            weights[name] = planner_config.DEFAULT_WEIGHTS[name]
+        elif not math.isfinite(value) or value < 0:
+            raise _bad_request(f"The {name} priority must be a number that is zero or more.")
+        else:
+            weights[name] = value
+    if sum(weights.values()) <= 0:
+        raise _bad_request("At least one of the priorities (soil, water, money, risk) must be above zero.")
+    return weights
+
+
 @router.get("/field/{field_id}/plans", summary="Top 3 rotation plans for one field")
-async def plans(request: Request, field_id: str) -> JSONResponse:
+async def plans(
+    request: Request,
+    field_id: str,
+    soil: float | None = None,
+    water: float | None = None,
+    money: float | None = None,
+    risk: float | None = None,
+    scenario: str = planner_config.DEFAULT_SCENARIO,
+    horizon: int = planner_config.TODAY,
+    irrigated: bool | None = None,
+) -> JSONResponse:
     record = _record(request, field_id)
+    if _use_smart(request):
+        given = {"soil": soil, "water": water, "money": money, "risk": risk}
+        weights = _plain_weights(given)
+        if scenario not in planner_config.SCENARIOS:
+            raise _bad_request("The scenario must be ssp245 (middle road) or ssp585 (high emissions).")
+        if not planner_config.HORIZON_MIN <= horizon <= planner_config.HORIZON_MAX:
+            raise _bad_request(
+                f"The year must be between {planner_config.HORIZON_MIN} and {planner_config.HORIZON_MAX}."
+            )
+        try:
+            result = smart.rank_plans_smart(
+                record.planner_input(), weights=weights, scenario=scenario, horizon=horizon, irrigated=irrigated
+            )
+            return JSONResponse(result.to_dict())
+        except ValueError as exc:
+            raise _bad_request(str(exc).split("\n")[0]) from exc
+        except Exception as exc:
+            log.warning("smart planner failed for %s, using the basic planner: %s: %s",
+                        field_id, type(exc).__name__, exc)
     planner: Planner = request.app.state.planner
     ranked = planner(record.planner_input())
-    return JSONResponse({"field_id": record.field_id, "plans": [plan_to_json(plan) for plan in ranked]})
+    return JSONResponse(
+        {"field_id": record.field_id, "engine": "basic", "plans": [plan_to_json(plan) for plan in ranked]}
+    )
 
 
 @router.get("/field/{field_id}/satellite", summary="Yearly satellite greenness for one field")
@@ -734,6 +815,13 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
                 "Run `make pipeline` to build the real data/fields.parquet, then restart.",
                 _show(store.source),
             )
+        app.state.climate_ready = False
+        if app.state.default_planner and os.environ.get("PLANNER_ENGINE", "").strip().lower() != "basic":
+            try:  # build the smart planner once now, so the first request is fast and two cannot race
+                app.state.climate_ready = smart.available()
+            except Exception as exc:
+                log.warning("smart planner warm-up failed: %s: %s", type(exc).__name__, exc)
+            log.info("Smart planner: %s", "ready" if app.state.climate_ready else "not available, using the basic planner")
         yield
 
     app = FastAPI(
@@ -743,6 +831,7 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.planner = planner
+    app.state.default_planner = planner is rank_plans
     app.include_router(router)
     app.include_router(causal_router)  # Phase 2B: /effects, /field/{id}/neighbors
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
