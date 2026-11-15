@@ -14,3 +14,7 @@ data/*.csv
 .pytest_cache
 __pycache__
 .claude
+
+# local secrets: never upload
+.env
+.env.*
