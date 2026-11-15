@@ -599,13 +599,22 @@ Calibration quality per crop (leave-one-year-out skill; 0 is no better than the 
 - **The field decides** irrigated or dryland, soil erodibility, slope and its current pattern. Everything
   else is county-wide, so two dryland fields on the same soil get the same three plans.
 
-**Soil-effect provider.** `SOIL_EFFECT_SOURCE=crop_average` (default) uses the county's average bare days
-per crop and previous crop. `SOIL_EFFECT_SOURCE=effects` adds what Phase 2B measured between matched
-neighbours beyond what the crops explain. Today one comparison is usable (irrigated corn-soy against
-continuous corn, 30 pairs); it moves 14 of the 105 irrigated plans and no dryland plan.
+**Soil-effect provider.** `SOIL_EFFECT_SOURCE=effects` (default) starts from the county's average bare
+days per crop and previous crop and adds what Phase 2B measured between matched neighbours beyond what
+the crops explain (`data/effects.json`, built by `make causal`). `SOIL_EFFECT_SOURCE=crop_average` uses
+the county averages alone. When `effects.json` is missing, or holds fake data, the two give the same
+answer.
+
+Today one Phase 2B comparison is usable (irrigated corn-soy against continuous corn, +9.6 bare days, 30
+pairs). It adds about 5 bare days to 14 corn-soy-type plans out of the 105 irrigated ones and moves no
+dryland plan. On 300 dryland and 300 irrigated sampled fields, today and in 2060, the first plan is the
+same with either source; on about half of the irrigated fields today the third card changes
+(corn-soybeans gives way to continuous alfalfa). A comparison is used only when it is real data on bare
+days, has at least 20 pairs for the field's practice, its interval excludes zero and its own fake-switch
+placebo does not.
 
 ```bash
-SOIL_EFFECT_SOURCE=effects make dev      # neighbour comparisons on top of the crop averages
+SOIL_EFFECT_SOURCE=crop_average make dev # county crop averages only, without the neighbour comparisons
 IRRIGATION_LIMIT_MM=450 make dev         # a tighter irrigation limit (0 or none = no limit)
 PLANNER_ENGINE=basic make dev            # force the old planner
 ```

@@ -7,7 +7,7 @@ Two kinds of things live here:
   variables) gets what it asked for. Same override style as api/main.py: `$<NAME>_PATH` wins,
   otherwise the file under data/.
 
-      SOIL_EFFECT_SOURCE      crop_average (default) | effects
+      SOIL_EFFECT_SOURCE      effects (default) | crop_average
       CLIMATE_FUTURES_PATH    data/climate_futures.parquet
       CLIMATE_MONTHLY_PATH    data/climate_monthly.parquet
       CLIMATE_HISTORY_PATH    data/climate_history.parquet
@@ -37,7 +37,7 @@ DATA_DIR = ROOT / "data"
 PLANNER_DIR = Path(__file__).resolve().parent
 
 SOIL_SOURCES = ("crop_average", "effects")
-DEFAULT_SOIL_SOURCE = "crop_average"
+DEFAULT_SOIL_SOURCE = "effects"
 
 _PATHS = {
     # attribute            (environment variable,        default)

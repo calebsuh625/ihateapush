@@ -58,8 +58,9 @@ map → click a field → see its real crop history, soil info and top 3 rotatio
   "soil health". Dollar figures are returns over direct costs, not profit or income; on dryland their
   sign flips with the price years and the fallow cost, so quote the yield changes instead. The climate
   models agree on heat but not on rain; do not write "less rain" unless 5 of 6 agree.
-- The soil-effect source is one setting, `SOIL_EFFECT_SOURCE=crop_average|effects` (default
-  `crop_average`; `effects` adds the Phase 2B numbers from `data/effects.json`).
+- The soil-effect source is one setting, `SOIL_EFFECT_SOURCE=effects|crop_average` (default
+  `effects`: county crop averages plus the Phase 2B numbers from `data/effects.json`; without that
+  file it scores like `crop_average`).
 - Without the climate tables the API answers with the Phase 1 planner (`"engine": "basic"`); keep that
   fallback and `tests/test_planner.py` working.
 - `make climate` costs about 2.4 EECU-hours once (cached in `data/raw/climate/`); `make field-traits`

@@ -439,7 +439,8 @@ def settings_in(tmp_path, **env):
 
 def test_settings_read_the_environment_in_one_place(tmp_path):
     default = config.settings({})
-    assert default.soil_effect_source == "crop_average"
+    assert default.soil_effect_source == "effects"          # Phase 2B numbers on top of the crop averages
+    assert config.settings({"SOIL_EFFECT_SOURCE": "crop_average"}).soil_effect_source == "crop_average"
     assert default.climate_futures_path == ROOT / "data" / "climate_futures.parquet"
     assert default.economics_path == ROOT / "api" / "planner" / "economics.json"
     custom = settings_in(tmp_path, SOIL_EFFECT_SOURCE="Effects")
@@ -453,9 +454,14 @@ def test_missing_tables_fall_back_to_builtin_constants(tmp_path):
     settings = settings_in(tmp_path)
     table = soil_effect.load_table(settings, write_cache=True)
     assert table.source == "builtin" and not (tmp_path / "planner_bare_days.json").exists()
-    provider = soil_effect.load_provider(settings)
-    assert provider.name == "crop_average" and provider.describe()["table"] == "builtin"
+    provider = soil_effect.load_provider(settings)                       # default source, no effects.json
+    assert provider.name == "effects" and provider.describe()["table"] == "builtin"
+    assert provider.describe()["adjustments"] == [] and "effects.json is missing" in provider.describe()["note"]
+    assert provider.rotation_shift([C, B, C, B], True) == 0.0            # so it scores like the crop averages
     assert provider.bare_days(F, None, False) == soil_effect.BUILTIN_BY_CROP["dryland"][F]
+    plain = soil_effect.load_provider(settings_in(tmp_path, SOIL_EFFECT_SOURCE="crop_average"))
+    assert plain.name == "crop_average" and plain.describe()["table"] == "builtin"
+    assert plain.bare_days(F, None, False) == provider.bare_days(F, None, False)
     (tmp_path / "soil_health.parquet").write_text("not a parquet file")
     (tmp_path / "fields.parquet").write_text("not a parquet file")
     assert soil_effect.load_table(settings).source == "builtin"          # unreadable tables too
