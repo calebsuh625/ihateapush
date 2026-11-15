@@ -2,7 +2,7 @@ PY := .venv/bin/python
 API_PORT ?= 8010
 WEB_PORT ?= 5173
 
-.PHONY: help setup fake pipeline satellite soil-obs soil-health validate api web dev test e2e
+.PHONY: help setup fake pipeline satellite soil-obs soil-health causal validate api web dev test e2e
 
 help:
 	@echo "make setup     create .venv, install Python + web dependencies"
@@ -11,6 +11,7 @@ help:
 	@echo "make satellite build data/field_satellite.parquet (Landsat via Earth Engine; needs 'earthengine authenticate')"
 	@echo "make soil-obs  bare-soil satellite views for every field (Earth Engine, about 30 EECU-hours; see README)"
 	@echo "make soil-health  build data/soil_health.parquet from those views (local, no network)"
+	@echo "make causal    rotation effects from matched neighbours -> data/effects.json, data/pairs.parquet"
 	@echo "make validate  check the active data file against schema.md and summarise it"
 	@echo "make dev       start API (:$(API_PORT)) and web (:$(WEB_PORT)) together"
 	@echo "make api       start only the API"
@@ -43,6 +44,10 @@ soil-obs:
 
 soil-health:
 	$(PY) -m pipeline.soil.build
+
+# Phase 2B. Progress goes to data/causal.log. CAUSAL_OUTCOME=<soil column> picks the outcome.
+causal:
+	$(PY) -m pipeline.causal.run_causal > data/causal.log 2>&1 && grep '^\[' data/causal.log | tail -3
 
 validate:
 	$(PY) pipeline/schema.py

@@ -17,6 +17,8 @@ map → click a field → see its real crop history, soil info and top 3 rotatio
   `soil/` also holds Phase 2A, the yearly soil table `data/soil_health.parquet`: `bare_soil.py`
   (Earth Engine bare-soil views), `build.py` (model, noise analysis, verdict; uses `features.py`,
   `model.py`, `confidence.py`, `exposure.py`, `noise.py`, `report.py`), `health_schema.py` (validator).
+- `pipeline/causal/` — Phase 2B: rotation effects on soil from matched neighbouring fields
+  (`run_causal.py`, `make causal`) → `data/effects.json`, `data/pairs.parquet` (see schema.md).
 - `api/` — FastAPI backend (`api/main.py`) and the rotation planner (`api/planner.py`,
   entry point `rank_plans(field) -> list[Plan]`).
 - `web/` — Vite + React + TypeScript + react-leaflet frontend.
@@ -49,6 +51,7 @@ make pipeline   # data/fields.parquet from real data (python pipeline/run_all.py
 make satellite  # optional: data/field_satellite.parquet (needs Earth Engine login; ~18 min first time)
 make soil-obs   # optional: bare-soil views via Earth Engine (about 30 EECU-hours for the county)
 make soil-health  # optional: data/soil_health.parquet from those views (local)
+make causal     # data/effects.json + data/pairs.parquet (log: data/causal.log)
 make dev        # API on :8010 + web on :5173
 make test       # pytest + web unit tests
 make e2e        # with `make dev` running: headless browser clicks real fields
