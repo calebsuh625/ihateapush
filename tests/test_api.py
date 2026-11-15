@@ -164,6 +164,15 @@ def no_ambient_satellite_file(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "DEFAULT_SATELLITE_PATH", tmp_path / "no_such_satellite.parquet")
 
 
+@pytest.fixture(autouse=True)
+def no_ambient_soil_health_file(tmp_path, monkeypatch):
+    """Tests never see the real data/soil_health.parquet or env overrides from the shell."""
+    monkeypatch.delenv("SOIL_HEALTH_PATH", raising=False)
+    monkeypatch.delenv("SOIL_HEALTH_META_PATH", raising=False)
+    monkeypatch.setattr(main, "DEFAULT_SOIL_HEALTH_PATH", tmp_path / "no_such_soil_health.parquet")
+    monkeypatch.setattr(main, "DEFAULT_SOIL_HEALTH_META_PATH", tmp_path / "no_such_soil_meta.json")
+
+
 @pytest.fixture()
 def fields_file(tmp_path, monkeypatch) -> Path:
     path = write_fields(tmp_path / "fields.parquet")
@@ -196,6 +205,7 @@ def test_health(client):
         "is_fake": False,
         "field_count": 5,
         "satellite": False,
+        "soil_health": False,
     }
 
 
@@ -209,6 +219,7 @@ def test_health_reports_fake_data(tmp_path, monkeypatch):
             "is_fake": True,
             "field_count": 2,
             "satellite": False,
+            "soil_health": False,
         }
 
 
@@ -555,6 +566,7 @@ def test_app_falls_back_from_real_to_fake(tmp_path, monkeypatch):
         assert c.get("/health").json() == {
             "status": "ok", "source": "fields_fake.parquet", "is_fake": True, "field_count": 2,
             "satellite": False,
+            "soil_health": False,
         }  # fmt: skip
 
     write_fields(real)  # the real file appears: it wins
@@ -562,6 +574,7 @@ def test_app_falls_back_from_real_to_fake(tmp_path, monkeypatch):
         assert c.get("/health").json() == {
             "status": "ok", "source": "fields.parquet", "is_fake": False, "field_count": 5,
             "satellite": False,
+            "soil_health": False,
         }  # fmt: skip
 
     other = write_fields(tmp_path / "elsewhere.parquet", default_rows()[:1])
@@ -989,3 +1002,161 @@ def test_satellite_default_file_is_only_paired_with_the_real_fields_file(tmp_pat
     monkeypatch.setenv("FIELDS_PATH", str(fake))
     with start() as c:
         assert c.get("/health").json()["satellite"] is False
+
+
+
+# --------------------------------------------------------------------------------------
+# Soil health side file: GET /field/{id}/soil and /health "soil_health"
+# --------------------------------------------------------------------------------------
+
+from pipeline.soil import health_schema  # noqa: E402
+
+META = {"recommended": "bare_days", "om_noise_sd": 0.4567, "verdict": "Bare days are steadier than organic matter."}
+
+
+def write_soil(path: Path, rows: list[tuple] | None = None) -> Path:
+    """rows: (field_id, year, om_pred, n_obs, confidence, bare_days)."""
+    if rows is None:
+        rows = [("KS-000001", 2016 + i, 2.0 + 0.1 * i, 3.0 + i, 0.5, 100.0 + 10 * i) for i in range(9)]
+        rows[2] = ("KS-000001", 2018, NAN, 0.0, 0.0, NAN)  # no usable view, too few views for bare days
+        rows[3] = ("KS-000001", 2019, NAN, 1.0, 0.0, 90.0)
+        rows += [("KS-000004", 2023, 1.234567, 2.55, 0.456, 55.55), ("KS-000004", 2024, 2.0, 3.0, 0.9, 60.0)]
+    df = pd.DataFrame(rows, columns=health_schema.COLUMNS)
+    df["year"] = df["year"].astype("int64")
+    for c in ("om_pred", "n_obs", "confidence", "bare_days"):
+        df[c] = df[c].astype("float64")
+    health_schema.validate_soil_health(df)
+    df.to_parquet(path, index=False)
+    return path
+
+
+def write_meta(path: Path, meta: dict | None = None) -> Path:
+    path.write_text(json.dumps(META if meta is None else meta))
+    return path
+
+
+@pytest.fixture()
+def soil_client(fields_file, tmp_path, monkeypatch):
+    monkeypatch.setenv("SOIL_HEALTH_PATH", str(write_soil(tmp_path / "soil.parquet")))
+    monkeypatch.setenv("SOIL_HEALTH_META_PATH", str(write_meta(tmp_path / "meta.json")))
+    with TestClient(create_app()) as test_client:
+        yield test_client
+
+
+def test_soil_exactly_per_contract(soil_client):
+    assert soil_client.get("/health").json()["soil_health"] is True
+    response = soil_client.get("/field/KS-000001/soil")
+    assert response.status_code == 200
+    body = strict_json(response.text)
+    assert set(body) == {
+        "field_id", "available", "source", "recommended", "om_noise_sd", "verdict", "ssurgo_om_pct", "years", "summary",
+    }
+    assert body["available"] is True and body["source"] == health_schema.SOURCE
+    assert body["recommended"] == "bare_days" and body["om_noise_sd"] == 0.457
+    assert body["verdict"] == META["verdict"] and body["ssurgo_om_pct"] == 1.19
+    assert [y["year"] for y in body["years"]] == list(range(2016, 2025))
+    assert set(body["years"][0]) == {"year", "om_pred", "confidence", "n_obs", "bare_days"}
+    assert body["years"][0] == {"year": 2016, "om_pred": 2.0, "confidence": 0.5, "n_obs": 3.0, "bare_days": 100.0}
+    assert body["years"][2] == {"year": 2018, "om_pred": None, "confidence": 0.0, "n_obs": 0.0, "bare_days": None}
+    assert set(body["summary"]) == {"om_pred_mean", "om_pred_years", "bare_days_mean", "bare_days_trend_per_decade"}
+
+
+def test_soil_summary_skips_null_years(soil_client):
+    summary = soil_client.get("/field/KS-000001/soil").json()["summary"]
+    oms = [2.0 + 0.1 * i for i in range(9) if i not in (2, 3)]
+    bare = [(2016 + i, 100.0 + 10 * i) for i in range(9) if i != 2]
+    bare[2] = (2019, 90.0)
+    assert summary["om_pred_years"] == 7
+    assert summary["om_pred_mean"] == pytest.approx(sum(oms) / 7, abs=5e-4)
+    assert summary["bare_days_mean"] == pytest.approx(sum(b for _, b in bare) / 8, abs=5e-4)
+    slope = np.polyfit([y for y, _ in bare], [b for _, b in bare], 1)[0] * 10
+    assert summary["bare_days_trend_per_decade"] == pytest.approx(slope, abs=5e-3)
+
+
+def test_soil_trend_is_null_with_fewer_than_5_values(soil_client):
+    body = soil_client.get("/field/KS-000004/soil").json()
+    assert body["available"] is True and len(body["years"]) == 2
+    assert body["summary"]["bare_days_trend_per_decade"] is None
+    assert body["summary"]["om_pred_years"] == 2
+    assert body["ssurgo_om_pct"] == 3.12
+
+
+def test_soil_rounding(soil_client):
+    year = soil_client.get("/field/KS-000004/soil").json()["years"][0]
+    assert year == {"year": 2023, "om_pred": 1.23, "confidence": 0.46, "n_obs": 2.5, "bare_days": 55.5}
+
+
+def test_soil_field_without_rows(soil_client):
+    body = soil_client.get("/field/KS-000002/soil").json()
+    assert body["available"] is False and body["reason"] == "no_data_for_field"
+    assert body["years"] == [] and body["ssurgo_om_pct"] is None
+    assert body["summary"] == {
+        "om_pred_mean": None, "om_pred_years": None, "bare_days_mean": None, "bare_days_trend_per_decade": None,
+    }
+
+
+def test_soil_unknown_field_is_404(soil_client, client):
+    for c in (soil_client, client):
+        response = c.get("/field/KS-999999/soil")
+        assert response.status_code == 404
+        assert "KS-999999" in response.json()["detail"]
+
+
+def test_soil_without_a_file_is_not_built(fields_file, tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("SOIL_HEALTH_PATH", str(tmp_path / "nope.parquet"))
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        with start() as c:
+            assert c.get("/health").json()["soil_health"] is False
+            body = c.get("/field/KS-000001/soil").json()
+            assert c.get("/field/KS-000001").status_code == 200
+    assert body["available"] is False and body["reason"] == "not_built" and body["years"] == []
+    assert body["recommended"] is None and body["ssurgo_om_pct"] == 1.19
+    assert sum("no soil health data" in r.getMessage() for r in caplog.records) == 1
+
+
+def test_invalid_soil_file_is_ignored_with_a_warning(fields_file, tmp_path, monkeypatch, caplog):
+    bad = pd.DataFrame({"field_id": ["KS-000001"], "year": [2016], "om_pred": [500.0], "n_obs": [1.0], "confidence": [0.1], "bare_days": [3.0]})
+    bad.to_parquet(tmp_path / "bad.parquet", index=False)
+    monkeypatch.setenv("SOIL_HEALTH_PATH", str(tmp_path / "bad.parquet"))
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        with start() as c:
+            assert c.get("/health").json()["soil_health"] is False
+            assert c.get("/field/KS-000001/soil").json()["reason"] == "not_built"
+    warnings_ = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("om_pred" in m and "outside" in m for m in warnings_)
+
+
+@pytest.mark.parametrize("meta_text", [None, "{not json", json.dumps({"recommended": "x", "verdict": "v"})])
+def test_missing_or_invalid_meta_leaves_signal_fields_null(fields_file, tmp_path, monkeypatch, meta_text):
+    monkeypatch.setenv("SOIL_HEALTH_PATH", str(write_soil(tmp_path / "soil.parquet")))
+    meta = tmp_path / "meta.json"
+    if meta_text is not None:
+        meta.write_text(meta_text)
+    monkeypatch.setenv("SOIL_HEALTH_META_PATH", str(meta))
+    with start() as c:
+        body = c.get("/field/KS-000001/soil").json()
+    assert body["available"] is True and len(body["years"]) == 9
+    assert body["recommended"] is None and body["om_noise_sd"] is None and body["verdict"] is None
+
+
+def test_meta_with_null_noise(fields_file, tmp_path, monkeypatch):
+    monkeypatch.setenv("SOIL_HEALTH_PATH", str(write_soil(tmp_path / "soil.parquet")))
+    monkeypatch.setenv("SOIL_HEALTH_META_PATH", str(write_meta(tmp_path / "m.json", {**META, "om_noise_sd": None})))
+    with start() as c:
+        body = c.get("/field/KS-000001/soil").json()
+    assert body["om_noise_sd"] is None and body["recommended"] == "bare_days"
+
+
+def test_soil_default_file_is_only_paired_with_the_real_fields_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DEFAULT_SOIL_HEALTH_PATH", write_soil(tmp_path / "default_soil.parquet"))
+    monkeypatch.setattr(main, "DEFAULT_SOIL_HEALTH_META_PATH", write_meta(tmp_path / "default_meta.json"))
+    real = write_fields(tmp_path / "real.parquet")
+    monkeypatch.setattr(main, "REAL_PATH", real)
+    monkeypatch.setenv("FIELDS_PATH", str(real))
+    with start() as c:
+        assert c.get("/health").json()["soil_health"] is True
+        assert c.get("/field/KS-000001/soil").json()["recommended"] == "bare_days"
+    other = write_fields(tmp_path / "other.parquet")
+    monkeypatch.setenv("FIELDS_PATH", str(other))
+    with start() as c:
+        assert c.get("/health").json()["soil_health"] is False

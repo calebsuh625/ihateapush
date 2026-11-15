@@ -9,6 +9,7 @@ Endpoints (the frontend is written against exactly these shapes):
     GET /field/{field_id}          one field: full outline, crop history, soil numbers, history stats
     GET /field/{field_id}/plans    the planner's top 3 rotations for that field
     GET /field/{field_id}/satellite  yearly Landsat greenness for that field (optional side file)
+    GET /field/{field_id}/soil     yearly satellite organic matter and bare-soil days (optional side file)
 
 Data file, chosen once at startup: $FIELDS_PATH if set, else data/fields.parquet (real), else
 data/fields_fake.parquet. The file is validated against schema.md; a bad or missing file stops
@@ -49,6 +50,7 @@ from fastapi.responses import JSONResponse, Response
 
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from pipeline import satellite_schema
+from pipeline.soil import health_schema
 from pipeline.schema import FAKE_PATH, REAL_PATH, ROOT, SchemaError, load_fields, parse_crop_history
 
 log = logging.getLogger("uvicorn.error")  # shows up in the uvicorn console
@@ -60,6 +62,8 @@ MAP_COORD_DECIMALS = 5  # 0.00001° is about 1 m
 
 
 DEFAULT_SATELLITE_PATH = satellite_schema.SATELLITE_PATH
+DEFAULT_SOIL_HEALTH_PATH = health_schema.SOIL_HEALTH_PATH
+DEFAULT_SOIL_HEALTH_META_PATH = health_schema.SOIL_HEALTH_META_PATH
 
 
 class StartupError(RuntimeError):
@@ -357,6 +361,119 @@ def satellite_body(field_id: str, index: dict[str, list[dict[str, Any]]] | None)
 
 
 # --------------------------------------------------------------------------------------
+# Soil health side file (yearly satellite organic-matter estimate and bare-soil days)
+# --------------------------------------------------------------------------------------
+
+
+def resolve_soil_health_path(
+    env_value: str | None, fields_source: Path, real_path: Path = REAL_PATH, default: Path = DEFAULT_SOIL_HEALTH_PATH
+) -> Path | None:
+    """$SOIL_HEALTH_PATH if set; else the default file, but only next to the real fields file."""
+    return resolve_satellite_path(env_value, fields_source, real_path, default)
+
+
+def resolve_soil_health_meta_path(
+    env_value: str | None, fields_source: Path, real_path: Path = REAL_PATH, default: Path = DEFAULT_SOIL_HEALTH_META_PATH
+) -> Path | None:
+    return resolve_satellite_path(env_value, fields_source, real_path, default)
+
+
+def load_soil_health_index(path: Path | None) -> dict[str, list[dict[str, Any]]] | None:
+    """field_id -> that field's yearly rows (ascending, rounded), or None. Never raises."""
+    if path is None:
+        return None
+    try:
+        df = health_schema.load_soil_health(path)
+    except FileNotFoundError:
+        log.info("no soil health data: run make soil-health (looked for %s)", _show(path))
+        return None
+    except health_schema.SoilHealthSchemaError as exc:
+        log.warning("soil health file ignored, serving without it: %s", str(exc).replace("\n", " "))
+        return None
+    except Exception as exc:  # optional data must never stop the server
+        log.warning("soil health file ignored, serving without it: %s: %s", _show(path), exc)
+        return None
+    index: dict[str, list[dict[str, Any]]] = {}
+    df = df.sort_values(["field_id", "year"])
+    for field_id, year, om, n_obs, conf, bare in zip(
+        df["field_id"], df["year"], df["om_pred"], df["n_obs"], df["confidence"], df["bare_days"]
+    ):
+        index.setdefault(str(field_id), []).append(
+            {
+                "year": int(year),
+                "om_pred": clean_number(om, 2),
+                "confidence": clean_number(conf, 2),
+                "n_obs": clean_number(n_obs, 1),
+                "bare_days": clean_number(bare, 1),
+            }
+        )
+    n_rows = sum(len(rows) for rows in index.values())
+    log.info("Loaded soil health for %s fields (%s field-years) from %s", f"{len(index):,}", f"{n_rows:,}", _show(path))
+    return index
+
+
+def load_soil_health_meta(path: Path | None) -> dict[str, Any]:
+    """The meta file, validated; {} when missing or invalid (recommended/noise/verdict then null)."""
+    if path is None:
+        return {}
+    try:
+        return health_schema.load_meta(path)
+    except FileNotFoundError:
+        log.info("no soil health meta file (looked for %s)", _show(path))
+    except health_schema.SoilHealthSchemaError as exc:
+        log.warning("soil health meta ignored: %s", str(exc).replace("\n", " "))
+    except Exception as exc:
+        log.warning("soil health meta ignored: %s: %s", _show(path), exc)
+    return {}
+
+
+def soil_health_summary(rows: list[dict[str, Any]]) -> dict[str, float | int | None]:
+    oms = [r["om_pred"] for r in rows if r["om_pred"] is not None]
+    bare = [(r["year"], r["bare_days"]) for r in rows if r["bare_days"] is not None]
+    trend = None
+    if len(bare) >= 5:
+        x = np.array([y for y, _ in bare], dtype=float)
+        v = np.array([b for _, b in bare], dtype=float)
+        trend = clean_number(float(np.polyfit(x, v, 1)[0]) * 10, 2)
+    return {
+        "om_pred_mean": _mean(oms),
+        "om_pred_years": len(oms) if rows else None,
+        "bare_days_mean": _mean([b for _, b in bare]),
+        "bare_days_trend_per_decade": trend,
+    }
+
+
+def soil_health_body(
+    field_id: str,
+    index: dict[str, list[dict[str, Any]]] | None,
+    meta: dict[str, Any] | None,
+    ssurgo_om_pct: float | None,
+) -> dict[str, Any]:
+    """Body of GET /field/{id}/soil."""
+    meta = meta or {}
+    noise = meta.get("om_noise_sd")
+    body: dict[str, Any] = {
+        "field_id": field_id,
+        "available": False,
+        "source": health_schema.SOURCE,
+        "recommended": meta.get("recommended"),
+        "om_noise_sd": clean_number(noise, 3) if noise is not None else None,
+        "verdict": meta.get("verdict"),
+        "ssurgo_om_pct": clean_number(ssurgo_om_pct, 2) if ssurgo_om_pct is not None else None,
+        "years": [],
+        "summary": soil_health_summary([]),
+    }
+    rows = index.get(field_id) if index is not None else None
+    if not rows:
+        body["reason"] = "not_built" if index is None else "no_data_for_field"
+        return body
+    body["available"] = True
+    body["years"] = rows
+    body["summary"] = soil_health_summary(rows)
+    return body
+
+
+# --------------------------------------------------------------------------------------
 # The in-memory store
 # --------------------------------------------------------------------------------------
 
@@ -499,6 +616,7 @@ def _record(request: Request, field_id: str) -> FieldRecord:
 async def health(request: Request) -> JSONResponse:
     body = _store(request).health()
     body["satellite"] = request.app.state.satellite is not None
+    body["soil_health"] = request.app.state.soil_health is not None
     return JSONResponse(body)
 
 
@@ -531,6 +649,19 @@ async def plans(request: Request, field_id: str) -> JSONResponse:
 async def satellite(request: Request, field_id: str) -> JSONResponse:
     record = _record(request, field_id)
     return JSONResponse(satellite_body(record.field_id, request.app.state.satellite))
+
+
+@router.get("/field/{field_id}/soil", summary="Yearly satellite soil condition for one field")
+async def soil(request: Request, field_id: str) -> JSONResponse:
+    record = _record(request, field_id)
+    return JSONResponse(
+        soil_health_body(
+            record.field_id,
+            request.app.state.soil_health,
+            request.app.state.soil_health_meta,
+            clean_number(record.organic_matter_pct, 2) if record.organic_matter_pct is not None else None,
+        )
+    )
 
 
 class ReadableStartupErrors:
@@ -580,6 +711,14 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
         app.state.satellite = load_satellite_index(
             resolve_satellite_path(os.environ.get("SATELLITE_PATH"), store.source, REAL_PATH, DEFAULT_SATELLITE_PATH)
         )
+        app.state.soil_health = load_soil_health_index(
+            resolve_soil_health_path(os.environ.get("SOIL_HEALTH_PATH"), store.source, REAL_PATH, DEFAULT_SOIL_HEALTH_PATH)
+        )
+        app.state.soil_health_meta = load_soil_health_meta(
+            resolve_soil_health_meta_path(
+                os.environ.get("SOIL_HEALTH_META_PATH"), store.source, REAL_PATH, DEFAULT_SOIL_HEALTH_META_PATH
+            )
+        ) if app.state.soil_health is not None else {}
         log.info(
             "Loaded %s fields from %s in %.2fs (/fields payload: %s kB, %s kB gzipped)",
             f"{len(store.records):,}",
