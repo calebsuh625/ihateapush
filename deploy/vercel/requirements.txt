@@ -1,0 +1,9 @@
+# Runtime packages for the API on Vercel (the root requirements.txt also has the pipeline's
+# geopandas, rasterio, scikit-learn and Earth Engine, which push the function past Vercel's size limit).
+fastapi>=0.110
+geopandas>=1.0   # pipeline/schema.py reads fields.parquet with it
+numpy>=1.26
+pandas>=2.1
+pyarrow>=15
+shapely>=2.0
+requests>=2.31
