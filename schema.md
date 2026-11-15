@@ -108,42 +108,68 @@ python -m pipeline.soil.health_schema data/soil_health.parquet   # validates, th
 
 ---
 
-# Phase 2B outputs: rotation effects from matched neighbours
+# Phase 2B outputs: rotations compared on matched neighbours
 
 Written by `make causal` (`python -m pipeline.causal.run_causal`). None of these change
 `data/fields.parquet`; they are read by `GET /effects` and `GET /field/{id}/neighbors`.
 
-**Input.** The soil score table from Phase 2A, `data/soil_health.parquet`: one row per field per year,
-`field_id, year, om_pred, n_obs, confidence` (more score columns may follow). Until it exists the run
-uses `data/soil_health_fake.parquet` (same columns, **made-up values with planted crop effects**,
-from `pipeline/causal/make_fake_soil.py`) and every output says `is_fake: true`. The outcome column is a
-setting, not code: `CAUSAL_OUTCOME=<column>` (default `om_pred`; see `pipeline/causal/config.py`).
+**Input.** The yearly soil table above, `data/soil_health.parquet`, exactly as its contract says
+(the run stops if `pipeline/soil/health_schema.py` finds a problem). The outcome column is a setting,
+not code: `CAUSAL_OUTCOME=<column>`, default **`bare_days`** (lower is better; averaged with equal
+weights). `om_pred` stays selectable (higher is better; weighted by `confidence`), but it cannot show
+soil change. Only if the real table is missing does the run fall back to
+`data/soil_health_fake.parquet`: the same contract, **made-up values with planted crop effects**, from
+`pipeline/causal/make_fake_soil.py`; every output then says `is_fake: true`.
+
+**Years.** All derived from one setting, the switch year (`SWITCH_YEAR` in `pipeline/causal/config.py`,
+2020), and the years the two tables cover:
+
+| name | years | used for |
+|------|-------|----------|
+| history | 2008–2019 | crop mix for matching; the irrigated / dryland guess |
+| rotation | 2020–2024 | the rotation type being compared |
+| baseline | 2016–2017 | soil value the pair is matched on |
+| pre | 2018–2019 | the "before" of the difference |
+| post | 2020–2024 | the "after" |
 
 ## `data/effects.json`
 
 | key | meaning |
 |-----|---------|
-| `is_fake`, `warning` | `true` + a warning sentence when the soil scores are the fake ones |
+| `is_fake`, `warning` | `false` + `null` on the real soil table; `true` + a warning sentence on the fake one |
 | `sources` | file names of the fields and soil tables used |
-| `outcome` | `column`, `label`, `units`, `higher_is_better` |
-| `design` | switch year (2016), history / rotation years, calipers, bootstrap settings |
-| `counts` | fields, eligible fields, irrigation groups, rotation types, candidate and matched pairs |
+| `outcome` | `column`, `label`, `units`, `higher_is_better`, `weight_column` (or `null`), `note` (one sentence on how to read a gap) |
+| `design` | `switch_year`, `history_years`, `rotation_years`, `soil_years`, `baseline_years`, `pre_years`, `post_years` (each `[first, last]`), `placebo_switch_years`, calipers, bootstrap settings |
+| `counts` | fields, eligible fields, irrigation groups, rotation types, candidate pairs, matched pairs (total and `pairs_by_comparison`), `fields_in_a_pair` |
 | `effects[]` | one row per comparison and group (below) |
-| `by_year` | comparison → `[{year, gap, n_pairs}]`: mean A − B gap each year, relative to each field's pre-2016 level |
-| `placebos.fake_switch_years[]` | `fake_switch_year`, `comparison`, `effect`, `ci_low`, `ci_high`, `p_value`, `n_pairs`, `ci_excludes_zero` |
+| `by_year` | comparison → `[{year, gap, n_pairs}]`: mean A − B gap each soil year, relative to the pair's gap in the pre years |
+| `placebos.fake_switch_years[]` | `fake_switch_year`, `before_years`, `after_years` (both before the real switch; `before_years` always includes the baseline years the pairs were matched on, so part of a non-zero value is the gap springing back after matching), `comparison`, `effect`, `ci_low`, `ci_high`, `p_value`, `n_pairs`, `ci_excludes_zero`, `from_crops` |
 | `placebos.shuffled_labels[]` | `comparison`, `real_effect`, `null_mean`, `null_sd`, `null_p95_abs`, `p_value`, `n_shuffles` |
-| `demo_pairs[]` | the clearest pairs for a demo: `pair_id`, `comparison`, `field_a`, `field_b`, `distance_km`, `match_score`, `did` |
+| `demo_pairs[]` | the clearest pairs for a demo: `pair_id`, `comparison`, `rotation_a`, `rotation_b`, `field_a`, `field_b`, `distance_km`, `match_score`, `pre_a`, `post_a`, `pre_b`, `post_b`, `did`, `better` (`"a"` / `"b"`: the field with the better post level; in a demo pair the change points the same way) |
 
 `effects[]` row: `a`, `b` (rotation types; `comparison` = `"a vs b"`), `group_kind` (`irrigation` or `soil`),
 `group` (`all`, `irrigated`, `dryland`, or a SSURGO organic-matter band), `effect`, `ci_low`, `ci_high`
 (95% cluster bootstrap), `se`, `p_value` (sign-flip permutation), `n_pairs`, `n_clusters`,
-`ci_excludes_zero`, and with fake soil only `planted_effect` (what the estimate should find).
-`effect` = mean over pairs of `(post_A − pre_A) − (post_B − pre_B)` in outcome units: positive means the
-score rose more under rotation A. Rows with fewer than 10 pairs are left out.
+`ci_excludes_zero`, `favours`, `gap_pre`, `gap_post`, `from_crops`, `beyond_crops`, `fallow_share_a`, `fallow_share_b`, and with
+fake soil only `planted_effect` (what the estimate should find). Rows with fewer than 10 pairs are left out.
 
-Rotation types (2016–2024, `pipeline/causal/rotations.py`): `alfalfa/perennial`, `diverse`, `corn-soy`,
-`wheat-sorghum-fallow`, `continuous corn`, `other` (`other` is never compared). In a comparison, A is the
-type earlier in that list.
+- `effect` = mean over pairs of `(post_A − pre_A) − (post_B − pre_B)` in outcome units, using only the
+  years in which both fields of the pair have a value. Positive means the outcome rose more under
+  rotation A. **For `bare_days` a negative effect is the good direction** (A sat bare fewer days).
+- `favours` = `"a"` or `"b"`, the rotation whose outcome moved the better way given `higher_is_better`;
+  `null` when the interval includes zero.
+- `gap_pre`, `gap_post` = mean over the same pairs of the plain level difference A − B in the pre years
+  and in the post years. `effect` = `gap_post − gap_pre`: a change in the gap, not a level. The two can
+  have different signs.
+- `from_crops` = `{effect, ci_low, ci_high, ci_excludes_zero}`: the same difference computed after
+  replacing every field-year by the county average, that year, for the crop grown that year. It is the
+  part of `effect` that follows from which crops were grown and nothing else.
+- `beyond_crops` = same shape, `effect − from_crops` pair by pair: what is left.
+- `fallow_share_a/_b` = share of the rotation years (2020–2024) spent in fallow, averaged over the A / B fields.
+
+Rotation types (read from 2020–2024, `pipeline/causal/rotations.py`): `alfalfa/perennial`, `diverse`,
+`corn-soy`, `wheat-sorghum-fallow`, `continuous corn`, `other` (`other` is never compared). In a
+comparison, A is the type earlier in that list.
 
 ## `data/pairs.parquet`
 
@@ -156,14 +182,17 @@ One row per matched pair (plain Parquet, no geometry).
 | `field_a`, `field_b` | field ids; `field_a` has rotation A |
 | `irrigation` | `irrigated` / `dryland` (both fields) |
 | `soil_group` | SSURGO organic-matter band of the pair |
-| `distance_km`, `slope_diff`, `ssurgo_om_diff`, `baseline_diff`, `history_distance` | how alike the two fields are (absolute differences; `history_distance` = total-variation distance of the 2008–2015 crop mix, 0 = same) |
+| `distance_km`, `slope_diff`, `ssurgo_om_diff`, `baseline_diff`, `history_distance` | how alike the two fields are (absolute differences; `history_distance` = total-variation distance of the 2008–2019 crop mix, 0 = same) |
 | `match_score` | sum of each difference over its caliper; lower = more alike |
-| `rotation_pre_a`, `rotation_pre_b` | 2008–2015 rotation type |
-| `baseline_a/_b`, `pre_a/_b`, `post_a/_b` | soil score: first half of pre-2016 years (matched on), second half (DiD "before"), 2016–2024 (DiD "after") |
-| `did` | `(post_a − pre_a) − (post_b − pre_b)` |
+| `rotation_pre_a`, `rotation_pre_b` | 2008–2019 rotation type |
+| `baseline_a/_b` | each field's mean outcome over 2016–2017 (matched on) |
+| `pre_a/_b`, `post_a/_b` | mean outcome over 2018–2019 and over 2020–2024, counting only years both fields have |
+| `n_pre`, `n_post` | how many shared years went into those means |
+| `did` | `(post_a − pre_a) − (post_b − pre_b)`: a change. Its sign can differ from that of `post_a − post_b` (the level) |
+| `did_crops`, `did_beyond` | the pair's share of `from_crops` and of `beyond_crops`; they add up to `did` |
 
 ## `data/causal_fields.parquet`
 
 One row per field: `field_id`, `irrigation` (`irrigated` / `dryland` / `uncertain`), `irrigation_reason`,
-`circle_fill`, `rotation_pre`, `rotation_post`, `soil_group`, `eligible` (bool), `n_pre`, `n_post`
-(soil observations), `baseline`, `pre`, `post`.
+`circle_fill`, `rotation_pre`, `rotation_post`, `soil_group`, `eligible` (bool), `n_baseline`, `n_pre`,
+`n_post` (soil years with a value in each window), `baseline`, `pre`, `post` (the field's own means).

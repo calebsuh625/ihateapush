@@ -17,8 +17,11 @@ map → click a field → see its real crop history, soil info and top 3 rotatio
   `soil/` also holds Phase 2A, the yearly soil table `data/soil_health.parquet`: `bare_soil.py`
   (Earth Engine bare-soil views), `build.py` (model, noise analysis, verdict; uses `features.py`,
   `model.py`, `confidence.py`, `exposure.py`, `noise.py`, `report.py`), `health_schema.py` (validator).
-- `pipeline/causal/` — Phase 2B: rotation effects on soil from matched neighbouring fields
-  (`run_causal.py`, `make causal`) → `data/effects.json`, `data/pairs.parquet` (see schema.md).
+- `pipeline/causal/` — Phase 2B: how many days a year fields sit bare under each rotation type,
+  compared between matched neighbouring fields (`run_causal.py`, `make causal`) → `data/effects.json`,
+  `data/pairs.parquet`, `data/causal_fields.parquet` (see schema.md). Runs on the real
+  `data/soil_health.parquet`; outcome `bare_days` (lower is better), cut-off year 2020; settings in
+  `config.py`. Served by `api/causal.py`; shown in the "Your neighbors" panel section.
 - `api/` — FastAPI backend (`api/main.py`) and the rotation planner (`api/planner.py`,
   entry point `rank_plans(field) -> list[Plan]`).
 - `web/` — Vite + React + TypeScript + react-leaflet frontend.
@@ -38,6 +41,9 @@ map → click a field → see its real crop history, soil info and top 3 rotatio
 - In `data/soil_health.parquet`, `om_pred` cannot show soil change (year-to-year noise 0.14 points
   against 0.1–0.3 points per decade of real change). Compare rotations with `bare_days`, within the
   same year. Details in README "Soil over time".
+- Phase 2B measures bare days, not soil health. The only differences that stand out are the alfalfa
+  ones, and the crops grown explain them; its fake-switch placebo fails. Do not write that a rotation
+  "improved the soil" from it. Details in README "Phase 2B".
 - `make soil-obs` costs about 30 EECU-hours for the county. Run `--estimate` first, use
   `--max-eecu-hours`, and bump `METHOD_VERSION` in `soil/bare_soil.py` when the method changes.
 - Do not push; the owner pushes.
