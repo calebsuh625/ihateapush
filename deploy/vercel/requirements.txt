@@ -1,9 +1,11 @@
-# Runtime packages for the API on Vercel (the root requirements.txt also has the pipeline's
-# geopandas, rasterio, scikit-learn and Earth Engine, which push the function past Vercel's size limit).
+# Runtime packages for the API on Vercel. Kept small so they fit in the function bundle: the root
+# requirements.txt also has the pipeline's rasterio, scikit-learn and Earth Engine. geopandas itself is
+# vendored in _vendor/ without pyogrio (GDAL); parquet is read with fastparquet instead of pyarrow.
 fastapi>=0.110
-geopandas>=1.0   # pipeline/schema.py reads fields.parquet with it
 numpy>=1.26
 pandas>=2.1
-pyarrow>=15
 shapely>=2.0
+pyproj>=3.6
+packaging
+fastparquet>=2024.2
 requests>=2.31
