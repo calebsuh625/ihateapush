@@ -104,6 +104,15 @@ test:
 	npm --prefix web test
 
 # Needs `make dev` running in another terminal. Downloads headless Chromium on first use.
+# Runs every browser suite, one after the other; logs go to data/logs/e2e_*.log, one summary line each.
 e2e:
-	cd web && npx playwright install chromium
-	WEB_URL=http://localhost:$(WEB_PORT) npm --prefix web run e2e
+	@cd web && npx playwright install chromium > /dev/null 2>&1 || true
+	@mkdir -p data/logs
+	@fail=0; for s in e2e e2e:states e2e:planner e2e:phase4; do \
+		log=data/logs/e2e_$$(echo $$s | tr ':' '_').log; \
+		if WEB_URL=http://localhost:$(WEB_PORT) npm --prefix web run $$s --if-present > $$log 2>&1; then \
+			echo "$$s: $$(grep -E 'PASS|FAIL' $$log | tail -1)"; \
+		else \
+			echo "$$s: FAILED (see $$log)"; grep -E 'FAIL|Error' $$log | head -5; fail=1; \
+		fi; \
+	done; exit $$fail
