@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE, api, apiUrl } from "./api";
+import { FarmPanel } from "./components/FarmPanel";
 import { FieldMap } from "./components/FieldMap";
+import type { FarmTool } from "./components/FieldMap";
 import { ErrorNote, FieldPanel } from "./components/FieldPanel";
 import { APP_NAME, REGION_LABEL } from "./config";
 import { useResource } from "./hooks/useResource";
 import type { Resource } from "./hooks/useResource";
 import { useSelection } from "./hooks/useSelection";
+import { addFields, toggleField } from "./lib/farm";
 import { formatCount, plural } from "./lib/format";
 import { DEFAULT_CHOICES } from "./lib/planner";
 import type { PlannerChoices } from "./lib/planner";
@@ -14,14 +17,51 @@ import type { Health } from "./types";
 const loadFields = (_key: string, signal: AbortSignal) => api.fields(signal);
 const loadHealth = (_key: string, signal: AbortSignal) => api.health(signal);
 
+/** The farm being planned: its fields in the order they were picked, and the two limit boxes as typed. */
+interface Farm {
+  ids: string[];
+  water: string;
+  minimum: string;
+}
+
+const NO_FARM: Farm = { ids: [], water: "", minimum: "" };
+const FARM_STORE = "crop-rotation-farm";
+
+/** The farm kept in this browser, so a reload does not lose a farm picked field by field. */
+function storedFarm(): Farm {
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem(FARM_STORE) ?? "null");
+    if (typeof saved !== "object" || saved === null) return NO_FARM;
+    const { ids, water, minimum } = saved as Record<string, unknown>;
+    return {
+      ids: Array.isArray(ids) ? [...new Set(ids.filter((id): id is string => typeof id === "string"))] : [],
+      water: typeof water === "string" ? water : "",
+      minimum: typeof minimum === "string" ? minimum : "",
+    };
+  } catch {
+    return NO_FARM; // no storage, or something else's text under our key
+  }
+}
+
+const FARM_TOOLS: readonly { id: FarmTool; label: string; title: string }[] = [
+  { id: "click", label: "Click", title: "Click a field to add it to the farm or take it out" },
+  { id: "loop", label: "Lasso", title: "Draw a loop: every field whose centre is inside is added" },
+  { id: "box", label: "Box", title: "Drag a box: every field whose centre is inside is added" },
+];
+
 export default function App() {
   // Loaded once; selecting a field never refetches these.
   const [fields, retryFields] = useResource("fields", loadFields);
   const [health, retryHealth] = useResource("health", loadHealth);
   const { selection, select, clear } = useSelection();
   const [drawn, setDrawn] = useState<number | null>(null);
-  // The planner sliders, future and scenario live here so they carry over from field to field.
+  // The planner sliders, future and scenario live here so they carry over from field to field,
+  // and between a field and the farm.
   const [plannerChoices, setPlannerChoices] = useState<PlannerChoices>(DEFAULT_CHOICES);
+  // "Plan a farm": while it is on, the map picks fields for the farm instead of opening one.
+  const [farmMode, setFarmMode] = useState(false);
+  const [farm, setFarm] = useState<Farm>(storedFarm);
+  const [tool, setTool] = useState<FarmTool>("click");
 
   const fieldData = fields.status === "ready" ? fields.data : null;
   const areaById = useMemo(() => {
@@ -33,6 +73,16 @@ export default function App() {
     }
     return areas;
   }, [fieldData]);
+  // A farm saved with other data may name fields that are gone: only the ones on the map count.
+  const farmIds = useMemo(() => farm.ids.filter((id) => areaById.has(id)), [farm.ids, areaById]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(FARM_STORE, JSON.stringify(farm));
+    } catch {
+      // storage is full or switched off: the farm then lasts until the page is reloaded
+    }
+  }, [farm]);
 
   useEffect(() => {
     if (!selection) return;
@@ -44,15 +94,43 @@ export default function App() {
   }, [selection, clear]);
 
   useEffect(() => {
-    document.title = selection ? `${selection.id} · ${APP_NAME}` : APP_NAME;
-  }, [selection]);
+    document.title = selection ? `${selection.id} · ${APP_NAME}` : farmMode ? `Farm plan · ${APP_NAME}` : APP_NAME;
+  }, [selection, farmMode]);
 
   const retryAll = useCallback(() => {
     retryFields();
     retryHealth();
   }, [retryFields, retryHealth]);
 
+  // In farm mode the map edits the farm: a click adds or removes a field and brings the farm
+  // panel back if a field was open. Outside it a click opens the field, as ever.
+  const pick = useCallback(
+    (id: string) => {
+      if (!farmMode) {
+        select(id);
+        return;
+      }
+      setFarm((current) => ({ ...current, ids: toggleField(current.ids, id) }));
+      clear();
+    },
+    [farmMode, select, clear],
+  );
+  const lasso = useCallback(
+    (ids: string[]) => {
+      if (ids.length > 0) setFarm((current) => ({ ...current, ids: addFields(current.ids, ids) }));
+      clear();
+    },
+    [clear],
+  );
+  const toggleFarmMode = () => {
+    setTool("click");
+    setFarmMode((on) => !on);
+    clear(); // entering shows the farm panel; leaving ends with the plain map
+  };
+  const clearFarm = () => setFarm((current) => ({ ...current, ids: [] }));
+
   const fieldCount = fieldData ? fieldData.features.length : null;
+  const mode = farmMode ? "farm" : "field";
 
   return (
     <div
@@ -61,9 +139,18 @@ export default function App() {
       data-api-base={API_BASE}
       data-fields={fields.status}
       data-fields-drawn={fieldData && drawn !== null ? drawn : undefined}
+      data-mode={mode}
     >
       <main className="map-wrap">
-        <FieldMap fields={fieldData} selection={selection} onSelect={select} onRendered={setDrawn} />
+        <FieldMap
+          fields={fieldData}
+          selection={selection}
+          onSelect={pick}
+          onRendered={setDrawn}
+          farm={farmMode ? farmIds : null}
+          tool={tool}
+          onLasso={lasso}
+        />
 
         <div className="masthead">
           <h1>{APP_NAME}</h1>
@@ -74,12 +161,63 @@ export default function App() {
               Loading fields…
             </p>
           )}
-          {fieldData && !selection && (
+          {fieldData && !selection && !farmMode && (
             <p className="masthead-note" data-testid="hint">
               {fieldCount === 0
                 ? "The data set has no fields yet."
                 : "Click a field to see its crop history, soil and rotation plans"}
             </p>
+          )}
+          {fieldData && fieldCount !== 0 && (
+            <div className="farm-tools" data-testid="farm-tools">
+              <div className="farm-tools-line">
+                <button
+                  type="button"
+                  className={farmMode ? "toggle-button is-on" : "toggle-button"}
+                  aria-pressed={farmMode}
+                  data-testid="farm-toggle"
+                  onClick={toggleFarmMode}
+                >
+                  Plan a farm
+                </button>
+                {farmMode && (
+                  <p className="masthead-note">
+                    <span data-testid="farm-count" className="tabular">
+                      {formatCount(farmIds.length)} {plural(farmIds.length, "field")} picked
+                    </span>
+                    <button type="button" className="link-button" data-testid="farm-clear" disabled={farmIds.length === 0} onClick={clearFarm}>
+                      Clear
+                    </button>
+                  </p>
+                )}
+              </div>
+              {farmMode && (
+                <>
+                  <div className="segmented segmented--three" role="radiogroup" aria-label="How to pick fields" data-testid="farm-tool">
+                    {FARM_TOOLS.map((option) => (
+                      <label key={option.id} className="segmented-option" title={option.title}>
+                        <input
+                          type="radio"
+                          name="farm-tool"
+                          value={option.id}
+                          checked={tool === option.id}
+                          data-testid={`farm-tool-${option.id}`}
+                          onChange={() => setTool(option.id)}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="masthead-note farm-hint" data-testid="farm-hint">
+                    {tool === "click"
+                      ? "Click a field to add it to the farm or take it out."
+                      : tool === "loop"
+                        ? "Draw a loop on the map. Fields whose centre is inside are added."
+                        : "Drag a box on the map. Fields whose centre is inside are added."}
+                  </p>
+                </>
+              )}
+            </div>
           )}
         </div>
 
@@ -94,14 +232,31 @@ export default function App() {
         )}
       </main>
 
-      {selection && (
+      {selection ? (
         <FieldPanel
           fieldId={selection.id}
           areaHa={areaById.get(selection.id) ?? null}
           onClose={clear}
           plannerChoices={plannerChoices}
           onPlannerChoices={setPlannerChoices}
+          back={farmMode ? { label: "Back to the farm plan", onClick: clear } : undefined}
         />
+      ) : (
+        farmMode && (
+          <FarmPanel
+            ids={farmIds}
+            areaById={areaById}
+            choices={plannerChoices}
+            onChoices={setPlannerChoices}
+            water={farm.water}
+            minimum={farm.minimum}
+            onLimits={(water, minimum) => setFarm((current) => ({ ...current, water, minimum }))}
+            onRemove={(id) => setFarm((current) => ({ ...current, ids: current.ids.filter((other) => other !== id) }))}
+            onClear={clearFarm}
+            onOpenField={select}
+            onClose={toggleFarmMode}
+          />
+        )
       )}
     </div>
   );

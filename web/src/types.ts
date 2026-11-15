@@ -470,3 +470,128 @@ export interface FieldSoil {
   years: SoilYear[];
   summary: SoilSummary;
 }
+
+// ---------------------------------------------------------------------------------------------
+// POST /farm/plan (the whole-farm planner; see schema.md)
+// ---------------------------------------------------------------------------------------------
+
+/** Mean, lowest and highest climate model, for the whole farm. */
+export interface FarmBand {
+  mid: number;
+  low: number;
+  high: number;
+}
+
+/** A year (1..12) and its value; `margin` is the room to the limit (negative = over / under). */
+export interface FarmTight {
+  n: number;
+  value: number;
+  margin?: number;
+}
+
+export interface FarmYear {
+  /** 1..12, not a calendar year */
+  n: number;
+  water_acre_in: FarmBand;
+  /** dollars, return over direct costs */
+  return: FarmBand;
+  water_ok: boolean | null;
+  return_ok: boolean | null;
+  acres: Record<string, number>;
+}
+
+export interface FarmTotals {
+  score: number;
+  years: FarmYear[];
+  average: { water_acre_in: number; return: number };
+  peak_water: FarmTight;
+  worst_return: FarmTight;
+  water_ok: boolean | null;
+  return_ok: boolean | null;
+  water_years_over: number[];
+  return_years_under: number[];
+}
+
+export interface FarmLimit {
+  set: boolean;
+  limit: number | null;
+  unit: string;
+  met: boolean | null;
+  /** null = could not be settled in the time allowed */
+  binds: boolean | null;
+  why: string;
+  binds_sentence: string;
+  tightest: FarmTight;
+  alone: { met: boolean | null; tightest: FarmTight; years_broken: number[] };
+  achievable: { value: number; proven: boolean; bound: number | null } | null;
+  score_without: number | null;
+  sentence: string | null;
+  alone_ok?: boolean | null;
+}
+
+export interface FarmFieldPlan extends Plan {
+  start_year: number;
+  /** one crop per year, 12 of them */
+  years: string[];
+}
+
+export interface FarmField {
+  field_id: string;
+  area_acres: number;
+  area_ha: number;
+  irrigated: boolean;
+  irrigation_source: string;
+  plan: FarmFieldPlan;
+  own_pick: FarmFieldPlan;
+  same_rotation: boolean;
+  same_start: boolean;
+  differs: boolean;
+  /** chosen minus own pick, per acre per year; null unless the rotation changed */
+  gives_up: { score: number; profit_per_acre: number; bare_days: number; irrigation_in: number | null } | null;
+  sentence: string;
+}
+
+export interface FarmPlan {
+  engine: string;
+  settings: {
+    weights: Record<string, number>;
+    scenario: Scenario;
+    horizon: number;
+    window: [number, number];
+    models: string[];
+    span_years: number;
+    water_budget_acre_in: number | null;
+    min_income: number | null;
+    max_fields: number;
+    profit_basis?: string;
+  };
+  farm: {
+    fields: number;
+    area_acres: number;
+    area_ha: number;
+    irrigated_fields: number;
+    irrigated_acres: number;
+    dryland_fields: number;
+    dryland_acres: number;
+  };
+  status: "no_limits" | "limits_met" | "limits_not_met";
+  limits_met: boolean;
+  summary: string[];
+  limits: { water: FarmLimit; return: FarmLimit };
+  plan: FarmTotals & { changed_fields: number; shifted_fields: number };
+  alone: FarmTotals;
+  score_cost: number;
+  fields: FarmField[];
+  solver: {
+    name: string;
+    status: "optimal" | "time_limit";
+    optimal: boolean;
+    stopped_early: boolean;
+    gap: number;
+    time_s: number;
+    time_limit_s: number;
+    note: string;
+  };
+  notes: string[];
+  not_modelled: string[];
+}

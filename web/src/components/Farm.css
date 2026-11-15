@@ -1,0 +1,509 @@
+/* Whole-farm planner: the farm panel (fields, limits, the plan). Map tools are in styles.css. */
+
+.farm-small {
+  margin-top: var(--s2);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+/* ------------------------------------------------------------------ fields in the farm */
+
+.farm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.farm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 2px 2px var(--s2);
+  font-size: var(--text-sm);
+  line-height: 20px;
+  background: #fff4e8;
+  border: 1px solid #f0c9a4;
+  border-radius: 999px;
+}
+
+.farm-chip-remove {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.farm-chip-remove:hover {
+  color: var(--ink);
+  background: #f6dcc2;
+}
+
+/* ------------------------------------------------------------------ limits */
+
+.farm-limits {
+  display: grid;
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+
+.farm-limit label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.farm-limit label .muted {
+  font-weight: 400;
+}
+
+.farm-limit input {
+  width: 100%;
+  max-width: 220px;
+  margin-top: var(--s1);
+  padding: 6px var(--s2);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+}
+
+.farm-limit input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.farm-guide {
+  min-height: 18px;
+  margin-top: var(--s1);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.farm-guide.is-stale {
+  opacity: 0.55;
+}
+
+.farm-guide.is-bad {
+  color: var(--danger);
+}
+
+/* ------------------------------------------------------------------ waiting, summary, limits */
+
+.farm-waiting {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+  padding: var(--s2) var(--s3);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.farm-waiting .spinner {
+  flex: none;
+  margin-top: 2px;
+}
+
+.farm-callout {
+  display: grid;
+  gap: 6px;
+  padding: var(--s3) var(--s4);
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--accent-soft);
+  border: 1px solid #c4dccf;
+  border-radius: var(--radius);
+}
+
+.farm-callout--short {
+  background: var(--demo-bg);
+  border-color: var(--demo-line);
+}
+
+.farm-status {
+  font-size: var(--text-md);
+  font-weight: 650;
+}
+
+.farm-block {
+  margin-top: var(--s5);
+}
+
+.farm-block h4 {
+  margin-bottom: var(--s2);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.farm-block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--s3);
+  margin-bottom: var(--s2);
+}
+
+.farm-block-head h4,
+.farm-block-head .farm-small {
+  margin: 0;
+}
+
+.farm-limit-line {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.farm-limit-line + .farm-limit-line {
+  margin-top: var(--s2);
+}
+
+.farm-tag {
+  display: inline-block;
+  padding: 0 6px;
+  font-size: var(--text-xs);
+  font-weight: 650;
+  line-height: 18px;
+  white-space: nowrap;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+
+.farm-tag--binds,
+.farm-tag--shifted {
+  color: var(--demo-ink);
+  background: var(--demo-bg);
+  border-color: var(--demo-line);
+}
+
+.farm-tag--cannot,
+.farm-tag--changed {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger-line);
+}
+
+.farm-tag--free,
+.farm-tag--same {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-color: #c4dccf;
+}
+
+/* ------------------------------------------------------------------ plan against alone */
+
+.farm-compare,
+.farm-years-table {
+  width: 100%;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  border-collapse: collapse;
+}
+
+.farm-compare th,
+.farm-compare td,
+.farm-years-table th,
+.farm-years-table td {
+  padding: 6px var(--s2) 6px 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.farm-compare thead th,
+.farm-years-table thead th {
+  font-weight: 650;
+  color: var(--muted);
+  border-bottom-color: var(--line-strong);
+}
+
+.farm-compare tbody th {
+  width: 40%;
+  font-weight: 600;
+}
+
+.farm-compare td {
+  width: 30%;
+}
+
+.farm-row-hint {
+  display: block;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.farm-no {
+  font-weight: 650;
+  color: var(--danger);
+}
+
+/* ------------------------------------------------------------------ year by year */
+
+.farm-chart {
+  margin: 0;
+}
+
+.farm-chart + .farm-chart,
+.farm-short-note + .farm-chart {
+  margin-top: var(--s3);
+}
+
+.farm-chart figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--s3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.farm-chart-limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+}
+
+.farm-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 2px;
+}
+
+.farm-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.farm-zero {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.farm-axis {
+  font-size: 10px;
+  fill: var(--muted);
+}
+
+.farm-hit {
+  fill: transparent;
+}
+
+.farm-hit:hover {
+  fill: var(--surface-2);
+}
+
+.farm-range,
+.farm-alone,
+.farm-dot,
+.farm-limit-rule {
+  pointer-events: none;
+}
+
+.farm-range {
+  fill: #9fcab3;
+}
+
+.farm-alone {
+  stroke: #4b544e;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.farm-dot {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.farm-dot--short {
+  fill: var(--surface);
+  stroke: var(--danger);
+  stroke-width: 2;
+}
+
+.farm-limit-rule {
+  stroke: var(--ink);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 3;
+}
+
+.farm-short-note {
+  color: var(--danger);
+}
+
+.farm-legend,
+.farm-crops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--s3);
+  margin-top: var(--s2);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.farm-legend li,
+.farm-crops li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.farm-key {
+  flex: none;
+  display: inline-block;
+}
+
+.farm-key--dot {
+  width: 9px;
+  height: 9px;
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+.farm-key--range {
+  width: 8px;
+  height: 14px;
+  background: #9fcab3;
+  border-radius: 4px;
+}
+
+.farm-key--alone {
+  width: 16px;
+  height: 2px;
+  background: #4b544e;
+  border-radius: 1px;
+}
+
+.farm-key--limit {
+  width: 16px;
+  height: 0;
+  border-top: 2px dashed var(--ink);
+}
+
+.farm-details {
+  margin-top: var(--s3);
+  font-size: 13px;
+}
+
+.farm-details summary {
+  font-weight: 600;
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+
+.farm-scroll {
+  margin-top: var(--s2);
+  overflow-x: auto;
+}
+
+.farm-notes {
+  display: grid;
+  gap: 6px;
+  margin-top: var(--s2);
+  padding-left: 18px;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--ink-2);
+  list-style: disc;
+}
+
+.farm-notes-title {
+  margin-top: var(--s3);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+/* ------------------------------------------------------------------ the plan for each field */
+
+.farm-crops {
+  margin: 0 0 var(--s2);
+}
+
+.farm-crops .swatch {
+  width: 12px;
+  height: 12px;
+}
+
+.farm-rows {
+  display: grid;
+  gap: var(--s2);
+}
+
+.farm-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.farm-row:hover {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+}
+
+.farm-row[data-change="changed"] {
+  border-left: 4px solid var(--danger);
+}
+
+.farm-row[data-change="shifted"] {
+  border-left: 4px solid #c99a2e;
+}
+
+.farm-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px var(--s2);
+  font-size: 13px;
+}
+
+.farm-row-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.farm-row-years {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.farm-row-year {
+  height: 12px;
+  border: 1px solid rgb(16 24 20 / 18%);
+  border-radius: 2px;
+}
+
+.farm-row-sentence {
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--ink-2);
+}

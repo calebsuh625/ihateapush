@@ -842,3 +842,126 @@ Limits:
 Checks: `tests/test_transition.py` (each rule, entry year, bridge years, already there, impossible,
 hand-checked arithmetic, the endpoint), `web/tests/transition.test.mjs`, `npm --prefix web run e2e:phase4`
 (part of `make e2e`; compares the strip, the sentences, the chart and both tables with a direct API call).
+
+### Whole-farm planner (item 3, backend)
+
+Several fields planned together as one farm. Each field planned alone gets its own first pick, and on a
+farm that puts every dryland field in fallow in the same year and every irrigated field at its thirstiest
+together. The whole-farm planner picks a rotation AND a start year for every field at once so that the
+farm as a whole stays inside two optional limits in every one of the next 12 years:
+
+- a **water budget**: the most the whole farm may pump in any year, acre-inches;
+- a **minimum yearly return** over direct costs, dollars (the request calls it `min_income`; it is a
+  return over direct costs, not income or profit).
+
+Among the plans that meet the limits it takes the one with the highest area-weighted ranking score (the
+same score the single-field planner ranks by, for the same priorities). Staggering start years costs no
+score, so it is used first; a field only leaves its first pick when the limits need it.
+
+```
+POST /farm/plan
+{"field_ids": ["KS-013847", ...],            1 to 60 fields
+ "weights": {"soil": 2, "water": 1, "money": 2, "risk": 1},   optional, as /plans
+ "scenario": "ssp245", "horizon": 2050,      optional, as /plans
+ "water_budget_acre_in": 1200,               optional
+ "min_income": 20000,                        optional
+ "irrigated": {"KS-013881": false}}          optional: overrides our irrigated/dryland guess per field
+```
+
+The answer (shape in schema.md) has: the plan for each field with whether it differs from that field's own
+first pick and what the field gives up; farm totals for each of the 12 years (water and return: mean of
+the six climate models, with the lowest and highest model); which limits bind; the same totals for "each
+field planned alone" and whether that breaks the limits; the solver's status, optimality gap and time; and
+sentences built from those numbers. 400 with one plain sentence for a bad request (more than 60 fields,
+a field listed twice, a negative budget, ...), 404 for an unknown field, 503 on the basic planner.
+
+Code: `api/planner/farm.py` (the model, the stages, the words), `api/main.py` (endpoint; the solve runs in
+a worker thread so the map stays responsive). Needs `ortools` (in requirements.txt).
+
+How it is solved:
+
+- A mixed-integer program, one yes/no per field and plan (candidate cycle x start year), solved with
+  Google OR-Tools: SCIP first, then CP-SAT from SCIP's best plan. Nothing is decided by a greedy pass, and
+  "optimal" is only said when a solver proved it. On a 12-field farm the usual answer takes well under a
+  second; the limit is about 10 seconds for a request, and an answer that hit it says so and gives the gap
+  ("no plan that meets the limits can score more than 0.0037 above it").
+- Fields of the same practice, soil erodibility and slope share one evaluation. A plan is dropped for a
+  field when another is at least as good in score and in every year of every limit (exact). When each
+  field's own first pick already meets the limits, that is the answer and nothing is solved.
+- The limits use the mean of the six climate models. A year of a plan is that crop after the crop the
+  cycle grew before it, in the climate window's average weather (the transition path's year numbers).
+- When the limits cannot all be met the endpoint does not fail. It returns the closest plan and says which
+  limit cannot be met and the best the farm can do: the least it can pump in its heaviest year, or the best
+  it can return in its leanest year. The water budget is kept first and the return second; that order is
+  our assumption (a well or a water right cannot be stretched) and the answer says so.
+- A limit "binds" when it cannot be met, when each field planned alone would break it, or when dropping
+  it would let the farm score higher than the solver's bound allows with it.
+- With the rotations decided, the start years are chosen once more so that as many acres as possible keep
+  the start year their plan card shows.
+
+Tried on 8 dryland and 4 irrigated neighbours around KS-013847 (243 acres, today's climate, default
+priorities): each field alone pumps up to 1,418 acre-inches in a year and returns between $13,900 and
+$39,700; with a 1,200 acre-inch budget and a $20,000 minimum, two irrigated fields move from alfalfa-soybeans
+to soybeans-wheat and four dryland fields start their wheat-sorghum-fallow in another year; the farm then
+pumps at most 1,190 acre-inches and returns at least $20,000 every year, for a farm score of 0.639 instead
+of 0.641 (proven optimal, 0.35 s).
+
+Limits:
+
+- "Each field planned alone" starts every field in year 1 of its rotation as the plan card shows it. The
+  start year is not matched to what the field grew last; the per-field "How to get there" does that.
+- Every year has to meet the limits on its own: no water or money is carried from one year to the next.
+- Machinery, labour, storage, contracts, lease and insurance terms are not modelled; neither are runs of
+  dry or wet years (every year gets the window's average weather, so year 3 is not a forecast for 2028).
+- The limits are met on the average of the climate models; the lowest model of a year can fall under the
+  minimum. The answer carries that range for every year.
+- On a small farm with tight limits the solver can run to its time share without proving the optimum
+  (the 12 neighbours with 1,300 acre-inches and $24,000: best plan found, gap 0.004). The answer says so.
+- Farm dollars are rounded to $100 and water to whole acre-inches; "met" is decided on the unrounded totals.
+- More than 60 fields is refused (400). The same request asked again gets the remembered answer.
+
+Checks: `tests/test_farm.py` (the optimum against brute force on 60 little farms, each limit binding,
+staggering against same-start, limits that cannot be met, determinism, the time-limit note, caps and bad
+input, the endpoint, one real-data test), and a step in `npm --prefix web run e2e:phase4` that asks the
+endpoint from inside the page and compares it with a direct call and with each field's `/plans`.
+
+### Whole-farm planner (item 3, web): "Plan a farm"
+
+The farm screen on top of `POST /farm/plan`. Nothing is worked out in the browser: every number and
+sentence on it comes from that answer.
+
+- **On the map.** "Plan a farm" in the title card turns farm mode on. In it a click adds a field to the
+  farm or takes it out (farm fields are orange), and two more tools pick many at once: **Lasso** (draw a
+  freehand loop) and **Box** (drag a rectangle). Both add every field whose centre is inside; the centre
+  is the middle of the box around the field's outline. "Clear" empties the farm. Outside farm mode the
+  map behaves as before. The fields are still one layer on one canvas renderer outside React
+  (`web/src/components/FieldMap.tsx`); a change to the farm restyles only the fields that joined or left
+  it, and the lasso line is drawn on its own element, so drawing never repaints the fields.
+- **The farm panel** (in place of the field panel): the fields with acres and irrigated or dryland, total
+  acres, the same priority sliders and future / scenario controls as the field view (one shared state),
+  a water budget box (acre-inches a year) and a "least return in any year" box (dollars a year over
+  direct costs; this is the request's `min_income`). Under each box is what the farm does with no limit
+  (each field planned alone), from the answer. The plan is asked again 0.5 s after the last change; a
+  newer request cancels the older one and a late answer for older inputs is dropped; while waiting, the
+  last plan stays on screen dimmed under a "Working out the farm plan…" note.
+- **The result**: the API's summary sentences; one line per limit (binds / does not bind / cannot be
+  met, in the API's words); a table of the farm plan against "each field planned alone" (ranking score,
+  water in the heaviest and in an average year, return in the leanest and in an average year, and
+  whether each meets the limits); two small per-year charts (return, water: dot = average of the climate
+  models, bar = lowest to highest model, tick = each field alone, dashed line = the limit, hollow dot =
+  a year that misses it) with the same numbers as a table; and the plan for each field, marked when its
+  rotation or start year differs from the field's own first pick, with the API's sentence on what that
+  costs or saves. Clicking a field's row opens that field; "Back to the farm plan" returns.
+- Limits that cannot be met are shown as the answer they are (amber, "Limits cannot all be met", the
+  API's explanation and the closest plan), and a refused request (more than 60 fields) shows the API's
+  one sentence. Neither is an error box.
+
+Limits: the irrigated / dryland guess cannot be overridden per field from the farm panel (the API takes
+`irrigated`, the screen does not send it); the farm is kept in this browser only (`localStorage`), not in
+the link; the lasso was checked with a mouse, not on a touch screen; the climate line under "Which
+future?" is read from the first field's `/plans` answer (it is the county's, the same for every field).
+
+Code: `web/src/components/FarmPanel.tsx` + `Farm.css`, `web/src/lib/farm.ts` (pure helpers, unit tests in
+`web/tests/farm.test.mjs`), `web/src/App.tsx` (farm mode), `web/src/components/FieldMap.tsx` (highlight,
+lasso), `api.farmPlan` in `web/src/api.ts`. Browser checks: `npm --prefix web run e2e:phase4`
+(screenshots `web/e2e/screenshots/phase4-farm*.png`).

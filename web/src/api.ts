@@ -1,6 +1,6 @@
 // The one place the app talks to the backend. Every call returns typed JSON or throws ApiError
 // (or the browser's AbortError when the caller cancelled the request).
-import type { FieldCollection, FieldDetail, FieldPlans, FieldSatellite, FieldScore, FieldSoil, FieldTransition, Health } from "./types";
+import type { FarmPlan, FieldCollection, FieldDetail, FieldPlans, FieldSatellite, FieldScore, FieldSoil, FieldTransition, Health } from "./types";
 
 const configured: string | undefined = import.meta.env.VITE_API_URL;
 
@@ -46,11 +46,11 @@ async function errorDetail(res: Response): Promise<string | null> {
   return null;
 }
 
-export async function getJson<T>(path: string, looksRight: (body: unknown) => boolean, signal?: AbortSignal): Promise<T> {
+export async function getJson<T>(path: string, looksRight: (body: unknown) => boolean, signal?: AbortSignal, init?: RequestInit): Promise<T> {
   const url = apiUrl(path);
   let res: Response;
   try {
-    res = await fetch(API_BASE + path, { signal });
+    res = await fetch(API_BASE + path, { ...init, signal });
   } catch (err) {
     if (isAbort(err)) throw err;
     throw new ApiError(`No response from ${url}`, url, null);
@@ -69,6 +69,14 @@ export async function getJson<T>(path: string, looksRight: (body: unknown) => bo
   if (!looksRight(body)) throw new ApiError(`${url} returned an unexpected response`, url, res.status);
   return body as T;
 }
+
+/** POST `body` as JSON; errors and checks as getJson. */
+export const postJson = <T>(path: string, body: unknown, looksRight: (body: unknown) => boolean, signal?: AbortSignal): Promise<T> =>
+  getJson<T>(path, looksRight, signal, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: typeof body === "string" ? body : JSON.stringify(body),
+  });
 
 const fieldPath = (fieldId: string) => `/field/${encodeURIComponent(fieldId)}`;
 
@@ -125,6 +133,23 @@ export const api = {
         isObject(b.target) &&
         Array.isArray(b.history) &&
         Array.isArray(b.not_modelled),
+      signal,
+    ),
+
+  /** The whole-farm plan. `body` is the request as JSON text (farmRequest in lib/farm.ts). */
+  farmPlan: (body: string, signal?: AbortSignal) =>
+    postJson<FarmPlan>(
+      "/farm/plan",
+      body,
+      (b) =>
+        isObject(b) &&
+        typeof b.status === "string" &&
+        Array.isArray(b.summary) &&
+        isObject(b.limits) &&
+        isObject(b.plan) &&
+        isObject(b.alone) &&
+        Array.isArray(b.fields) &&
+        isObject(b.solver),
       signal,
     ),
 

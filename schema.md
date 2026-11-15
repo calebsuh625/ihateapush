@@ -583,6 +583,155 @@ both `plan` and `target`, a target `/score` would refuse, and the bad settings `
 such field; `503 {"detail": "<one plain sentence>"}` when only the basic planner is available or the
 engine failed.
 
+## `POST /farm/plan` (Phase 4: whole-farm planner)
+
+Several fields planned together as one farm (`api/planner/farm.py`). Needs the smart planner (503 with a
+sentence otherwise). JSON body:
+
+| key | type | meaning |
+|---|---|---|
+| `field_ids` | list of 1 to 60 field ids, each once | the farm (required) |
+| `weights` | `{soil, water, money, risk}`, any of them | the priorities, as the query parameters of `/plans`; a missing one is the default |
+| `scenario`, `horizon` | as `/plans` | default `ssp245`, 2025 |
+| `water_budget_acre_in` | number >= 0 or null | the most the whole farm may pump in any one year, acre-inches |
+| `min_income` | number or null | the least the whole farm must return over direct costs in every year, dollars (a return over direct costs, not income or profit; may be negative) |
+| `irrigated` | `{field_id: true/false}` | overrides our irrigated / dryland guess for those fields |
+
+Errors: 400 `{"detail": one plain sentence}` (not a JSON object, an unknown key, no or bad `field_ids`, more
+than 60 fields, a field listed twice, bad weights / scenario / horizon / budget / minimum, an `irrigated`
+entry that is not true/false or names a field outside the farm); 404 unknown field; 503 basic planner or the
+planner failed. The solve can take up to about 10 seconds (`solver.time_limit_s`); a 12-field farm usually
+answers in well under one. The same request asked again returns the remembered answer.
+
+Answer (real example: 8 dryland and 4 irrigated neighbours around KS-013847, budget 1,200, minimum 20,000;
+lists shortened):
+
+```json
+{
+  "engine": "smart",
+  "settings": {"weights": {"soil": 0.3, "water": 0.2, "money": 0.3, "risk": 0.2}, "scenario": "ssp245",
+               "horizon": 2025, "window": [2015, 2034], "models": ["ACCESS-CM2", "..."],
+               "ranking_rule": "...", "profit_basis": "...", "irrigation_limit_mm": 610.0,
+               "irrigation_limit_in": 24.0, "soil_source": "effects", "span_years": 12,
+               "water_budget_acre_in": 1200.0, "min_income": 20000.0, "max_fields": 60},
+  "farm": {"fields": 12, "area_acres": 243.1, "area_ha": 98.36, "irrigated_fields": 4, "irrigated_acres": 63.9,
+           "dryland_fields": 8, "dryland_acres": 179.1},
+  "status": "limits_met",
+  "limits_met": true,
+  "summary": ["12 fields, 243 acres (4 irrigated fields on 64 acres, 8 dryland fields on 179 acres), planned together over 12 years.",
+              "Both limits are met in every one of the 12 years.",
+              "2 of the 12 fields take a different rotation from their own first pick and 4 more keep their first pick but start it in a different year.",
+              "The farm's ranking score is 0.639, against 0.641 with each field planned alone.",
+              "Each field planned alone would pump up to 1,418 acre-inches in a year (218 over the budget; over in 9 of 12 years) and return as little as $13,900 in a year ($6,100 under the minimum; under in 3 of 12 years)."],
+  "limits": {
+    "water": {"set": true, "limit": 1200.0, "unit": "acre-inches a year", "met": true,
+              "binds": true, "why": "alone_breaks_it",
+              "binds_sentence": "It binds: each field planned alone would break it, so rotations or start years had to change.",
+              "tightest": {"n": 1, "value": 1190, "margin": 10},
+              "alone": {"met": false, "tightest": {"n": 1, "value": 1418, "margin": -218},
+                        "years_broken": [1, 2, 3, 5, 6, 7, 9, 10, 11]},
+              "achievable": null, "score_without": null,
+              "sentence": "The water budget of 1,200 acre-inches a year is met in every year: the heaviest pumping year (year 1) is 1,190 acre-inches, 10 acre-inches under the budget. It binds: ..."},
+    "return": {"set": true, "limit": 20000.0, "unit": "dollars a year, return over direct costs", "met": true,
+               "binds": true, "why": "alone_breaks_it", "binds_sentence": "...",
+               "tightest": {"n": 6, "value": 20000, "margin": 0},
+               "alone": {"met": false, "tightest": {"n": 3, "value": 13900, "margin": -6100}, "years_broken": [3, 6, 9]},
+               "achievable": null, "score_without": null, "alone_ok": null, "sentence": "..."}
+  },
+  "plan": {
+    "score": 0.639,
+    "years": [{"n": 1, "water_acre_in": {"mid": 1190, "low": 1094, "high": 1256},
+               "return": {"mid": 20300, "low": 15900, "high": 25400}, "water_ok": true, "return_ok": true,
+               "acres": {"soybeans": 15, "winter wheat": 116, "sorghum": 21, "alfalfa": 35, "fallow": 57}}, "... 12 in all"],
+    "average": {"water_acre_in": 1145, "return": 23200},
+    "peak_water": {"n": 1, "value": 1190, "margin": 10},
+    "worst_return": {"n": 6, "value": 20000, "margin": 0},
+    "water_ok": true, "return_ok": true, "water_years_over": [], "return_years_under": [],
+    "changed_fields": 2, "shifted_fields": 4
+  },
+  "alone": {"score": 0.641, "years": ["... as plan.years"], "average": {"water_acre_in": 1335, "return": 24600},
+            "peak_water": {"n": 1, "value": 1418, "margin": -218}, "worst_return": {"n": 3, "value": 13900, "margin": -6100},
+            "water_ok": false, "return_ok": false, "water_years_over": [1, 2, 3, 5, 6, 7, 9, 10, 11],
+            "return_years_under": [3, 6, 9]},
+  "score_cost": 0.002,
+  "fields": [{
+    "field_id": "KS-013881", "area_acres": 14.4, "area_ha": 5.84, "irrigated": true, "irrigation_source": "guess",
+    "plan": {"name": "Soybeans – Winter wheat (alternating)", "rotation": ["..."], "cycle": ["soybeans", "winter wheat", "soybeans", "winter wheat"],
+             "scores": {"...": "as /plans"}, "reason": "...", "futures": {"holds": 6, "total": 6}, "spread": {"...": "..."},
+             "numbers": {"...": "as /plans"}, "rank": 7, "start_year": 2,
+             "years": ["winter wheat", "soybeans", "winter wheat", "soybeans", "... 12 in all"]},
+    "own_pick": {"name": "Alfalfa (3 yrs) – Soybeans", "...": "the same keys as plan", "rank": 1, "start_year": 1},
+    "same_rotation": false, "same_start": false, "differs": true,
+    "gives_up": {"score": -0.022, "profit_per_acre": -48, "bare_days": 17.6, "irrigation_in": -6.5},
+    "sentence": "Not its own first pick (Alfalfa (3 yrs) – Soybeans): this rotation scores 0.022 lower for this field; it returns about $48 an acre a year less over direct costs, pumps about 6.5 inches a year less, leaves the soil bare about 18 days a year more."
+  }, "... one per field, in the order asked"],
+  "solver": {"name": "Google OR-Tools 9.15.6755 (mixed-integer program: SCIP, then CP-SAT)", "status": "optimal",
+             "optimal": true, "stopped_early": false, "gap": 0.0, "gap_pct": 0.0, "bound": 0.638743, "score": 0.638743,
+             "time_s": 0.35, "time_limit_s": 10.0,
+             "stages": [{"stage": "score", "status": "optimal", "seconds": 0.29, "choices": 1036},
+                        {"stage": "start_years", "status": "optimal", "seconds": 0.03, "choices": 36}],
+             "groups": 12,
+             "note": "Solved to proven optimality in 0.35 seconds: no other choice of rotations and start years meets the limits with a higher farm score."},
+  "notes": ["..."],
+  "not_modelled": ["..."]
+}
+```
+
+- `status`: `"no_limits"` (neither limit given: every field keeps its own first pick), `"limits_met"`, or
+  `"limits_not_met"` (the plan is the closest the farm can get; see `achievable`). `limits_met` is false only
+  for the last.
+- `summary`: plain sentences in reading order (the farm, the limits, what changed, the score, what each
+  field alone would do, and the solver's note when it stopped at its time limit). Built from the numbers
+  in the answer.
+- **Years** are `n` = 1 to 12 from now, not calendar years: every year gets the average weather of the
+  climate window. `{mid, low, high}` = mean, lowest and highest of the climate models for the WHOLE FARM in
+  that year (as in `/transition`). Water is whole acre-inches; dollars are returns over direct costs rounded
+  to $100. `water_ok` / `return_ok`: that year's `mid` against the limit, decided on the unrounded total
+  (null when that limit is not set). `acres`: farm acres in each crop that year.
+- `plan` / `alone`: the chosen plan, and every field in its own first pick started in year 1 of its cycle as
+  its plan card shows it. `score` is the area-weighted ranking score (`scores.robust` of each field's
+  rotation). `peak_water` = the heaviest pumping year, `worst_return` = the leanest year; `margin` is the room
+  to the limit (negative = over the budget / under the minimum by that much; absent when the limit is not
+  set). `*_years_over` / `*_years_under`: the years that break the limit. `plan.changed_fields`: fields in a
+  different rotation from their own pick; `plan.shifted_fields`: fields in their own pick but another start
+  year. `score_cost` = `alone.score - plan.score`.
+- `limits.water` / `limits.return` (the latter is the request's `min_income`): `set`; `limit`; `met` (null when
+  not set); `tightest` = the plan's `peak_water` / `worst_return`; `alone` = the same for each-field-alone with
+  the years it breaks; `sentence` (null when not set).
+  `binds` true / false / null with `why`:
+  `"not_set"`, `"cannot_be_met"`, `"alone_breaks_it"` (each field alone would break it, so rotations or start
+  years had to change), `"costs_score"` (each field alone meets it, but dropping it would let the farm score
+  higher: `score_without`), `"limits_the_return"` (the budget is kept and is what stops the minimum return
+  being met), `"no_cost"` (the plan would be no better without it), `"unknown"` (`binds` null: not settled in
+  the time allowed). `binds_sentence` says the same in words.
+  `achievable` (only when the limit cannot be met): `{"value", "proven", "bound"}` = the least the farm can
+  pump in its heaviest year (whole acre-inches, rounded up) or the best it can return in its leanest year
+  (rounded down to $100), so asking for exactly `value` can be met; `proven` false means the best found in
+  the time allowed, with `bound` the solver's limit on the true value (or null).
+  `limits.return.alone_ok` (only when the minimum cannot be met and a water budget is set): true = it could
+  be met with no limit on water, false = not even then, null = not settled or not applicable.
+  When both limits are set and cannot both be met, the water budget is kept first (our assumption, said in
+  `notes`).
+- `fields[]`, in the order asked: `plan` and `own_pick` are plan objects exactly as in `/plans` (`name`,
+  `rotation`, `cycle`, `scores`, `reason`, `futures`, `spread`, `numbers`, `rank`) plus `start_year` (1-based
+  year of `cycle` the field starts in; 1 = as the card shows) and `years` (the 12 crops). `own_pick` equals
+  `plans[0]` of `GET /field/{id}/plans` for the same settings. `same_rotation`, `same_start`, `differs`
+  (either changed). `gives_up` (null unless the rotation changed): chosen plan MINUS own pick, per acre per
+  year: `score` (ranking score, zero or negative), `profit_per_acre` ($, return over direct costs),
+  `bare_days`, `irrigation_in` (null on dryland). `sentence` says it in words. `irrigation_source` is
+  `"override"` when the request set it.
+- `solver`: `status` `"optimal"` (proven: every stage the plan rests on was solved to optimality) or
+  `"time_limit"` (best plan found; `gap` = how much higher any plan that meets the limits, or gets as close
+  to them, could still score, in score points; `gap_pct` in percent of `bound`). `stages[]`: `stage` is one
+  of `each_alone` (nothing to solve), `score`, `peak_water`, `worst_return`, `worst_return_alone`,
+  `score_closest`, `start_years`, `without_water_budget`, `without_min_return`; `status` `optimal` /
+  `feasible` (time share used up, best found) / `infeasible` / `unknown`; `choices` = yes/no variables.
+  `groups` = evaluations shared by fields of the same practice, soil erodibility and slope. `note`: one or
+  two sentences on what the solver did.
+- `notes` and `not_modelled`: sentences to show under the plan (what "each field alone" means, what a year
+  is, the model range, what dollars are, the per-acre pumping limit, the order of the limits when they
+  cannot both be met, what is left out).
+
 ## `GET /climate`
 
 What the smart planner assumes about the future. `{"available": true, "source", "models" (list of 6),

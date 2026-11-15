@@ -48,6 +48,8 @@ export function useLatest<T>(
   fieldId: string,
   query: string | null,
   load: (fieldId: string, signal: AbortSignal, query: string) => Promise<T>,
+  /** How long to wait after a change before asking (a slow request, like the farm plan, waits longer). */
+  debounceMs: number = DEBOUNCE_MS,
 ): LatestState<T> {
   const [attempt, setAttempt] = useState(0);
   const [answer, setAnswer] = useState<Answer<T> | null>(null);
@@ -76,12 +78,12 @@ export function useLatest<T>(
         },
       );
     };
-    const timer = window.setTimeout(send, started.current === fieldId ? DEBOUNCE_MS : 0);
+    const timer = window.setTimeout(send, started.current === fieldId ? debounceMs : 0);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [fieldId, query, attempt, load]);
+  }, [fieldId, query, attempt, load, debounceMs]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 

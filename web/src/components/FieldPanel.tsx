@@ -38,9 +38,11 @@ interface FieldPanelProps {
   /** Planner sliders, future and scenario: owned by the app, so they persist across fields. */
   plannerChoices: PlannerChoices;
   onPlannerChoices: (next: PlannerChoices) => void;
+  /** Shown above the title when the field was opened from somewhere to go back to (the farm plan). */
+  back?: { label: string; onClick: () => void };
 }
 
-export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlannerChoices }: FieldPanelProps) {
+export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlannerChoices, back }: FieldPanelProps) {
   // Two independent requests, started together; each can fail and be retried on its own.
   const [detail, retryDetail] = useResource(fieldId, api.field);
   // The irrigated / dryland override belongs to one field: it is forgotten when another is opened.
@@ -92,6 +94,11 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
     >
       <header className="panel-head">
         <div className="panel-heading">
+          {back && (
+            <button type="button" className="link-button panel-back" data-testid="panel-back" onClick={back.onClick}>
+              ← {back.label}
+            </button>
+          )}
           <p className="eyebrow">Field</p>
           <h2 id="panel-title" className="tabular" data-testid="panel-title">
             {fieldId}

@@ -51,6 +51,7 @@ from typing import Any
 import numpy as np
 import shapely
 from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -58,7 +59,7 @@ from fastapi.responses import JSONResponse, Response
 from api.causal import router as causal_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from api.planner import config as planner_config
-from api.planner import custom, smart, transition
+from api.planner import custom, farm, smart, transition
 from api.planner.traits import FieldTraits
 from pipeline import satellite_schema
 from pipeline.soil import health_schema
@@ -830,6 +831,93 @@ async def transition_path(
         log.warning("transition path failed for %s: %s: %s", field_id, type(exc).__name__, exc)
         raise HTTPException(status_code=503, detail="The planner could not work out this path just now.") from exc
     return JSONResponse(body)
+
+
+FARM_NEEDS_CLIMATE = (
+    "Planning a whole farm needs the future-weather tables, which are not set up on this server."
+)
+FARM_KEYS = ("field_ids", "weights", "scenario", "horizon", "water_budget_acre_in", "min_income", "irrigated")
+
+
+def _farm_request(body: Any) -> dict:
+    """The body of POST /farm/plan, checked: a plain 400 sentence for anything we cannot use."""
+    if not isinstance(body, dict):
+        raise _bad_request("Send the farm as a JSON object with a list of field_ids.")
+    unknown = sorted(str(key) for key in body if key not in FARM_KEYS)
+    if unknown:
+        raise _bad_request(f"Unknown setting \"{unknown[0]}\". A farm plan takes {', '.join(FARM_KEYS)}.")
+    ids = body.get("field_ids")
+    if not isinstance(ids, list) or not ids or any(not isinstance(i, str) or not i.strip() for i in ids):
+        raise _bad_request("field_ids must be a list of at least one field id.")
+    ids = [i.strip() for i in ids]
+    if len(ids) > farm.MAX_FIELDS:
+        raise _bad_request(f"A farm here is at most {farm.MAX_FIELDS} fields; this one has {len(ids)}.")
+    twice = sorted({i for i in ids if ids.count(i) > 1})
+    if twice:
+        raise _bad_request(f"Field {twice[0]} is listed more than once.")
+    given = body.get("weights")
+    if given is None:
+        given = {}
+    if not isinstance(given, dict) or any(key not in planner_config.SCORE_NAMES for key in given):
+        raise _bad_request("weights must be an object with any of soil, water, money and risk.")
+    for name, value in given.items():
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
+            raise _bad_request(f"The {name} priority must be a number that is zero or more.")
+    weights = _plain_weights({name: given.get(name) for name in planner_config.SCORE_NAMES})
+    scenario = body.get("scenario", planner_config.DEFAULT_SCENARIO)
+    if scenario not in planner_config.SCENARIOS:
+        raise _bad_request("The scenario must be ssp245 (middle road) or ssp585 (high emissions).")
+    horizon = body.get("horizon", planner_config.TODAY)
+    if (isinstance(horizon, bool) or not isinstance(horizon, int)
+            or not planner_config.HORIZON_MIN <= horizon <= planner_config.HORIZON_MAX):
+        raise _bad_request(f"The year must be between {planner_config.HORIZON_MIN} and {planner_config.HORIZON_MAX}.")
+    budget = body.get("water_budget_acre_in")
+    if budget is not None and (isinstance(budget, bool) or not isinstance(budget, (int, float))
+                               or not math.isfinite(budget) or budget < 0):
+        raise _bad_request("The water budget must be a number of acre-inches a year, zero or more.")
+    minimum = body.get("min_income")
+    if minimum is not None and (isinstance(minimum, bool) or not isinstance(minimum, (int, float))
+                                or not math.isfinite(minimum)):
+        raise _bad_request("The minimum yearly return must be a number of dollars.")
+    irrigated = body.get("irrigated")
+    if irrigated is None:
+        irrigated = {}
+    if not isinstance(irrigated, dict) or any(not isinstance(value, bool) for value in irrigated.values()):
+        raise _bad_request("irrigated must be an object of field id: true or false.")
+    stray = sorted(str(key) for key in irrigated if key not in ids)
+    if stray:
+        raise _bad_request(f"The irrigation setting names field {stray[0]}, which is not one of the farm's fields.")
+    return {"field_ids": ids, "weights": weights, "scenario": scenario, "horizon": horizon,
+            "water_budget_acre_in": budget, "min_income": minimum, "irrigated": irrigated}
+
+
+@router.post("/farm/plan", summary="Several fields planned together as one farm, under farm limits")
+async def farm_plan(request: Request) -> JSONResponse:
+    """Phase 4, item 3 (api/planner/farm.py). JSON body: `field_ids` (1 to 60), and optionally `weights`
+    {soil, water, money, risk}, `scenario`, `horizon` (as /plans), `water_budget_acre_in` (the most the
+    farm may pump in any year), `min_income` (the least it must return over direct costs in every year),
+    `irrigated` {field_id: true/false}. 400 with one plain sentence, 404 for an unknown field, 503 when
+    only the basic planner is available. The solve runs in a worker thread (up to about 10 seconds)."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise _bad_request("Send the farm as a JSON object with a list of field_ids.") from None
+    asked = _farm_request(body)
+    records = [_record(request, field_id) for field_id in asked["field_ids"]]
+    if not _use_smart(request):
+        raise HTTPException(status_code=503, detail=FARM_NEEDS_CLIMATE)
+    traits = FieldTraits() if _store(request).is_fake else None          # as in /plans: fake ids are not real fields
+    try:
+        result = await run_in_threadpool(
+            farm.plan_farm_cached, [record.planner_input() for record in records], weights=asked["weights"],
+            scenario=asked["scenario"], horizon=asked["horizon"], water_budget_acre_in=asked["water_budget_acre_in"],
+            min_income=asked["min_income"], irrigated=asked["irrigated"], traits=traits)
+    except ValueError as exc:
+        raise _bad_request(str(exc).split("\n")[0]) from exc
+    except Exception as exc:
+        log.warning("farm plan failed for %s fields: %s: %s", len(records), type(exc).__name__, exc)
+        raise HTTPException(status_code=503, detail="The planner could not work out a farm plan just now.") from exc
+    return JSONResponse(result)
 
 
 @router.get("/field/{field_id}/satellite", summary="Yearly satellite greenness for one field")

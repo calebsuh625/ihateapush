@@ -25,22 +25,28 @@ interface PlannerControlsProps {
   /** What the sliders show: the user's choices, which may be ahead of the answer on screen. */
   choices: PlannerChoices;
   onChange: (next: PlannerChoices) => void;
-  /** From the answer on screen: what the planner actually used. */
-  settings: PlannerSettings;
-  climate: ClimateSummary;
+  /**
+   * From the answer on screen: what the planner actually used. The farm panel has no single field,
+   * so it leaves `settings` out (no yield line, no irrigation switch) and passes `horizon` instead.
+   */
+  settings?: PlannerSettings;
+  climate?: ClimateSummary;
+  /** The future the climate line describes, when there are no `settings` to read it from. */
+  horizon?: number;
   /** null = our guess; true/false = the user's own call for this field. */
-  irrigationOverride: boolean | null;
-  onIrrigationOverride: (value: boolean | null) => void;
+  irrigationOverride?: boolean | null;
+  onIrrigationOverride?: (value: boolean | null) => void;
 }
 
 /** The planner's inputs: what matters, which future, irrigated or not. Sits above the plan cards. */
-export function PlannerControls({ choices, onChange, settings, climate, irrigationOverride, onIrrigationOverride }: PlannerControlsProps) {
+export function PlannerControls({ choices, onChange, settings, climate, horizon, irrigationOverride = null, onIrrigationOverride }: PlannerControlsProps) {
   const id = useId();
-  const irrigated = irrigationOverride ?? settings.irrigated;
+  const irrigated = irrigationOverride ?? settings?.irrigated ?? false;
   const horizonPosition = horizonIndex(choices.horizon);
-  const range = climateRange(climate, settings.horizon);
-  const yields = yieldChangeLine(climate.yield_change, settings.irrigated, settings.horizon);
-  const yieldTitle = [yieldChangeRange(climate.yield_change), settings.yield_change_note].filter(Boolean).join(" ");
+  const shownHorizon = settings?.horizon ?? horizon ?? choices.horizon;
+  const range = climate ? climateRange(climate, shownHorizon) : null;
+  const yields = climate && settings ? yieldChangeLine(climate.yield_change, settings.irrigated, settings.horizon) : null;
+  const yieldTitle = climate && settings ? [yieldChangeRange(climate.yield_change), settings.yield_change_note].filter(Boolean).join(" ") : "";
 
   return (
     <div className="planner" data-testid="planner-controls">
@@ -127,9 +133,11 @@ export function PlannerControls({ choices, onChange, settings, climate, irrigati
             </label>
           ))}
         </div>
-        <p className="planner-climate" data-testid="climate-line">
-          {climateLine(climate, settings.horizon)}
-        </p>
+        {climate && (
+          <p className="planner-climate" data-testid="climate-line">
+            {climateLine(climate, shownHorizon)}
+          </p>
+        )}
         {range && (
           <p className="planner-climate-range tabular" data-testid="climate-range">
             {range}
@@ -142,30 +150,32 @@ export function PlannerControls({ choices, onChange, settings, climate, irrigati
         )}
       </div>
 
-      <div className="planner-irrigation">
-        <p data-testid="irrigation-line">
-          Treated as <strong>{settings.irrigated ? "irrigated" : "dryland"}</strong>
-          <span className="muted"> · {irrigationReason(settings.irrigation_source, settings.irrigation_basis)}</span>
-        </p>
-        <div className="planner-irrigation-actions">
-          <label className="switch">
-            <input
-              type="checkbox"
-              role="switch"
-              checked={irrigated}
-              data-testid="irrigation-switch"
-              onChange={(event) => onIrrigationOverride(event.target.checked)}
-            />
-            <span className="switch-track" aria-hidden="true" />
-            <span>Irrigated</span>
-          </label>
-          {irrigationOverride !== null && (
-            <button type="button" className="link-button" data-testid="irrigation-reset" onClick={() => onIrrigationOverride(null)}>
-              Use our guess
-            </button>
-          )}
+      {settings && onIrrigationOverride && (
+        <div className="planner-irrigation">
+          <p data-testid="irrigation-line">
+            Treated as <strong>{settings.irrigated ? "irrigated" : "dryland"}</strong>
+            <span className="muted"> · {irrigationReason(settings.irrigation_source, settings.irrigation_basis)}</span>
+          </p>
+          <div className="planner-irrigation-actions">
+            <label className="switch">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={irrigated}
+                data-testid="irrigation-switch"
+                onChange={(event) => onIrrigationOverride(event.target.checked)}
+              />
+              <span className="switch-track" aria-hidden="true" />
+              <span>Irrigated</span>
+            </label>
+            {irrigationOverride !== null && (
+              <button type="button" className="link-button" data-testid="irrigation-reset" onClick={() => onIrrigationOverride(null)}>
+                Use our guess
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

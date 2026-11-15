@@ -11,6 +11,7 @@ numpy>=1.26
 pandas>=2.1
 scipy>=1.11
 scikit-learn>=1.4
+ortools>=9.10          # whole-farm planner (api/planner/farm.py): SCIP and CP-SAT; developed on 9.15
 requests>=2.31
 earthengine-api>=1.7   # only needed for `make satellite`
 # --- api ---

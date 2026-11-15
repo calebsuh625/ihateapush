@@ -1094,3 +1094,86 @@ button {
     left: -9px;
   }
 }
+
+/* ---------------------------------------------------------------------------------------------
+   "Plan a farm": the tools in the title card and the lasso surface over the map. */
+
+.farm-tools {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  width: 100%;
+}
+
+.toggle-button {
+  padding: 4px var(--s3);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--accent-ink);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.toggle-button:hover {
+  background: var(--accent-soft);
+}
+
+.toggle-button.is-on {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent-ink);
+}
+
+.segmented.segmented--three {
+  grid-template-columns: 1fr 1fr 1fr;
+  width: 100%;
+  margin-top: 0;
+}
+
+.farm-tools-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px var(--s3);
+  width: 100%;
+}
+
+/* On a phone the map is small: in farm mode the title card keeps only what is needed to pick fields. */
+@media (max-width: 760px), (max-width: 1000px) and (orientation: portrait) {
+  .app[data-mode="farm"] .badge,
+  .app[data-mode="farm"] .farm-hint {
+    display: none;
+  }
+}
+
+.panel-back {
+  display: block;
+  margin-bottom: var(--s1);
+}
+
+.lasso {
+  position: absolute;
+  inset: 0;
+  z-index: 650; /* over the fields and tiles, under the zoom buttons and the attribution */
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.lasso svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.lasso path {
+  fill: rgb(249 115 22 / 16%);
+  stroke: #9a3412;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  stroke-linejoin: round;
+}

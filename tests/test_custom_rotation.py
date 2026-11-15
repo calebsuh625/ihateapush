@@ -506,3 +506,27 @@ def test_real_tables_score_a_real_fields_rotation(monkeypatch):
         match = [p for p in plans["plans"] if p["cycle"] == body["yours"]["scored_as"]]
         if match:
             assert body["yours"]["scores"] == match[0]["scores"]
+
+
+def test_real_tables_an_all_fallow_rotation_is_not_ranked(monkeypatch):
+    """Carry-over from the check of item 1: fallow every year gets no rank and no "would come first"."""
+    for var in list(api_tests.ENV_PATHS):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.delenv("PLANNER_ENGINE", raising=False)
+    monkeypatch.delenv("FIELDS_PATH", raising=False)
+    smart.reset()
+    from fastapi.testclient import TestClient
+
+    with TestClient(api_tests.main.create_app()) as c:
+        health = c.get("/health").json()
+        if health["is_fake"] or not health["climate"] or c.get("/field/KS-013847").status_code != 200:
+            pytest.skip("real fields or climate tables not loaded")
+        body = c.get("/field/KS-013847/score", params={"rotation": "fallow,fallow"}).json()
+        yours, comparison = body["yours"], body["comparison"]
+        assert yours["rankable"] is False and yours["rank"] is None and yours["rank_of"] is None
+        assert comparison["verdict"] == "not_compared" and comparison["rows"] == [] and comparison["priorities"] == []
+        assert comparison["priority_sentences"] == [] and len(comparison["headline"]) == 1
+        sentence = comparison["headline"][0]
+        assert sentence.startswith("This rotation plants no crop in any year") and sentence.count(".") == 1
+        assert "not ranked" in sentence and "come first" not in json.dumps(body)
+        assert all(0 not in columns for columns in body["marks"].values())

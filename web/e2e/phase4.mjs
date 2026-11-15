@@ -11,6 +11,14 @@
 // rotation and compares the strip of years, the two sentences, the running-total chart, both tables
 // and every list with a direct call to GET /field/{id}/transition for the same target and settings.
 //
+// Item 3, the whole-farm planner: POST /farm/plan is called from inside the page, through the same
+// API prefix the app uses, and compared with a direct call and with each field's own
+// GET /field/{id}/plans. Then the farm screen: "Plan a farm" on the map (clicks add and remove,
+// a box and a freehand loop add every field whose centre is inside, Clear), and the farm panel,
+// where every number and sentence is compared with a direct POST /farm/plan for the same request
+// (no limits, limits met, limits that cannot be met, another future), plus the waiting state, the
+// stale-answer rule, opening a field from a row, the refusal for too many fields and phone width.
+//
 // Environment: WEB_URL (default http://localhost:5173), E2E_TIMEOUT_MS (default 20000),
 // DRY_FIELD (default KS-013847), IRRIGATED_FIELD (default KS-014376), PATH_FIELD (default
 // KS-004139, a dryland field with four real years of the six crops), BRIDGE_FIELD (default
@@ -20,6 +28,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { columnLabel, moveSlot, rangeText, scoreQuery, verdictLabel } from "../src/lib/custom.ts";
+import {
+  FIELD_TAGS, LIMIT_TAGS, addFields, farmRequest, fieldChange, formatAcres, formatFarmDollars, formatFarmScore, formatWhole, insideLoop,
+  limitTone, metWords, rangeWords,
+} from "../src/lib/farm.ts";
 import { DEFAULT_CHOICES, formatDollars, formatInches, formatShare, plansQuery, wellQualifier } from "../src/lib/planner.ts";
 import { DEFAULT_SPAN, SPANS, shortYear, signedDollars, signedRange, transitionQuery } from "../src/lib/transition.ts";
 
@@ -577,6 +589,623 @@ async function runTransition(browser, { get, defaults, shot }) {
   log(`  ✓ phone width: twelve years fit, strip wraps, chart and tables fit, no sideways scroll → ${phoneShot}, ${phoneChart}`);
 }
 
+/** Item 3: the whole-farm planner's endpoint, asked the way a page will ask it. */
+async function runFarm(browser, { get, apiPrefix, defaults }) {
+  const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  page.setDefaultTimeout(Math.max(TIMEOUT, 40000));
+  const monitor = watch(page, "farm");
+  await openField(page, DRY);
+  const apiBase = await page.getAttribute('[data-testid="app"]', "data-api-base");
+  const fromPage = (body) =>
+    page.evaluate(
+      async ([base, payload]) => {
+        const response = await fetch(`${base}/farm/plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        return { status: response.status, body: await response.json() };
+      },
+      [apiBase, body],
+    );
+  const direct = async (body) => {
+    const response = await fetch(`${apiPrefix}/farm/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  /** The answer without the clock: a repeat of the same request must give the same plan. */
+  const steady = (body) => {
+    const copy = structuredClone(body);
+    delete copy.solver.time_s;
+    delete copy.solver.note;
+    for (const stage of copy.solver.stages) delete stage.seconds;
+    copy.summary = copy.summary.filter((sentence) => !sentence.includes("seconds"));
+    return JSON.stringify(copy);
+  };
+
+  const ids = [...new Set([DRY, WET, PATH_FIELD, BRIDGE_FIELD, SETTLED_FIELD])];
+  const free = await fromPage({ field_ids: ids });
+  equal(free.status, 200, "farm: POST /farm/plan from the page");
+  equal(free.body.status, "no_limits", "farm: status without limits");
+  equal(free.body.fields.map((f) => f.field_id).join(","), ids.join(","), "farm: fields in the order asked");
+  equal(free.body.plan.years.length, 12, "farm: years planned");
+  equal(free.body.settings.models.length > 0, true, "farm: climate models listed");
+  for (const entry of free.body.fields) {
+    const own = await (await get(`/field/${entry.field_id}/plans?${defaults}`)).json();
+    equal(entry.own_pick.name, own.plans[0].name, `farm: ${entry.field_id} own first pick`);
+    equal(JSON.stringify(entry.own_pick.cycle), JSON.stringify(own.plans[0].cycle), `farm: ${entry.field_id} own cycle`);
+    equal(entry.own_pick.scores.robust, own.plans[0].scores.robust, `farm: ${entry.field_id} own ranking score`);
+    equal(entry.irrigated, own.settings.irrigated, `farm: ${entry.field_id} irrigated or dryland`);
+    equal(entry.plan.name, entry.own_pick.name, `farm: ${entry.field_id} keeps its own pick without limits`);
+    equal(entry.plan.years.length, 12, `farm: ${entry.field_id} twelve years`);
+  }
+
+  // limits taken from the farm's own numbers: a budget under the heaviest year, a minimum above the leanest
+  const alone = free.body.alone;
+  const asked = { field_ids: ids };
+  if (alone.peak_water.value > 0) asked.water_budget_acre_in = Math.round(0.85 * alone.peak_water.value);
+  if (alone.worst_return.value < alone.average.return) {
+    asked.min_income = Math.round((alone.worst_return.value + alone.average.return) / 200) * 100;
+  }
+  const limited = await fromPage(asked);
+  equal(limited.status, 200, "farm: POST with limits");
+  const body = limited.body;
+  check(["limits_met", "limits_not_met"].includes(body.status), `farm: status with limits is ${body.status}`);
+  check(["optimal", "time_limit"].includes(body.solver.status), `farm: solver status is ${body.solver.status}`);
+  check(body.solver.gap >= 0 && body.solver.time_s < 15, `farm: gap ${body.solver.gap}, ${body.solver.time_s}s`);
+  for (const year of body.plan.years) {
+    for (const key of ["water_acre_in", "return"]) {
+      check(year[key].low <= year[key].mid && year[key].mid <= year[key].high, `farm: year ${year.n} ${key} low <= mid <= high`);
+    }
+    if (body.status === "limits_met") {
+      if (asked.water_budget_acre_in !== undefined) {
+        check(year.water_ok === true && year.water_acre_in.mid <= asked.water_budget_acre_in + 1, `farm: year ${year.n} is within the water budget`);
+      }
+      if (asked.min_income !== undefined) {
+        check(year.return_ok === true && year.return.mid >= asked.min_income - 100, `farm: year ${year.n} meets the minimum return`);
+      }
+    }
+  }
+  for (const [key, set] of [["water", asked.water_budget_acre_in !== undefined], ["return", asked.min_income !== undefined]]) {
+    equal(body.limits[key].set, set, `farm: ${key} limit set`);
+    if (set) {
+      equal(body.limits[key].alone.met, false, `farm: each field alone breaks the ${key} limit`);
+      equal(body.limits[key].binds, true, `farm: the ${key} limit binds`);
+      check(body.summary.join(" ").includes("Each field planned alone would"), "farm: the summary says what each field alone would do");
+    }
+  }
+  for (const entry of body.fields) {
+    equal(entry.differs, !(entry.same_rotation && entry.same_start), `farm: ${entry.field_id} differs flag`);
+    equal(entry.gives_up === null, entry.same_rotation, `farm: ${entry.field_id} gives_up only when the rotation changes`);
+    check(entry.sentence.length > 0, `farm: ${entry.field_id} has a sentence`);
+  }
+  const again = await direct(asked);
+  equal(again.status, 200, "farm: direct POST");
+  equal(steady(again.body), steady(body), "farm: the page's answer equals a direct call for the same request");
+
+  const tooMany = await fromPage({ field_ids: Array.from({ length: 61 }, (_, i) => `KS-${String(i + 1).padStart(6, "0")}`) });
+  equal(tooMany.status, 400, "farm: 61 fields");
+  check(/at most 60 fields; this one has 61\.$/.test(tooMany.body.detail), `farm: the 61-field refusal reads "${tooMany.body.detail}"`);
+  equal((await fromPage({ field_ids: [DRY, "KS-999999"] })).status, 404, "farm: unknown field");
+  equal((await fromPage({ field_ids: [DRY], water_budget_acre_in: -1 })).status, 400, "farm: negative water budget");
+  // console errors from the deliberate 400 / 404 answers above are the browser's own log of them
+  const problems = monitor.problems.filter((line) => !/farm\/plan|status of 40[04]/.test(line));
+  check(problems.length === 0, `console errors on the farm step:\n  ${problems.join("\n  ")}`);
+  await context.close();
+  const changed = body.fields.filter((f) => !f.same_rotation).length;
+  const shifted = body.fields.filter((f) => f.same_rotation && !f.same_start).length;
+  log(`  ✓ whole-farm planner: ${ids.length} fields from the page = direct call; own picks = /plans; ${body.status}, ` +
+      `${changed} changed rotation, ${shifted} shifted start, solver ${body.solver.status} in ${body.solver.time_s}s; 400 and 404 are plain`);
+}
+
+// ------------------------------------------------------------------------------------------
+// Item 3, the farm screen: "Plan a farm" on the map and the farm panel
+// ------------------------------------------------------------------------------------------
+
+const FARM_FILL = "#f97316";
+
+/** A point inside a field's outline ([lon, lat] rings): the middle of its box, or of a chord through it. */
+function pointInside(rings) {
+  const inside = (x, y) => {
+    let hit = false;
+    for (const ring of rings) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [ax, ay] = ring[i];
+        const [bx, by] = ring[j];
+        if (ay > y !== by > y && x < ax + ((y - ay) * (bx - ax)) / (by - ay)) hit = !hit;
+      }
+    }
+    return hit;
+  };
+  const lons = rings[0].map((p) => p[0]);
+  const lats = rings[0].map((p) => p[1]);
+  const centre = { lon: (Math.min(...lons) + Math.max(...lons)) / 2, lat: (Math.min(...lats) + Math.max(...lats)) / 2 };
+  for (const share of [0.5, 0.35, 0.65, 0.2, 0.8]) {
+    const lat = Math.min(...lats) + share * (Math.max(...lats) - Math.min(...lats));
+    if (share === 0.5 && inside(centre.lon, lat)) return { ...centre, centre };
+    const crossings = [];
+    for (const ring of rings) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [ax, ay] = ring[i];
+        const [bx, by] = ring[j];
+        if (ay > lat !== by > lat) crossings.push(ax + ((lat - ay) * (bx - ax)) / (by - ay));
+      }
+    }
+    crossings.sort((a, b) => a - b);
+    let best = null;
+    for (let i = 0; i + 1 < crossings.length; i += 2) {
+      if (best === null || crossings[i + 1] - crossings[i] > best[1] - best[0]) best = [crossings[i], crossings[i + 1]];
+    }
+    if (best && inside((best[0] + best[1]) / 2, lat)) return { lon: (best[0] + best[1]) / 2, lat, centre };
+  }
+  return { ...centre, centre };
+}
+
+async function runFarmScreen(browser, { get, apiPrefix, shot }) {
+  const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  page.setDefaultTimeout(Math.max(TIMEOUT, 40000));
+  const monitor = watch(page, "farm screen");
+  const farmRequests = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/farm/plan")) farmRequests.push(request.postData());
+  });
+  await page.goto(`${WEB_URL}/`, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await page.waitForSelector('[data-testid="app"][data-fields-drawn]', { timeout: TIMEOUT });
+
+  const collection = await (await get("/fields")).json();
+  const spots = new Map();
+  for (const feature of collection.features) {
+    const id = String(feature.id ?? feature.properties.field_id);
+    spots.set(id, pointInside(feature.geometry.coordinates));
+  }
+  const order = [...spots.keys()];
+  const direct = async (body) => {
+    const response = await fetch(`${apiPrefix}/farm/plan`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return { status: response.status, body: await response.json() };
+  };
+  const one = (selector) => page.locator(selector).first();
+  const chips = () => page.locator('[data-testid="farm-chip"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.fieldId));
+  const onMap = () =>
+    page.evaluate((fill) => {
+      const ids = [];
+      window.__map.eachLayer((layer) => {
+        if (layer.feature && layer.options?.fillColor === fill) ids.push(String(layer.feature.id ?? layer.feature.properties.field_id));
+      });
+      return ids.sort();
+    }, FARM_FILL);
+  const sameSet = async (expected, what) => {
+    equal((await chips()).join(","), expected.join(","), `${what}: fields listed in the farm panel`);
+    equal((await onMap()).join(","), [...expected].sort().join(","), `${what}: fields highlighted on the map`);
+    equal(await text(page, "farm-count"), `${expected.length} ${expected.length === 1 ? "field" : "fields"} picked`, `${what}: count by the map tools`);
+  };
+  /** Centre the map on a field and return a page position inside it that the map (not a card) is under. */
+  const aim = async (id, zoom = 15) => {
+    const spot = spots.get(id);
+    check(spot !== undefined, `${id} is not in /fields`);
+    const target = await page.evaluate(
+      ({ lat, lon, zoom }) =>
+        new Promise((resolve) => {
+          const map = window.__map;
+          map.setView([lat, lon], zoom, { animate: false });
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              const inMap = map.latLngToContainerPoint([lat, lon]);
+              const frame = map.getContainer().getBoundingClientRect();
+              const x = frame.left + inMap.x;
+              const y = frame.top + inMap.y;
+              const element = document.elementFromPoint(x, y);
+              resolve({ x, y, onMap: element instanceof HTMLCanvasElement, under: (() => { const chain = []; for (let n = element; n && n !== document.body; n = n.parentElement) chain.push(`${n.tagName.toLowerCase()}.${n.className?.baseVal ?? n.className}`); return chain.slice(0, 4).join(" in ") || "nothing"; })() });
+            }),
+          );
+        }),
+      { lat: spot.lat, lon: spot.lon, zoom },
+    );
+    check(target.onMap, `${id}: ${target.under} covers the field at the middle of the map (${Math.round(target.x)}, ${Math.round(target.y)})`);
+    return target;
+  };
+  const clickOnMap = async (id) => {
+    const target = await aim(id);
+    await page.mouse.click(target.x, target.y);
+  };
+  /** Lon/lat of page positions, so the test can work out which centres a lasso holds. */
+  const toLonLat = (points) =>
+    page.evaluate((points) => {
+      const frame = window.__map.getContainer().getBoundingClientRect();
+      return points.map(([x, y]) => {
+        const where = window.__map.containerPointToLatLng([x - frame.left, y - frame.top]);
+        return [where.lng, where.lat];
+      });
+    }, points);
+  const centresIn = (loop) => order.filter((id) => insideLoop(spots.get(id).centre.lon, spots.get(id).centre.lat, loop));
+  const drag = async (points) => {
+    await page.mouse.move(points[0][0], points[0][1]);
+    await page.mouse.down();
+    for (const [x, y] of points.slice(1)) await page.mouse.move(x, y, { steps: 6 });
+    return () => page.mouse.up();
+  };
+  const settled = async (body, what) => {
+    const wanted = JSON.stringify(body);
+    try {
+      await page.waitForFunction(
+        (query) => {
+          const node = document.querySelector('[data-testid="farm-result"]');
+          return node !== null && node.dataset.updating === "false" && node.dataset.query === query;
+        },
+        wanted,
+        { timeout: 45000 },
+      );
+    } catch {
+      throw new Failure(`${what}: the farm plan on screen never became the one for ${wanted.slice(0, 200)}`);
+    }
+    equal(await page.locator('[data-testid="farm-waiting"]').count(), 0, `${what}: the waiting note is gone once the plan is in`);
+  };
+  const cell = async (row, col) => squash(await one(`[data-testid="farm-compare"] tr[data-row="${row}"] td[data-col="${col}"]`).textContent());
+
+  /** Everything the farm panel shows, against the API's answer for the same request. */
+  const checkFarm = async (answer, what) => {
+    const { plan, alone, limits } = answer;
+    const years = plan.years.length;
+    equal(await text(page, "farm-title"), `${answer.farm.fields} ${answer.farm.fields === 1 ? "field" : "fields"}`, `${what}: title`);
+    equal(await text(page, "farm-acres"), `${formatWhole(answer.farm.area_acres)} acres in total`, `${what}: total acres`);
+    const chipTexts = await texts(page, '[data-testid="farm-chip"] .farm-chip-text');
+    answer.fields.forEach((field, index) =>
+      equal(chipTexts[index], `${field.field_id} · ${formatAcres(field.area_acres)} acres · ${field.irrigated ? "irrigated" : "dryland"}`, `${what}: chip ${index + 1}`),
+    );
+    equal(await one('[data-testid="farm-result"]').getAttribute("data-status"), answer.status, `${what}: status`);
+    const summary = await text(page, "farm-summary");
+    const limitSentences = [limits.water.sentence, limits.return.sentence].filter(Boolean);
+    for (const sentence of answer.summary.filter((s) => !limitSentences.includes(s))) {
+      check(summary.includes(squash(sentence)), `${what}: the summary is missing the API's sentence "${sentence}"`);
+    }
+    for (const key of ["water", "return"]) {
+      const line = page.locator(`[data-testid="farm-limit-${key}"]`);
+      equal(await line.count(), limits[key].set ? 1 : 0, `${what}: ${key} limit line shown only when set`);
+      if (!limits[key].set) continue;
+      const tone = limitTone(limits[key]);
+      equal(await line.getAttribute("data-tone"), tone, `${what}: ${key} limit tone`);
+      equal(squash(await line.textContent()), `${LIMIT_TAGS[tone]} ${squash(limits[key].sentence)}`, `${what}: ${key} limit sentence`);
+      check(squash(limits[key].sentence).includes(squash(limits[key].binds_sentence)) || limits[key].met === false, `${what}: the ${key} sentence says whether it binds`);
+    }
+    equal(await cell("score", "plan"), formatFarmScore(plan.score), `${what}: farm score`);
+    equal(await cell("score", "alone"), formatFarmScore(alone.score), `${what}: score alone`);
+    equal(await cell("peak-water", "plan"), `${formatWhole(plan.peak_water.value)} (year ${plan.peak_water.n})`, `${what}: heaviest year`);
+    equal(await cell("peak-water", "alone"), `${formatWhole(alone.peak_water.value)} (year ${alone.peak_water.n})`, `${what}: heaviest year alone`);
+    equal(await cell("average-water", "plan"), formatWhole(plan.average.water_acre_in), `${what}: average water`);
+    equal(await cell("average-water", "alone"), formatWhole(alone.average.water_acre_in), `${what}: average water alone`);
+    equal(await cell("worst-return", "plan"), `${formatFarmDollars(plan.worst_return.value)} (year ${plan.worst_return.n})`, `${what}: leanest year`);
+    equal(await cell("worst-return", "alone"), `${formatFarmDollars(alone.worst_return.value)} (year ${alone.worst_return.n})`, `${what}: leanest year alone`);
+    equal(await cell("average-return", "plan"), formatFarmDollars(plan.average.return), `${what}: average return`);
+    equal(await cell("average-return", "alone"), formatFarmDollars(alone.average.return), `${what}: average return alone`);
+    equal(await cell("water-ok", "plan"), metWords(plan.water_ok, plan.water_years_over, years, "No budget set"), `${what}: plan within the budget`);
+    equal(await cell("water-ok", "alone"), metWords(alone.water_ok, alone.water_years_over, years, "No budget set"), `${what}: alone within the budget`);
+    equal(await cell("return-ok", "plan"), metWords(plan.return_ok, plan.return_years_under, years, "No minimum set"), `${what}: plan meets the minimum`);
+    equal(await cell("return-ok", "alone"), metWords(alone.return_ok, alone.return_years_under, years, "No minimum set"), `${what}: alone meets the minimum`);
+
+    // the guides by the two boxes: the farm's own unconstrained numbers
+    const waterGuide = await text(page, "farm-water-guide");
+    if (answer.farm.irrigated_fields > 0) {
+      check(waterGuide.includes(`up to ${formatWhole(alone.peak_water.value)} acre-inches`) && waterGuide.includes(`${formatWhole(alone.average.water_acre_in)} in an average year`), `${what}: water guide reads "${waterGuide}"`);
+    } else check(/pumps no water/.test(waterGuide), `${what}: water guide for a dryland farm reads "${waterGuide}"`);
+    const returnGuide = await text(page, "farm-minimum-guide");
+    check(returnGuide.includes(`${formatFarmDollars(alone.worst_return.value)} over direct costs`) && returnGuide.includes(`average year ${formatFarmDollars(alone.average.return)}`), `${what}: return guide reads "${returnGuide}"`);
+
+    // the per-year strip and its table
+    for (const [chart, key, limit] of [["farm-chart-return", "return", limits.return], ["farm-chart-water", "water_acre_in", limits.water]]) {
+      const shown = await page.locator(`[data-testid="${chart}"]`).count();
+      if (key === "water_acre_in" && plan.peak_water.value === 0 && alone.peak_water.value === 0) {
+        equal(shown, 0, `${what}: no water chart for a farm that pumps nothing`);
+        continue;
+      }
+      equal(shown, 1, `${what}: ${chart} is shown`);
+      equal(await page.locator(`[data-testid="${chart}"] g[data-year]`).count(), years, `${what}: ${chart} has one mark per year`);
+      const tips = await page.locator(`[data-testid="${chart}"] g[data-year] title`).allTextContents();
+      const format = key === "return" ? formatFarmDollars : formatWhole;
+      plan.years.forEach((year, index) => {
+        const want = `Year ${year.n}: ${format(year[key].mid)} (models ${rangeWords(year[key].low, year[key].high, format)}); each field alone ${format(alone.years[index][key].mid)}`;
+        equal(squash(tips[index]), want, `${what}: ${chart} year ${year.n}`);
+      });
+      const paint = await page.locator(`[data-testid="${chart}"]`).evaluate((node) => ({
+        dot: getComputedStyle(node.querySelector(".farm-dot:not(.farm-dot--short)") ?? node.querySelector(".farm-dot")).stroke,
+        range: getComputedStyle(node.querySelector(".farm-range")).fill,
+        alone: getComputedStyle(node.querySelector(".farm-alone")).stroke,
+      }));
+      check(paint.range !== "rgb(0, 0, 0)" && paint.alone !== "none" && paint.dot !== "none", `${what}: ${chart} marks are styled (${JSON.stringify(paint)})`);
+      const hollow = await page.locator(`[data-testid="${chart}"] .farm-dot--short`).count();
+      equal(hollow, key === "return" ? plan.return_years_under.length : plan.water_years_over.length, `${what}: ${chart} hollow dots = years that miss the limit`);
+      const label = page.locator(`[data-testid="${chart}-limit"]`);
+      equal(await label.count(), limit.set ? 1 : 0, `${what}: ${chart} limit shown only when set`);
+      if (limit.set) check(squash(await label.textContent()).endsWith(format(limit.limit)), `${what}: ${chart} limit label`);
+      equal(await page.locator(`[data-testid="${chart}"] .farm-limit-rule`).count(), limit.set ? 1 : 0, `${what}: ${chart} limit line`);
+    }
+    await page.evaluate(() => { document.querySelector('[data-testid="farm-years-details"]').open = true; });
+    const rows = await page.locator('[data-testid="farm-years-table"] tbody tr').evaluateAll((nodes) => nodes.map((row) => [...row.children].map((c) => c.textContent.replace(/\s+/g, " ").trim())));
+    equal(rows.length, years, `${what}: rows in the year table`);
+    plan.years.forEach((year, index) => {
+      equal(rows[index][0], String(year.n), `${what}: year table row ${index + 1}`);
+      equal(rows[index][1], `${formatFarmDollars(year.return.mid)} (${rangeWords(year.return.low, year.return.high, formatFarmDollars)})`, `${what}: year ${year.n} return`);
+      equal(rows[index][2], `${formatWhole(year.water_acre_in.mid)} (${rangeWords(year.water_acre_in.low, year.water_acre_in.high, formatWhole)})`, `${what}: year ${year.n} water`);
+      check(year.return.low <= year.return.mid && year.return.mid <= year.return.high, `${what}: year ${year.n} low <= mid <= high`);
+    });
+
+    // the plan for each field
+    equal(await text(page, "farm-changed"), `${plan.changed_fields} with a different rotation, ${plan.shifted_fields} with another start year`, `${what}: changed and shifted counts`);
+    const fieldRows = await page.locator('[data-testid="farm-row"]').evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        id: node.dataset.fieldId,
+        change: node.dataset.change,
+        tag: node.querySelector('[data-testid="farm-row-tag"]').textContent.trim(),
+        name: node.querySelector('[data-testid="farm-row-plan"]').textContent.trim(),
+        sentence: node.querySelector('[data-testid="farm-row-sentence"]').textContent.replace(/\s+/g, " ").trim(),
+        crops: [...node.querySelectorAll(".farm-row-year")].map((c) => c.dataset.crop),
+        head: node.querySelector(".farm-row-head > span").textContent.replace(/\s+/g, " ").trim(),
+      })),
+    );
+    equal(fieldRows.length, answer.fields.length, `${what}: one row per field`);
+    answer.fields.forEach((field, index) => {
+      const row = fieldRows[index];
+      const change = fieldChange(field);
+      equal(row.id, field.field_id, `${what}: row ${index + 1} field`);
+      equal(row.head, `${field.field_id} · ${formatAcres(field.area_acres)} acres · ${field.irrigated ? "irrigated" : "dryland"}`, `${what}: ${field.field_id} heading`);
+      equal(row.name, field.plan.name, `${what}: ${field.field_id} plan`);
+      equal(row.crops.join(","), field.plan.years.join(","), `${what}: ${field.field_id} twelve years`);
+      equal(row.change, change, `${what}: ${field.field_id} mark`);
+      equal(row.tag, FIELD_TAGS[change], `${what}: ${field.field_id} tag`);
+      equal(row.sentence, squash(field.sentence), `${what}: ${field.field_id} sentence`);
+      equal(change !== "same", field.differs, `${what}: ${field.field_id} is marked exactly when it differs from its own first pick`);
+    });
+    const solverShown = await page.locator('[data-testid="farm-solver"]').count();
+    equal(solverShown, answer.summary.includes(answer.solver.note) ? 0 : 1, `${what}: the solver line is said once`);
+    const all = squash(await one('[data-testid="farm-panel"]').textContent());
+    check(!FORBIDDEN.test(all), `${what}: the farm panel uses a word we do not use: ${all.match(FORBIDDEN)?.[0]}`);
+    equal(await page.locator('[data-testid="farm-panel"] [data-testid="error-note"]').count(), 0, `${what}: no error box`);
+  };
+
+  // --- farm mode: off by default, the toggle turns it on, clicks add and remove -------------
+  equal(await one('[data-testid="farm-toggle"]').getAttribute("aria-pressed"), "false", "farm mode is off to start with");
+  equal(await page.locator('[data-testid="farm-panel"]').count(), 0, "no farm panel outside farm mode");
+  await clickOnMap(DRY);
+  await page.waitForSelector(`[data-testid="panel"][data-field-id="${DRY}"]`);
+  equal((await onMap()).length, 0, "outside farm mode a click opens the field and picks nothing for a farm");
+  await page.click('[data-testid="farm-toggle"]');
+  await page.waitForSelector('[data-testid="farm-panel"]');
+  equal(await one('[data-testid="app"]').getAttribute("data-mode"), "farm", "farm mode on");
+  equal(await page.locator('[data-testid="panel"]').count(), 0, "the farm panel takes the field panel's place");
+  check((await text(page, "farm-empty")).length > 0, "the empty farm says what to do");
+  equal(farmRequests.length, 0, "nothing is asked for an empty farm");
+
+  const picked = [...new Set([DRY, WET, PATH_FIELD, BRIDGE_FIELD, SETTLED_FIELD])];
+  for (const id of picked) await clickOnMap(id);
+  await sameSet(picked, "five clicks");
+  equal(await page.locator('[data-testid="panel"]').count(), 0, "in farm mode a click does not open the field");
+  await clickOnMap(SETTLED_FIELD);
+  await sameSet(picked.filter((id) => id !== SETTLED_FIELD), "a second click on a field");
+  await clickOnMap(SETTLED_FIELD);
+  let ids = [...picked.filter((id) => id !== SETTLED_FIELD), SETTLED_FIELD];
+  await sameSet(ids, "a third click");
+
+  // --- box: every field whose centre is inside is added -------------------------------------
+  await aim(DRY, 14);
+  await page.check('[data-testid="farm-tool-box"]', { force: true });
+  await page.waitForSelector('[data-testid="lasso-surface"][data-tool="box"]');
+  const frame = await page.evaluate(() => { const r = window.__map.getContainer().getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+  const mid = [frame.x + frame.w / 2, frame.y + frame.h / 2];
+  const corners = [[mid[0] - 110, mid[1] - 90], [mid[0] + 130, mid[1] + 100]];
+  const boxLonLat = await toLonLat([corners[0], [corners[1][0], corners[0][1]], corners[1], [corners[0][0], corners[1][1]]]);
+  const inBox = centresIn(boxLonLat);
+  check(inBox.length >= 2, `the box should hold a few fields, it holds ${inBox.length}`);
+  const releaseBox = await drag(corners);
+  check((await one('[data-testid="lasso-surface"] path').getAttribute("d")).length > 0, "the box is drawn while dragging");
+  const lassoShot = await shot(page, "phase4-farm-lasso.png");
+  await releaseBox();
+  ids = addFields(ids, inBox);
+  await sameSet(ids, `box around ${inBox.length} centres`);
+
+  // --- freehand loop ----------------------------------------------------------------------------
+  await page.check('[data-testid="farm-tool-click"]', { force: true });
+  await aim(WET, 14);
+  await page.check('[data-testid="farm-tool-loop"]', { force: true });
+  await page.waitForSelector('[data-testid="lasso-surface"][data-tool="loop"]');
+  const loop = [[mid[0] - 140, mid[1] - 20], [mid[0] - 30, mid[1] - 130], [mid[0] + 150, mid[1] - 60], [mid[0] + 90, mid[1] + 120], [mid[0] - 80, mid[1] + 90]];
+  const inLoop = centresIn(await toLonLat(loop));
+  check(inLoop.length >= 1, `the loop should hold at least one field, it holds ${inLoop.length}`);
+  await (await drag(loop))();
+  ids = addFields(ids, inLoop);
+  await sameSet(ids, `loop around ${inLoop.length} centres`);
+  // a stray click with a lasso tool on picks nothing, and the map does not move under a drag
+  const before = await page.evaluate(() => window.__map.getCenter().lat + "," + window.__map.getCenter().lng);
+  await page.mouse.click(mid[0], mid[1]);
+  await sameSet(ids, "a click with the lasso tool on");
+  equal(await page.evaluate(() => window.__map.getCenter().lat + "," + window.__map.getCenter().lng), before, "the map stays put while a lasso tool is on");
+  await page.check('[data-testid="farm-tool-click"]', { force: true });
+  equal(await page.locator('[data-testid="lasso-surface"]').count(), 0, "the lasso surface is gone with the Click tool");
+
+  // --- the plan, no limits ------------------------------------------------------------------------
+  const free = farmRequest(ids, DEFAULT_CHOICES, "", "");
+  await settled(free, "no limits");
+  const freeAnswer = (await direct(free)).body;
+  equal(freeAnswer.status, "no_limits", "API status without limits");
+  await checkFarm(freeAnswer, "no limits");
+
+  // --- limits: a slow answer shows the waiting state; a stale one is dropped ---------------------
+  const alone = freeAnswer.alone;
+  check(alone.peak_water.value > 0, "the test farm should pump water");
+  const budget = String(Math.round(0.85 * alone.peak_water.value));
+  const minimum = String(Math.round((alone.worst_return.value + alone.average.return) / 200) * 100);
+  const staleBody = farmRequest(ids, DEFAULT_CHOICES, "1", "");
+  await page.route("**/farm/plan", async (route) => {
+    const sent = route.request().postData();
+    await new Promise((resolve) => setTimeout(resolve, sent === JSON.stringify(staleBody) ? 3500 : 1200));
+    await route.continue().catch(() => {});
+  });
+  const sentBefore = farmRequests.length;
+  await page.fill('[data-testid="farm-water"]', "1");
+  await page.waitForSelector('[data-testid="farm-waiting"]');
+  equal(await one('[data-testid="farm-result"]').getAttribute("data-updating"), "true", "the old plan is marked as out of date while waiting");
+  check((await one('[data-testid="farm-result"]').getAttribute("class")).includes("is-updating"), "the old plan is dimmed while waiting");
+  check(/Working out the farm plan/.test(await text(page, "farm-waiting")), "the waiting note says what is happening");
+  await page.waitForTimeout(700); // past the debounce: the request for "1" is on its way
+  equal(farmRequests.at(-1), JSON.stringify(staleBody), 'the request for a budget of "1" went out');
+  await page.fill('[data-testid="farm-water"]', budget);
+  await page.fill('[data-testid="farm-minimum"]', minimum);
+  const limited = farmRequest(ids, DEFAULT_CHOICES, budget, minimum);
+  await settled(limited, "with limits");
+  await page.waitForTimeout(3000); // the slow answer for "1" would have landed by now
+  equal(await one('[data-testid="farm-result"]').getAttribute("data-query"), JSON.stringify(limited), "a late answer for older inputs does not replace the plan");
+  await page.unroute("**/farm/plan");
+  check(farmRequests.length - sentBefore <= 3, `typing two limits sent ${farmRequests.length - sentBefore} requests (debounced)`);
+  const limitedAnswer = (await direct(limited)).body;
+  check(["limits_met", "limits_not_met"].includes(limitedAnswer.status), `API status with limits is ${limitedAnswer.status}`);
+  equal(limitedAnswer.limits.water.alone.met, false, "each field alone breaks the budget the test chose");
+  await checkFarm(limitedAnswer, "with limits");
+  await one('[data-testid="farm-summary"]').evaluate((node) => node.scrollIntoView({ block: "start" }));
+  const farmShot = await shot(page, "phase4-farm.png");
+  await one('[data-testid="farm-years"]').evaluate((node) => node.scrollIntoView({ block: "start" }));
+  const yearsShot = await shot(page, "phase4-farm-years.png");
+
+  // --- a row opens that field; coming back keeps the farm -------------------------------------
+  const moved = limitedAnswer.fields.find((field) => field.differs) ?? limitedAnswer.fields[0];
+  await page.click(`[data-testid="farm-row"][data-field-id="${moved.field_id}"]`);
+  await page.waitForSelector(`[data-testid="panel"][data-field-id="${moved.field_id}"][data-state="ready"]`);
+  await page.waitForSelector('[data-testid="plans-region"][data-updating="false"]');
+  equal(await page.locator('[data-testid="farm-panel"]').count(), 0, "the field takes the farm panel's place");
+  equal(squash(await one('[data-testid="plans"] .plan-name').textContent()), moved.own_pick.name, `${moved.field_id}: its first card is the "own first pick" the farm plan compares with`);
+  equal((await onMap()).length, ids.length - 1, "the farm stays highlighted around the opened field");
+  await page.click('[data-testid="panel-back"]');
+  await page.waitForSelector('[data-testid="farm-panel"]');
+  await settled(limited, "back from a field");
+  equal((await chips()).join(","), ids.join(","), "the farm is as it was after opening a field");
+  equal(await page.inputValue('[data-testid="farm-water"]'), budget, "the budget is as it was");
+
+  // --- limits that cannot be met: the API's explanation, not an error ---------------------------
+  const tooMuch = String(Math.round(alone.average.return * 10));
+  await page.fill('[data-testid="farm-minimum"]', tooMuch);
+  const impossible = farmRequest(ids, DEFAULT_CHOICES, budget, tooMuch);
+  await settled(impossible, "a minimum that cannot be met");
+  const impossibleAnswer = (await direct(impossible)).body;
+  equal(impossibleAnswer.status, "limits_not_met", "API status for ten times the average return");
+  equal(impossibleAnswer.limits.return.met, false, "the API says the minimum cannot be met");
+  await checkFarm(impossibleAnswer, "cannot be met");
+  equal(await text(page, "farm-status"), "Limits cannot all be met", "the headline says so plainly");
+  equal(await one('[data-testid="farm-limit-return"]').getAttribute("data-tone"), "cannot", "the minimum is tagged as one that cannot be met");
+  await one('[data-testid="farm-summary"]').evaluate((node) => node.scrollIntoView({ block: "start" }));
+  const cannotShot = await shot(page, "phase4-farm-cannot.png");
+
+  // --- something that is not a number: said by the box, nothing asked ---------------------------
+  const sentBeforeBad = farmRequests.length;
+  await page.fill('[data-testid="farm-minimum"]', "lots");
+  await page.waitForSelector('[data-testid="farm-minimum-guide"].is-bad');
+  equal(await one('[data-testid="farm-minimum"]').getAttribute("aria-invalid"), "true", "the box is marked");
+  await page.waitForTimeout(800);
+  equal(farmRequests.length, sentBeforeBad, "nothing is asked while a box holds something that is not a number");
+  await page.fill('[data-testid="farm-minimum"]', "");
+
+  // --- the sliders and the future are shared with the field view ---------------------------------
+  await page.locator('[data-testid="farm-panel"] [data-testid="weight-water"]').focus();
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight");
+  await page.locator('[data-testid="farm-panel"] [data-testid="scenario-ssp585"]').check({ force: true });
+  await page.locator('[data-testid="farm-panel"] [data-testid="horizon"]').focus();
+  await page.keyboard.press("End");
+  const thirsty = { ...DEFAULT_CHOICES, weights: { ...DEFAULT_CHOICES.weights, water: DEFAULT_CHOICES.weights.water + 5 }, scenario: "ssp585", horizon: 2060 };
+  const later = farmRequest(ids, thirsty, budget, "");
+  await settled(later, "other priorities and another future");
+  const laterAnswer = (await direct(later)).body;
+  equal(laterAnswer.settings.horizon, 2060, "API horizon");
+  await checkFarm(laterAnswer, "other priorities, 2060");
+  const climate = await (await get(`/field/${ids[0]}/plans?${plansQuery(thirsty)}`)).json();
+  check((await text(page, "climate-line")).startsWith(climate.climate.label), "the climate line is the API's label for that future");
+  equal(await page.locator('[data-testid="farm-panel"] [data-testid="irrigation-switch"]').count(), 0, "no irrigation switch on the farm panel");
+  await page.click(`[data-testid="farm-row"][data-field-id="${ids[0]}"]`);
+  await page.waitForSelector(`[data-testid="panel"][data-field-id="${ids[0]}"][data-state="ready"]`);
+  await page.waitForSelector(`[data-testid="plans-region"][data-updating="false"][data-query="${plansQuery(thirsty)}"]`);
+  equal(squash(await one('[data-testid="plans"] .plan-name').textContent()), laterAnswer.fields[0].own_pick.name, "the field view uses the farm's sliders and future");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('[data-testid="farm-panel"]');
+
+  // --- too many fields: the API's sentence -------------------------------------------------------
+  await page.evaluate(() => window.__map.setZoom(11, { animate: false }));
+  await page.waitForTimeout(400);
+  await page.check('[data-testid="farm-tool-box"]', { force: true });
+  await page.waitForSelector('[data-testid="lasso-surface"]');
+  const wide = [[mid[0] - 150, mid[1] - 150], [mid[0] + 150, mid[1] + 150]];
+  const inWide = centresIn(await toLonLat([wide[0], [wide[1][0], wide[0][1]], wide[1], [wide[0][0], wide[1][1]]]));
+  await (await drag(wide))();
+  const many = addFields(ids, inWide);
+  check(many.length > laterAnswer.settings.max_fields, `the wide box should pick more than ${laterAnswer.settings.max_fields} fields, it picked ${many.length}`);
+  await page.waitForSelector('[data-testid="farm-refusal"]');
+  const refused = await direct(farmRequest(many, thirsty, budget, ""));
+  equal(refused.status, 400, "API refuses the big farm");
+  equal(await text(page, "farm-refusal"), refused.body.detail, "the refusal is the API's own sentence");
+  equal(await page.locator('[data-testid="farm-result"]').count(), 0, "no plan for another farm is left under a refusal");
+  equal(await page.locator('[data-testid="farm-panel"] [data-testid="error-note"]').count(), 0, "a refusal is not shown as an error");
+  equal((await onMap()).length, many.length, `${many.length} fields highlighted`);
+  await page.click('[data-testid="farm-clear"]');
+  await sameSet([], "Clear");
+  check((await text(page, "farm-empty")).length > 0, "after Clear the panel is empty again");
+
+  // --- leaving farm mode: the map is as before ---------------------------------------------------
+  await page.check('[data-testid="farm-tool-click"]', { force: true });
+  await clickOnMap(DRY);
+  await sameSet([DRY], "one field again");
+  await page.click('[data-testid="farm-toggle"]');
+  equal(await page.locator('[data-testid="farm-panel"]').count(), 0, "the farm panel closes with farm mode");
+  equal((await onMap()).length, 0, "no farm highlight outside farm mode");
+  equal(await page.locator('[data-testid="lasso-surface"]').count(), 0, "no lasso outside farm mode");
+  await clickOnMap(WET);
+  await page.waitForSelector(`[data-testid="panel"][data-field-id="${WET}"][data-state="ready"]`);
+  equal(await page.locator('[data-testid="panel-back"]').count(), 0, "outside farm mode a field has no way back to a farm");
+  const problems = monitor.problems.filter((line) => !/farm\/plan|status of 400/.test(line));
+  check(problems.length === 0, `console errors on the farm screen:\n  ${problems.join("\n  ")}`);
+  await context.close();
+  log(`  ✓ farm screen: clicks add and remove, box (${inBox.length}) and loop (${inLoop.length}) add by centre; ${ids.length} fields planned = API ` +
+      `(no limits, ${limitedAnswer.status}, cannot be met, 2060); waiting state, stale answer dropped, debounced; rows open fields; ` +
+      `${many.length} fields get the API's refusal → ${lassoShot}, ${farmShot}, ${yearsShot}, ${cannotShot}`);
+
+  // --- phone: a farm kept in the browser comes back; nothing scrolls sideways ---------------------
+  const phoneContext = await browser.newContext({ viewport: PHONE, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  await phoneContext.addInitScript(
+    ([key, farm]) => window.localStorage.getItem(key) === null && window.localStorage.setItem(key, JSON.stringify(farm)),
+    ["crop-rotation-farm", { ids, water: budget, minimum }],
+  );
+  const phone = await phoneContext.newPage();
+  phone.setDefaultTimeout(Math.max(TIMEOUT, 40000));
+  const phoneMonitor = watch(phone, "farm phone");
+  await phone.goto(`${WEB_URL}/`, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await phone.waitForSelector('[data-testid="app"][data-fields-drawn]', { timeout: TIMEOUT });
+  equal(await phone.locator('[data-testid="farm-panel"]').count(), 0, "phone: the app still starts on the plain map");
+  await phone.tap('[data-testid="farm-toggle"]');
+  await phone.waitForFunction((query) => document.querySelector('[data-testid="farm-result"]')?.dataset.query === query, JSON.stringify(limited), { timeout: 45000 });
+  equal((await phone.locator('[data-testid="farm-chip"]').count()), ids.length, "phone: the farm kept in the browser is back");
+  equal(await phone.inputValue('[data-testid="farm-water"]'), budget, "phone: so is the water budget");
+  const fit = await phone.evaluate(() => {
+    const body = document.querySelector('[data-testid="farm-panel"] .panel-body');
+    const frame = body.getBoundingClientRect();
+    const clipped = [...body.querySelectorAll("p, li, td, th, button, figure, table, input, h3, h4")]
+      .filter((node) => !node.closest(".farm-scroll") && !node.closest(".farm-chips"))
+      .filter((node) => { const box = node.getBoundingClientRect(); return box.width > 0 && (box.left < frame.left - 1 || box.right > frame.right + 1); }).length;
+    return { page: document.documentElement.scrollWidth, sideways: body.scrollWidth - body.clientWidth, clipped };
+  });
+  check(fit.page <= PHONE.width, `phone: the page is ${fit.page}px wide`);
+  check(fit.sideways <= 1, `phone: the farm panel scrolls sideways by ${fit.sideways}px`);
+  equal(fit.clipped, 0, "phone: nothing in the farm panel is cut off at the sides");
+  const phoneTop = await shot(phone, "phase4-farm-phone.png");
+  await phone.evaluate(() => document.querySelector('[data-testid="farm-compare"]').scrollIntoView({ block: "start" }));
+  const phoneTable = await shot(phone, "phase4-farm-phone-plan.png");
+  await phone.evaluate(() => document.querySelector('[data-testid="farm-rows"]').scrollIntoView({ block: "start" }));
+  const phoneRows = await shot(phone, "phase4-farm-phone-fields.png");
+  await phone.tap(`[data-testid="farm-row"][data-field-id="${ids[0]}"]`);
+  await phone.waitForSelector(`[data-testid="panel"][data-field-id="${ids[0]}"]`);
+  await phone.tap('[data-testid="panel-back"]');
+  await phone.waitForSelector('[data-testid="farm-panel"]');
+  check(phoneMonitor.problems.length === 0, `console errors on the phone farm screen:\n  ${phoneMonitor.problems.join("\n  ")}`);
+  await phoneContext.close();
+  log(`  ✓ farm screen at phone width: the saved farm comes back, no sideways scroll, rows open fields → ${phoneTop}, ${phoneTable}, ${phoneRows}`);
+}
+
 async function run(browser) {
   const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
   const page = await context.newPage();
@@ -963,6 +1592,8 @@ async function run(browser) {
   log(`  ✓ phone width: slots wrap, the table fits, no sideways scroll → ${phoneShot}, ${phoneTable}`);
 
   await runTransition(browser, { get, defaults, shot });
+  await runFarm(browser, { get, apiPrefix, defaults });
+  await runFarmScreen(browser, { get, apiPrefix, shot });
 }
 
 let browser;

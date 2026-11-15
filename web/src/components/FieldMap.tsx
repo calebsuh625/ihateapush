@@ -3,6 +3,7 @@ import L from "leaflet";
 import { MapContainer, TileLayer, ZoomControl, useMap } from "react-leaflet";
 import { REGION_CENTER, REGION_ZOOM } from "../config";
 import type { Selection } from "../hooks/useSelection";
+import { boxLoop, fieldsInside, loopArea } from "../lib/farm";
 import { collectionBounds, pointInRings, ringBounds } from "../lib/geo";
 import type { FieldCollection } from "../types";
 
@@ -16,11 +17,15 @@ declare global {
 // ---------------------------------------------------------------------------------------------
 // Styling. Outlines are a dark green that holds up against OpenStreetMap's pale land colours;
 // the selected field is blue, which stays distinct from green for colour-blind readers too.
+// Fields picked for a farm ("Plan a farm") are orange, which stays apart from both.
 // Far out, fields are a few pixels wide, so the fill does the work; close in, the outline does.
 // ---------------------------------------------------------------------------------------------
 
 type ZoomBand = "far" | "mid" | "near";
-type FieldState = "base" | "hover" | "selected";
+type FieldState = "base" | "hover" | "selected" | "farm" | "farmHover";
+
+/** How the pointer picks fields in farm mode: one at a time, a freehand loop, or a box. */
+export type FarmTool = "click" | "loop" | "box";
 
 const bandFor = (zoom: number): ZoomBand => (zoom < 12 ? "far" : zoom < 14 ? "mid" : "near");
 
@@ -29,27 +34,36 @@ const OUTLINE_HOVER = "#0c3523";
 const FILL = "#2f8f5b";
 const SELECTED_OUTLINE = "#1d4ed8";
 const SELECTED_FILL = "#3b82f6";
+const FARM_OUTLINE = "#9a3412";
+const FARM_FILL = "#f97316";
 
 const STYLES: Record<ZoomBand, Record<FieldState, L.PathOptions>> = {
   far: {
     base: { color: OUTLINE, weight: 0.75, opacity: 0.7, fillColor: FILL, fillOpacity: 0.3 },
     hover: { color: OUTLINE_HOVER, weight: 2.5, opacity: 1, fillColor: FILL, fillOpacity: 0.55 },
     selected: { color: SELECTED_OUTLINE, weight: 3, opacity: 1, fillColor: SELECTED_FILL, fillOpacity: 0.45 },
+    farm: { color: FARM_OUTLINE, weight: 1.5, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.65 },
+    farmHover: { color: FARM_OUTLINE, weight: 3, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.8 },
   },
   mid: {
     base: { color: OUTLINE, weight: 1.25, opacity: 0.9, fillColor: FILL, fillOpacity: 0.2 },
     hover: { color: OUTLINE_HOVER, weight: 3, opacity: 1, fillColor: FILL, fillOpacity: 0.4 },
     selected: { color: SELECTED_OUTLINE, weight: 3.5, opacity: 1, fillColor: SELECTED_FILL, fillOpacity: 0.35 },
+    farm: { color: FARM_OUTLINE, weight: 2.5, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.5 },
+    farmHover: { color: FARM_OUTLINE, weight: 3.5, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.65 },
   },
   near: {
     base: { color: OUTLINE, weight: 2, opacity: 1, fillColor: FILL, fillOpacity: 0.12 },
     hover: { color: OUTLINE_HOVER, weight: 3.5, opacity: 1, fillColor: FILL, fillOpacity: 0.28 },
     selected: { color: SELECTED_OUTLINE, weight: 4, opacity: 1, fillColor: SELECTED_FILL, fillOpacity: 0.25 },
+    farm: { color: FARM_OUTLINE, weight: 3, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.4 },
+    farmHover: { color: FARM_OUTLINE, weight: 4, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.55 },
   },
 };
 
 /** Leave room for the title card in the top-left corner when fitting the view. */
 const FIT_ALL: L.FitBoundsOptions = { paddingTopLeft: [24, 104], paddingBottomRight: [24, 28] };
+const FIT_FARM: L.FitBoundsOptions = { paddingTopLeft: [48, 150], paddingBottomRight: [48, 48], maxZoom: 15, animate: false };
 const FIT_FIELD: L.FitBoundsOptions = { paddingTopLeft: [48, 120], paddingBottomRight: [48, 48], maxZoom: 15 };
 
 /**
@@ -74,7 +88,8 @@ function nudgeIntoView(map: L.Map, bounds: L.LatLngBounds, margin = 32) {
 
 // ---------------------------------------------------------------------------------------------
 // The fields layer, kept outside React: one canvas renderer, one GeoJSON layer, built once.
-// Hover and selection restyle at most two polygons each; nothing here runs on a React render.
+// Hover and selection restyle at most two polygons each, and a change to the farm restyles only
+// the fields that joined or left it; nothing here runs on a React render.
 // ---------------------------------------------------------------------------------------------
 
 interface FieldsLayer {
@@ -83,6 +98,10 @@ interface FieldsLayer {
   show(): void;
   /** Mark `id` as the selected field (null clears). Unknown ids select nothing. */
   select(id: string | null): void;
+  /** The fields picked for the farm (empty outside farm mode). Only the difference is restyled. */
+  setFarm(ids: Iterable<string>): void;
+  /** Fields whose centre lies inside a loop of [lon, lat] points. */
+  inside(loop: readonly (readonly number[])[]): string[];
   bounds(id: string): L.LatLngBounds | null;
   destroy(): void;
 }
@@ -95,6 +114,9 @@ interface Shape {
   east: number;
   north: number;
   rings: number[][][];
+  /** the centre the lasso tests: the middle of the bounding box */
+  lon: number;
+  lat: number;
 }
 
 const featureId = (feature: { id?: string | number; properties?: unknown }): string =>
@@ -109,8 +131,10 @@ function createFieldsLayer(map: L.Map, fields: FieldCollection, onPick: (id: str
   let band = bandFor(map.getZoom());
   let selected: string | null = null;
   let hovered: string | null = null;
+  let farm = new Set<string>();
 
-  const stateOf = (id: string): FieldState => (id === selected ? "selected" : id === hovered ? "hover" : "base");
+  const stateOf = (id: string): FieldState =>
+    id === selected ? "selected" : farm.has(id) ? (id === hovered ? "farmHover" : "farm") : id === hovered ? "hover" : "base";
   const restyle = (id: string | null) => {
     if (id === null) return;
     byId.get(id)?.setStyle(STYLES[band][stateOf(id)]);
@@ -148,7 +172,9 @@ function createFieldsLayer(map: L.Map, fields: FieldCollection, onPick: (id: str
     const id = featureId(feature);
     const rings = feature.geometry?.coordinates;
     const box = rings ? ringBounds(rings) : null;
-    if (id && rings && box && byId.has(id)) shapes.push({ id, rings, ...box });
+    if (id && rings && box && byId.has(id)) {
+      shapes.push({ id, rings, ...box, lon: (box.west + box.east) / 2, lat: (box.south + box.north) / 2 });
+    }
   }
 
   /**
@@ -222,6 +248,22 @@ function createFieldsLayer(map: L.Map, fields: FieldCollection, onPick: (id: str
       if (next !== null) byId.get(next)?.bringToFront();
       syncRing();
     },
+    setFarm(ids) {
+      const next = new Set<string>();
+      for (const id of ids) if (byId.has(id)) next.add(id);
+      const previous = farm;
+      farm = next;
+      previous.forEach((id) => {
+        if (!next.has(id)) restyle(id);
+      });
+      next.forEach((id) => {
+        if (previous.has(id)) return;
+        restyle(id);
+        byId.get(id)?.bringToFront(); // its thicker outline goes over the neighbours'
+      });
+      if (selected !== null) byId.get(selected)?.bringToFront();
+    },
+    inside: (loop) => fieldsInside(shapes, loop),
     bounds: (id) => byId.get(id)?.getBounds() ?? null,
     destroy() {
       map.off("zoomend", syncBand);
@@ -229,6 +271,96 @@ function createFieldsLayer(map: L.Map, fields: FieldCollection, onPick: (id: str
       group.remove();
       renderer.remove();
     },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The lasso, also outside React: one element over the map that takes the pointer while a lasso
+// tool is on, and one SVG path for the line being drawn. The fields canvas is not touched until
+// the pointer is let go, so drawing never repaints the fields.
+// ---------------------------------------------------------------------------------------------
+
+/** Loops smaller than this many square pixels are a stray click, not a selection. */
+const MIN_LASSO_AREA = 36;
+
+function createLasso(map: L.Map, tool: "loop" | "box", onDone: (loop: [number, number][]) => void): () => void {
+  const container = map.getContainer();
+  const surface = document.createElement("div");
+  surface.className = "lasso";
+  surface.dataset.testid = "lasso-surface";
+  surface.dataset.tool = tool;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  svg.setAttribute("aria-hidden", "true");
+  svg.appendChild(path);
+  surface.appendChild(svg);
+  container.appendChild(surface);
+
+  let points: [number, number][] | null = null;
+  const at = (event: PointerEvent): [number, number] => {
+    const box = surface.getBoundingClientRect();
+    return [event.clientX - box.left, event.clientY - box.top];
+  };
+  const outline = (): [number, number][] => {
+    if (!points) return [];
+    const first = points[0];
+    const last = points[points.length - 1];
+    return tool === "box" && first && last ? boxLoop(first, last) : points;
+  };
+  const draw = () => {
+    const loop = outline();
+    path.setAttribute("d", loop.length > 1 ? `M${loop.map((p) => `${p[0]} ${p[1]}`).join("L")}Z` : "");
+  };
+  const stop = () => {
+    points = null;
+    draw();
+  };
+
+  const onDown = (event: PointerEvent) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    points = [at(event)];
+    surface.setPointerCapture(event.pointerId);
+  };
+  const onMove = (event: PointerEvent) => {
+    if (!points) return;
+    const next = at(event);
+    const last = points[points.length - 1];
+    if (tool === "box") points = [points[0] ?? next, next];
+    else if (!last || Math.hypot(next[0] - last[0], next[1] - last[1]) >= 2) points.push(next);
+    draw();
+  };
+  const onUp = () => {
+    const loop = outline();
+    stop();
+    if (loop.length < 3 || loopArea(loop) < MIN_LASSO_AREA) return;
+    onDone(
+      loop.map((point) => {
+        const where = map.containerPointToLatLng(point);
+        return [where.lng, where.lat];
+      }),
+    );
+  };
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && points) {
+      event.preventDefault(); // drop the loop being drawn; do not also close a panel
+      stop();
+    }
+  };
+  // Keep the map from dragging, zooming on a double click or picking a field under the lasso.
+  const swallow = (event: Event) => event.stopPropagation();
+  const swallowed = ["pointerdown", "mousedown", "touchstart", "click", "dblclick", "contextmenu"];
+
+  surface.addEventListener("pointerdown", onDown);
+  surface.addEventListener("pointermove", onMove);
+  surface.addEventListener("pointerup", onUp);
+  surface.addEventListener("pointercancel", stop);
+  swallowed.forEach((type) => surface.addEventListener(type, swallow));
+  window.addEventListener("keydown", onKey, true);
+
+  return () => {
+    window.removeEventListener("keydown", onKey, true);
+    surface.remove();
   };
 }
 
@@ -242,16 +374,23 @@ interface FieldsProps {
   onSelect: (id: string) => void;
   /** Called once the polygons have been drawn, with how many there are. */
   onRendered?: (count: number) => void;
+  /** The fields picked for the farm; null outside farm mode. */
+  farm: readonly string[] | null;
+  /** Farm mode only: a click picks one field, a loop or a box picks every field centred inside. */
+  tool: FarmTool;
+  onLasso?: (ids: string[]) => void;
 }
 
-function Fields({ fields, selection, onSelect, onRendered }: FieldsProps) {
+const NO_FARM: readonly string[] = [];
+
+function Fields({ fields, selection, onSelect, onRendered, farm, tool, onLasso }: FieldsProps) {
   const map = useMap();
   const layerRef = useRef<FieldsLayer | null>(null);
   /** The selection the view has already been moved for. */
   const shownRef = useRef<Selection | null>(null);
-  const latest = useRef({ selection, onSelect, onRendered });
+  const latest = useRef({ selection, onSelect, onRendered, farm, onLasso });
   useEffect(() => {
-    latest.current = { selection, onSelect, onRendered };
+    latest.current = { selection, onSelect, onRendered, farm, onLasso };
   });
 
   // Build the layer once per collection, then frame it: the linked field if the URL names one
@@ -262,6 +401,7 @@ function Fields({ fields, selection, onSelect, onRendered }: FieldsProps) {
 
     const current = latest.current.selection;
     layer.select(current?.id ?? null);
+    layer.setFarm(latest.current.farm ?? NO_FARM);
     shownRef.current = current;
     const linked = current ? layer.bounds(current.id) : null;
     const all = collectionBounds(fields);
@@ -298,6 +438,37 @@ function Fields({ fields, selection, onSelect, onRendered }: FieldsProps) {
     else nudgeIntoView(map, bounds); // clicked on the map: keep the user's view, just make sure it shows
   }, [map, selection]);
 
+  // Follow the farm: only the fields that joined or left it are restyled.
+  useEffect(() => {
+    layerRef.current?.setFarm(farm ?? NO_FARM);
+  }, [farm, fields]);
+
+  // Farm mode starting with fields already picked (a farm kept from before): bring them into view.
+  const farmOn = farm !== null;
+  useEffect(() => {
+    const layer = layerRef.current;
+    const ids = latest.current.farm;
+    if (!farmOn || !layer || !ids || ids.length === 0) return;
+    let all: L.LatLngBounds | null = null;
+    for (const id of ids) {
+      const one = layer.bounds(id);
+      if (one) all = all ? all.extend(one) : L.latLngBounds(one.getSouthWest(), one.getNorthEast());
+    }
+    if (!all) return;
+    map.invalidateSize({ pan: false }); // the farm panel has just opened and narrowed the map
+    map.fitBounds(all, FIT_FARM);
+  }, [map, farmOn, fields]);
+
+  // The lasso is only there in farm mode while a lasso tool is on; otherwise the map is as ever.
+  const lassoTool = farm !== null && tool !== "click" ? tool : null;
+  useEffect(() => {
+    if (lassoTool === null) return;
+    return createLasso(map, lassoTool, (loop) => {
+      const ids = layerRef.current?.inside(loop) ?? [];
+      latest.current.onLasso?.(ids);
+    });
+  }, [map, lassoTool]);
+
   return null;
 }
 
@@ -328,9 +499,13 @@ interface FieldMapProps {
   selection: Selection | null;
   onSelect: (id: string) => void;
   onRendered?: (count: number) => void;
+  /** The fields picked for the farm; null (the default) outside farm mode. */
+  farm?: readonly string[] | null;
+  tool?: FarmTool;
+  onLasso?: (ids: string[]) => void;
 }
 
-export function FieldMap({ fields, selection, onSelect, onRendered }: FieldMapProps) {
+export function FieldMap({ fields, selection, onSelect, onRendered, farm = null, tool = "click", onLasso }: FieldMapProps) {
   return (
     <MapContainer
       className="map"
@@ -349,7 +524,9 @@ export function FieldMap({ fields, selection, onSelect, onRendered }: FieldMapPr
       <ZoomControl position="topright" />
       <KeepSized />
       <ExposeMap />
-      {fields && <Fields fields={fields} selection={selection} onSelect={onSelect} onRendered={onRendered} />}
+      {fields && (
+        <Fields fields={fields} selection={selection} onSelect={onSelect} onRendered={onRendered} farm={farm} tool={tool} onLasso={onLasso} />
+      )}
     </MapContainer>
   );
 }
