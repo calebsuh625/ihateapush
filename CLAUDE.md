@@ -67,6 +67,10 @@ map → click a field → see its real crop history, soil info and top 3 rotatio
   about 0.07. Run `python -m pipeline.climate.build --estimate` first.
 - `make soil-obs` costs about 30 EECU-hours for the county. Run `--estimate` first, use
   `--max-eecu-hours`, and bump `METHOD_VERSION` in `soil/bare_soil.py` when the method changes.
+- **Regions:** `REGION=<county FIPS>` (default 20055 Finney) picks the county (`pipeline/region.py`).
+  Finney's files stay in `data/`; other counties use `data/regions/<fips>/`. Build paths from
+  `pipeline.region.DATA_DIR` (or `common.DATA_DIR`), never `ROOT / "data"`. Never run `make causal` for a
+  county without its own soil table. See README "Other counties".
 - Do not push; the owner pushes.
 
 ## How to run
