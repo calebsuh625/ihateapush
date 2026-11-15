@@ -11,13 +11,18 @@ the top three rotation plans from a simple rule-based planner.
 much of the year it had green cover, measured from Landsat through Google Earth Engine. It shows up
 as a "Satellite" section under the crop history.
 
+**Soil over time (Phase 2A, optional add-on):** a per-field, per-year soil table from bare-soil
+satellite views, 2016–2024: an organic-matter estimate and the number of days the soil sat bare.
+The honest result is that the organic-matter estimate cannot show change; bare days can be
+trusted. See [Soil over time](#soil-over-time-phase-2a).
+
 ```
 pipeline/   data scripts; run_all.py builds data/fields.parquet from public USDA / USGS data
 api/        FastAPI backend (main.py) + rotation planner (planner.py)
 web/        Vite + React + TypeScript + react-leaflet frontend
 data/       data files (git-ignored); downloads are cached in data/raw/
 tests/      pytest tests for the pipeline, API and planner
-schema.md   the data contract for data/fields.parquet
+schema.md   the data contracts for data/fields.parquet and data/soil_health.parquet
 ```
 
 ## Requirements
@@ -35,6 +40,8 @@ schema.md   the data contract for data/fields.parquet
 make setup      # creates .venv, installs Python packages, runs npm install in web/
 make pipeline   # builds data/fields.parquet from real data  (same as: .venv/bin/python pipeline/run_all.py)
 make satellite  # optional: builds data/field_satellite.parquet (needs an Earth Engine login, see below)
+make soil-obs   # optional: bare-soil satellite views (Earth Engine, about 30 compute-hours, see below)
+make soil-health  # optional: builds data/soil_health.parquet from those views (local, about 90 s)
 make dev        # starts the API on :8010 and the web app on :5173 — Ctrl-C stops both
 ```
 
@@ -169,17 +176,83 @@ Known limits:
   change, but be careful reading a long trend on one field across 2012/2013 or 2019/2020.
   Comparing fields within the same year is not affected.
 
+## Soil over time (Phase 2A)
+
+`organic_matter_pct` is one static soil-survey value per field, so it cannot show change. This step
+builds a yearly table, `data/soil_health.parquet` (contract in `schema.md`), in two commands:
+
+```bash
+.venv/bin/python -m pipeline.soil.bare_soil --estimate   # how many requests and compute-hours, no Earth Engine call
+make soil-obs      # Earth Engine: bare-soil views per field and year -> data/soil_bare_obs.parquet
+make soil-health   # local: model, noise analysis -> data/soil_health.parquet, _meta.json, _report.md
+```
+
+`make soil-obs` needs the same Earth Engine login as `make satellite`. The county run was 861
+requests, about 45 minutes and **29.6 EECU-hours** of the free tier's 150 a month (Landsat 11.7,
+Sentinel-2 17.9). Results are cached per request in `data/raw/gee_soil/`; `--max-eecu-hours N`
+stops a run at a spending cap (exit code 3) and a rerun continues from the cache.
+
+How it works:
+
+1. **Bare-soil views** (`pipeline/soil/bare_soil.py`). Sentinel-2 (2017–2024) and Landsat 8/9
+   (2016–2024) surface reflectance, with cloud, shadow and snow masked. A view counts as bare soil when
+   NDVI is under 0.25 and NBR2 is under 0.10 (dry, no residue); for Sentinel-2 the limits are 0.20 and
+   0.08, the same thresholds seen through its bands. Fields are buffered 30 m inward. Per
+   field and year: the median reflectance of the bare views, how many there were, and bare days.
+2. **Model** (`model.py`, `features.py`). Gradient boosting predicts SSURGO organic matter from the
+   bare-soil bands and soil indices. Every value in the table comes from a model that never saw that
+   field's soil map unit.
+3. **Noise and verdict** (`noise.py`, `confidence.py`, `exposure.py`, `build.py`). Writes the table,
+   `data/soil_health_meta.json` and the full numbers in `data/soil_health_report.md`.
+
+### What the county run found
+
+Organic-matter estimate (`om_pred`), 7,255 fields, 53 soil map units:
+
+| measure | value |
+|---------|-------|
+| Accuracy with random cross-validation (misleading: neighbours leak the answer) | R² 0.38 |
+| Accuracy grouped by soil map unit | R² 0.25 (90% interval −0.12 to 0.33); error 0.39 points against 0.47 for guessing the mean |
+| Accuracy on a soil series the model has not seen | R² 0.06 |
+| Year-to-year jump on fields whose crop did not change | 0.14 points |
+| Change a good rotation might cause | 0.1–0.3 points per **decade** |
+| Smallest change detectable on one field over the 9 years | 1.4 points per decade |
+| Smallest change detectable averaging 100 / 1,000 fields | 0.36 / 0.30 points per decade |
+| Shift caused only by last year's crop (surface residue) | up to 0.15, which reads as 0.6 points of real change |
+
+"Accuracy" here is against SSURGO, which is a soil map, not a set of measurements.
+
+**Verdict: real organic-matter change is buried in noise**, on a single field and on groups of
+fields. The estimate mostly tells sandy soil from loam; within one kind of soil it does not follow
+organic matter, and it moves with whatever residue lies on the surface. Do not use `om_pred` to
+compare rotations.
+
+**Use `bare_days` instead.** It is the estimated number of days a year the soil sat bare and
+exposed, and it passes its checks:
+
+- Median by that year's crop: fallow 143 days, corn 46, sorghum 42, winter wheat 18, alfalfa 0.
+- The two satellites agree on the same field-year (correlation 0.965, about 8 days apart).
+- It moves opposite to green cover from the satellite step (correlation −0.60).
+- One year of data separates a fallow year from a cropped year, but not finer differences: on fields
+  whose crop did not change it still moves 17 days from year to year (27 for fallow, 32 for corn).
+
+Limits: `bare_days` measures how exposed the soil is, not what the soil has become. Dry years lift
+it for everyone (county median 76 days in 2023 against 27–46 in other years), so compare fields
+within the same year. `om_pred` is empty in the 10% of field-years with no bare-soil view, mostly
+alfalfa and other fields that are never bare. `confidence` is repeatability, not accuracy, and never exceeds 0.38.
+
 ## The API
 
 Base URL `http://127.0.0.1:8010` (interactive docs at `/docs`).
 
 | endpoint | returns |
 |----------|---------|
-| `GET /health` | which data file is loaded, how many fields, and whether satellite data is loaded |
+| `GET /health` | which data file is loaded, how many fields, and whether the satellite and soil tables are loaded |
 | `GET /fields` | GeoJSON FeatureCollection of all fields (`field_id`, `area_ha`, simplified outline) |
 | `GET /field/{id}` | one field: outline, `crop_history` as an object, organic matter, slope, area, and stats (distinct crops, longest same-crop streak, % of years in corn) |
 | `GET /field/{id}/plans` | the planner's top 3 four-year rotations with soil / water / money / overall scores and a one-line reason |
 | `GET /field/{id}/satellite` | per-year `ndvi_peak`, `cover_frac` and `n_obs`, plus averages and the trend per decade; `"available": false` with a reason if the satellite file has not been built |
+| `GET /field/{id}/soil` | per-year `om_pred`, `confidence`, `n_obs` and `bare_days` for 2016–2024, the soil-survey value, which signal to trust, the typical noise and a plain verdict; `"available": false` with a reason if the soil table has not been built |
 
 On startup the API loads `data/fields.parquet` if it exists, otherwise `data/fields_fake.parquet`,
 logs which one, and validates it against `schema.md`; a file that does not match stops the server
@@ -187,7 +260,8 @@ with a readable list of problems. Set `FIELDS_PATH=/some/file.parquet` to load a
 
 The satellite file is optional: `data/field_satellite.parquet` is loaded when the real fields file
 is in use (`SATELLITE_PATH=/some/file.parquet` overrides). If it is missing or invalid the server
-logs one line and runs without it.
+logs one line and runs without it. The soil table works the same way: `data/soil_health.parquet`
+and `data/soil_health_meta.json` (`SOIL_HEALTH_PATH` and `SOIL_HEALTH_META_PATH` override).
 
 The planner lives in `api/planner.py` behind one function, `rank_plans(field) -> list[Plan]`.
 To try a smarter model, write a function with that signature and pass it to `create_app(planner=...)`
@@ -195,5 +269,6 @@ in `api/main.py`.
 
 ## The data contract
 
-`schema.md` defines `data/fields.parquet`. It only changes on purpose: the pipeline validates
-against it before writing and the API validates on startup (`pipeline/schema.py` is the validator).
+`schema.md` defines `data/fields.parquet` and `data/soil_health.parquet`. It only changes on purpose:
+the pipeline validates against it before writing and the API validates on startup
+(`pipeline/schema.py` and `pipeline/soil/health_schema.py` are the validators).
