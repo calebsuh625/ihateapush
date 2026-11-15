@@ -119,6 +119,242 @@ function awkwardSoil(fieldId, extra = {}) {
   };
 }
 
+/** Phase 4 panels in their loading, empty and error states (see section 7 of main()). */
+async function phase4States(context) {
+  const page = await context.newPage();
+  page.setDefaultTimeout(TIMEOUT);
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  const shot = async (name) => {
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: path.join(SHOTS, name) });
+    return `e2e/screenshots/${name}`;
+  };
+  const isApi = (suffix) => (url) => url.pathname.endsWith(suffix);
+  const failWith = (status, detail) => (route) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify({ detail }) });
+  const drawn = () => page.waitForSelector('[data-testid="app"][data-fields-drawn]', { timeout: TIMEOUT });
+  const ready = (id) => page.waitForSelector(`[data-testid="panel"][data-field-id="${id}"][data-state="ready"]`, { timeout: TIMEOUT });
+  const textOf = async (selector) => ((await page.textContent(selector)) ?? "").replace(/\s+/g, " ").trim();
+
+  await page.goto(`${WEB_URL}/`, { waitUntil: "domcontentloaded" });
+  await drawn();
+  const apiAt = await page.getAttribute('[data-testid="app"]', "data-api-base");
+  const apiBase = /^https?:/.test(apiAt) ? apiAt : `${WEB_URL}${apiAt}`;
+  const get = async (suffix) => {
+    const response = await fetch(`${apiBase}${suffix}`);
+    return response.ok ? await response.json() : null;
+  };
+
+  // a field that has look-alike neighbours (so the twin button exists)
+  const fields = await get("/fields");
+  let withNeighbors = null;
+  for (const feature of fields.features.slice(0, 400)) {
+    const body = await get(`/field/${feature.id}/neighbors`);
+    if (body && body.neighbors && body.neighbors.length > 0) {
+      withNeighbors = String(feature.id);
+      break;
+    }
+  }
+
+  // ---- 7a. neighbors: slow, failing, "build it first", then Retry ----------------------------------
+  if (withNeighbors) {
+    let mode = "slow";
+    const nbRoute = isApi(`/field/${withNeighbors}/neighbors`);
+    await page.route(nbRoute, async (route) => {
+      if (mode === "slow") {
+        await sleep(1200);
+        return route.continue();
+      }
+      if (mode === "500") return failWith(500, "Made-up failure for the test.")(route);
+      if (mode === "503") return failWith(503, "The neighbor comparison has not been built yet. Run make causal.")(route);
+      return route.continue();
+    });
+    await page.evaluate((id) => (window.location.hash = id), withNeighbors);
+    await ready(withNeighbors);
+    await page.waitForSelector('[data-testid="neighbors"][data-state="loading"]');
+    check((await page.locator('[data-testid="neighbors"] .skeleton').count()) >= 1, "neighbors: no placeholder while loading");
+    await page.waitForSelector('[data-testid="neighbors"][data-state="ready"]');
+    log("  ✓ neighbors: a placeholder while the answer is slow, then the answer");
+
+    mode = "500";
+    await page.evaluate(() => (window.location.hash = ""));
+    await page.evaluate((id) => (window.location.hash = id), withNeighbors);
+    await page.waitForSelector('[data-testid="neighbors"][data-state="error"]');
+    const failed = await textOf('[data-testid="neighbors"] [data-testid="error-note"]');
+    check(failed.includes("Could not load neighbors") && failed.includes("Made-up failure for the test."), `neighbors error text: "${failed}"`);
+    check((await page.locator('[data-testid="plan-card"]').count()) >= 1, "neighbors failed: the plan cards must stay");
+    const nbShot = await shot("state-p4-neighbors-error.png");
+    mode = "ok";
+    await page.click('[data-testid="neighbors"] [data-testid="error-note"] button');
+    await page.waitForSelector('[data-testid="neighbors"][data-state="ready"]');
+    log(`  ✓ neighbors: a failure says so in a sentence, plans stay, Retry brings the answer back → ${nbShot}`);
+
+    mode = "503";
+    await page.evaluate(() => (window.location.hash = ""));
+    await page.evaluate((id) => (window.location.hash = id), withNeighbors);
+    await page.waitForSelector('[data-testid="neighbors"][data-state="error"]');
+    equal(await page.locator('[data-testid="neighbors"] [data-testid="error-note"] button').count(), 0, "neighbors 'make causal': no Retry button (retrying cannot help)");
+    log("  ✓ neighbors: 'run make causal' has no useless Retry button");
+    await page.unroute(nbRoute);
+
+    // ---- 7b. twin: slow, failing ------------------------------------------------------------------
+    let twinMode = "slow";
+    const twinRoute = isApi(`/field/${withNeighbors}/twin`);
+    await page.route(twinRoute, async (route) => {
+      if (twinMode === "slow") {
+        await sleep(1200);
+        return route.continue();
+      }
+      return failWith(500, "Made-up failure for the test.")(route);
+    });
+    await page.evaluate(() => (window.location.hash = ""));
+    await page.evaluate((id) => (window.location.hash = id), withNeighbors);
+    await page.waitForSelector('[data-testid="compare-twin"]');
+    await page.click('[data-testid="compare-twin"]');
+    await page.waitForSelector('[data-testid="twin-view"]');
+    check((await page.locator('[data-testid="twin-view"] .skeleton').count()) >= 1, "twin: no placeholder while loading");
+    await page.waitForSelector('[data-testid^="twin-col-"], [data-testid="twin-none"]');
+    log("  ✓ twin: a placeholder while slow, then the comparison");
+    await page.click('[data-testid="twin-close"]');
+    twinMode = "500";
+    await page.click('[data-testid="compare-twin"]').catch(async () => {
+      await page.waitForSelector('[data-testid="compare-twin"]');
+      await page.click('[data-testid="compare-twin"]');
+    });
+    await page.waitForSelector('[data-testid="twin-view"] [data-testid="error-note"]');
+    check((await textOf('[data-testid="twin-view"] [data-testid="error-note"]')).includes("Could not load the comparison"), "twin error title");
+    const twinShot = await shot("state-p4-twin-error.png");
+    await page.click('[data-testid="twin-close"]');
+    await page.unroute(twinRoute);
+    log(`  ✓ twin: a failure says so in a sentence and the view can be closed → ${twinShot}`);
+  } else {
+    log("  - no field with neighbors in this data set; neighbors and twin states skipped");
+  }
+
+  // ---- 7c. map layers: catalog down, layer slow, layer failing, then Try again ---------------------
+  await page.evaluate(() => (window.location.hash = ""));
+  const catalogRoute = isApi("/layers");
+  await page.route(catalogRoute, failWith(500, "Made-up failure for the test."));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await drawn();
+  await page.waitForSelector('[data-testid="layer-catalog-error"]');
+  equal(await page.inputValue('[data-testid="layer-select"]'), "fields", "layers catalog down: the plain map stays");
+  equal(await page.locator('[data-testid="layer-select"] option').count(), 1, "layers catalog down: only the plain map is offered");
+  log("  ✓ map layers: when the list cannot be loaded the plain map stays, with one sentence");
+  await page.unroute(catalogRoute);
+
+  let layerMode = "slow";
+  const layerRoute = (url) => /\/layers\/bare_days$/.test(url.pathname);
+  await page.route(layerRoute, async (route) => {
+    if (layerMode === "slow") {
+      await sleep(1500);
+      return route.continue();
+    }
+    if (layerMode === "500") return failWith(500, "Made-up failure for the test.")(route);
+    return route.continue();
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await drawn();
+  await page.selectOption('[data-testid="layer-select"]', "bare_days");
+  await page.waitForSelector('[data-testid="layer-control"][data-state="loading"]');
+  check((await textOf('[data-testid="layer-status"]')).includes("Loading this layer"), "layer loading line");
+  equal(await page.locator('[data-testid="layer-year"]').isVisible(), true, "layer loading: the year row stays (no blank area)");
+  await page.waitForSelector('[data-testid="layer-control"][data-state="ready"]');
+  log("  ✓ map layers: a slow layer shows a loading line, then colours the map");
+  layerMode = "500";
+  await page.selectOption('[data-testid="layer-select"]', "fields");
+  await page.selectOption('[data-testid="layer-select"]', "bare_days");
+  await page.waitForSelector('[data-testid="layer-control"][data-state="error"]');
+  check((await textOf('[data-testid="layer-status"]')).includes("Could not load this layer"), "layer error line");
+  const layerShot = await shot("state-p4-layer-error.png");
+  layerMode = "ok";
+  await page.click('[data-testid="layer-status"] button');
+  await page.waitForSelector('[data-testid="layer-control"][data-state="ready"]');
+  await page.unroute(layerRoute);
+  await page.selectOption('[data-testid="layer-select"]', "fields");
+  log(`  ✓ map layers: a failed layer says so with Try again, which works → ${layerShot}`);
+
+  // ---- 7d. farm plan: slow, failing, then the empty state ------------------------------------------
+  await page.click('[data-testid="farm-toggle"]');
+  await page.waitForSelector('[data-testid="farm-empty"]');
+  log("  ✓ farm plan: with no fields yet the panel says how to add some");
+  const spot = await page.evaluate(() => {
+    const map = window.__map;
+    let layer = null;
+    map.eachLayer((candidate) => {
+      if (!layer && candidate.feature && map.getBounds().pad(-0.3).contains(candidate.getBounds().getCenter())) layer = candidate;
+    });
+    const bounds = layer.getBounds();
+    map.fitBounds(bounds.pad(2.5), { animate: false });
+    const p = map.latLngToContainerPoint(bounds.getCenter());
+    const frame = map.getContainer().getBoundingClientRect();
+    return { x: frame.left + p.x, y: frame.top + p.y };
+  });
+  let farmMode = "500";
+  const farmRoute = isApi("/farm/plan");
+  await page.route(farmRoute, async (route) => {
+    if (farmMode === "slow") {
+      await sleep(1500);
+      return route.continue();
+    }
+    if (farmMode === "500") return failWith(500, "Made-up failure for the test.")(route);
+    return route.continue();
+  });
+  await page.waitForTimeout(400);
+  await page.mouse.click(spot.x, spot.y);
+  await page.waitForSelector('[data-testid="farm-chip"]');
+  await page.waitForSelector('[data-testid="farm-panel"] [data-testid="error-note"]');
+  check((await textOf('[data-testid="farm-panel"] [data-testid="error-note"]')).includes("Made-up failure for the test."), "farm error carries the API's sentence");
+  equal(await page.locator('[data-testid="farm-chip"]').count(), 1, "farm failed: the picked field stays listed");
+  const farmShot = await shot("state-p4-farm-error.png");
+  log(`  ✓ farm plan: a failure says so in a sentence and the chosen fields stay → ${farmShot}`);
+  farmMode = "slow";
+  await page.click('[data-testid="farm-panel"] [data-testid="error-note"] button');
+  await page.waitForSelector('[data-testid="farm-waiting"]');
+  log("  ✓ farm plan: Retry shows a waiting line while the solver is slow");
+  await page.waitForSelector('[data-testid="farm-result"]');
+  await page.unroute(farmRoute);
+
+  // ---- 7e. water outlook: the API says there are no wells nearby --------------------------------
+  await page.click('[data-testid="farm-panel-clear"]').catch(() => {});
+  await page.click('[data-testid="farm-toggle"]').catch(() => {});
+  const irrigated = await get("/field/KS-014376/plans");
+  if (irrigated && irrigated.water_outlook) {
+    let outlookMode = "none";
+    const plansRoute = isApi("/field/KS-014376/plans");
+    await page.route(plansRoute, async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      if (outlookMode === "none") body.water_outlook = { ...body.water_outlook, available: false, reason: "no_wells_nearby", wells: undefined };
+      else body.water_outlook = { available: true, wells: [{}], what_if: 5, plan_lines: 7 }; // not the shape the page expects
+      await route.fulfill({ response, json: body });
+    });
+    await page.evaluate(() => (window.location.hash = ""));
+    await page.evaluate(() => (window.location.hash = "KS-014376"));
+    await ready("KS-014376");
+    await page.waitForSelector('[data-testid="water-unavailable"]');
+    check((await textOf('[data-testid="water-unavailable"]')).length > 20, "water outlook: the unavailable note is empty");
+    log("  ✓ water outlook: 'no wells nearby' gives a sentence, not a blank");
+
+    // an answer shaped wrongly must cost one section, never the page
+    outlookMode = "garbage";
+    await page.evaluate(() => (window.location.hash = ""));
+    await page.evaluate(() => (window.location.hash = "KS-014376"));
+    await page.waitForSelector('[data-testid="boundary"], [data-testid="panel"][data-state="ready"]');
+    await page.waitForTimeout(800);
+    check((await page.locator('[data-testid="app"]').count()) === 1, "a wrongly shaped answer blanked the page");
+    check((await page.locator('[data-testid="plan-card"]').count()) >= 1, "a wrongly shaped water outlook took the plan cards with it");
+    const boundaryShot = await shot("state-p4-boundary.png");
+    log(`  ✓ a wrongly shaped answer costs one section (${(await page.locator('[data-testid="boundary"]').count()) > 0 ? "a plain note in its place" : "drawn without it"}), not the page → ${boundaryShot}`);
+    await page.unroute(plansRoute);
+  }
+
+  // errors from the deliberately wrong answer above are expected; anything else is not
+  const unexpected = pageErrors.filter((message) => !/Cannot read|undefined|not a function|is not iterable/.test(message));
+  check(unexpected.length === 0, `uncaught page errors in the Phase 4 states: ${unexpected.join(" | ")}`);
+  await page.close();
+}
+
 async function main() {
   await mkdir(SHOTS, { recursive: true });
   const browser = await chromium.launch();
@@ -525,6 +761,12 @@ async function main() {
       await page.waitForTimeout(80);
       log(`  ✓ hover highlight → ${await shot("state-12-hover.png")}`);
     }
+
+
+    // ---- 7. Phase 4 panels: neighbors, twin, map layers, farm plan, water outlook --------------------
+    // Each is slowed or made to fail on its own; the rest of the page must keep working, and no area may
+    // be left blank or hang. Failures are forced in the browser; the API is untouched.
+    await phase4States(context);
 
     check(pageErrors.length === 0, `uncaught page errors: ${pageErrors.join(" | ")}`);
     await context.close();

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE, api, apiUrl, getJson } from "./api";
 import { AdvisorPanel } from "./components/AdvisorPanel";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FarmPanel } from "./components/FarmPanel";
 import { TwinView } from "./components/TwinView";
 import { FieldMap } from "./components/FieldMap";
@@ -295,6 +296,7 @@ export default function App() {
       </main>
 
       {selection ? (
+        <ErrorBoundary what="this field" resetKey={selection.id} level="panel">
         <FieldPanel
           fieldId={selection.id}
           areaHa={areaById.get(selection.id) ?? null}
@@ -306,8 +308,10 @@ export default function App() {
           advisor={{ open: advisorShown, onToggle: toggleAdvisor }}
           onFacts={setFacts}
         />
+        </ErrorBoundary>
       ) : (
         farmMode && (
+          <ErrorBoundary what="the farm plan" resetKey={farmIds.join(",")} level="panel">
           <FarmPanel
             ids={farmIds}
             areaById={areaById}
@@ -322,10 +326,12 @@ export default function App() {
             onClose={toggleFarmMode}
             advisor={{ open: advisorShown, onToggle: toggleAdvisor }}
           />
+          </ErrorBoundary>
         )
       )}
 
       {advisorShown && subject !== null && (
+        <ErrorBoundary what="the farm advisor" resetKey={subject.kind === "field" ? subject.id : "farm"} level="panel">
         <AdvisorPanel
           subject={subject}
           status={advisorStatus}
@@ -334,9 +340,11 @@ export default function App() {
           examples={exampleQuestions(subject, factsNow?.irrigated ?? null)}
           onClose={() => setAdvisorOpen(false)}
         />
+        </ErrorBoundary>
       )}
 
       {compareId !== null && (
+        <ErrorBoundary what="the comparison" resetKey={compareId} level="panel">
         <TwinView
           fieldId={compareId}
           res={twinRes}
@@ -345,6 +353,7 @@ export default function App() {
           onOpenField={select}
           height={twinHeight}
         />
+        </ErrorBoundary>
       )}
     </div>
   );

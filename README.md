@@ -1145,3 +1145,41 @@ switch and pumping what-if you have on screen.
   spends the owner's Gemini quota. Tests: `tests/test_advisor.py`, `web/tests/advisor.test.mjs`, browser checks
   in `e2e:phase4` (mocked for the fixed cases, one live question when a key is set). Notes:
   `data/logs/phase4/item_7.md`.
+
+### Performance and reliability (item 8)
+
+What was measured (`npm --prefix web run perf`, or `make perf`; the scripts are `web/e2e/perf.mjs`), what was fixed
+and what was not. Numbers are from this machine (headless Chromium, software drawing), on the real 7,255 fields.
+Full tables: `data/logs/phase4/perf_before.txt`, `perf_after.txt` (git-ignored; `make perf` writes a new one).
+
+| | before | after |
+| --- | --- | --- |
+| first `/field/{id}/plans` after the API starts | 532 ms | 8 ms (warm-up at startup) |
+| first `/neighbors`, first `/layers` | 57 ms, 48 ms | 4 ms, 8 ms |
+| any endpoint once warm, median / 95th percentile | under 5 ms / under 11 ms | same (it was already fast) |
+| `GET /fields` on the wire (gzip, decoded 6,775 kB) | 1,000 kB | 965 kB (level 9, compressed once) |
+| time to 7,255 fields drawn, cold / reload | 340 ms / 230-300 ms | same |
+| map frames (zoom, pan, every layer, time-lapse) | 16.7 ms median, a few 33 ms | same |
+
+- **Did not improve, honestly**: the map, the endpoints once warm, and time to first fields. They were already
+  smooth and fast, so nothing was changed there: no vector tiles, no zoom-dependent outlines, no new map library.
+  A full repaint after a zoom costs about 15-25 ms of drawing. The one unmeasured case is a phone or a slow
+  connection: the first answer is 1 MB gzipped.
+- **Warm-up** (`api/reliability.py`): after startup a background thread plans one field dry and irrigated and
+  builds the neighbors table and the four layers, so the first click is as fast as the hundredth. `API_WARMUP=0`
+  turns it off.
+- **Plain errors**: an unreadable query value (`horizon=abc`) now answers a sentence in `detail`
+  ("The horizon must be a whole number.", status 422), like every other error; schema.md lists them all.
+- **Error boundaries** (`web/src/components/ErrorBoundary.tsx`): if a panel cannot draw an answer shaped
+  differently from what it expects, that panel or section is replaced by one sentence and a "Try again" button;
+  the map and the rest of the panel keep working. Before, one such error blanked the whole page. The last
+  resort around the app offers "Reload".
+- **States**: `web/e2e/states.mjs` now also slows, fails and empties the neighbors, twin, map layers, farm plan
+  and water outlook, and checks that each says so in a sentence and nothing hangs or goes blank.
+- **Fresh clone**: `pytest` passes with no `data/` (two real-data tests now skip without a fields file).
+  `tests/test_reliability.py` asks every endpoint with no data files, with the fake fields only, and with bad
+  input, and requires a JSON sentence and never a 500.
+- **`make check`** runs pytest, the web tests, the type check and every browser suite (needs `make dev`
+  running) and prints one line each and PASS or FAIL; full logs in `data/logs/check_*.log`.
+- Limits: frame times are from software drawing in headless Chromium; a section that fails to draw is replaced
+  by a note, but the cause is only in the browser console. Notes: `data/logs/phase4/item_8.md`.

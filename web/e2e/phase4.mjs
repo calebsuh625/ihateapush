@@ -2467,6 +2467,7 @@ async function run(browser) {
   await runLayersScreen(browser, { get });
   await runWater(browser, { get, apiPrefix, shot });
   await runAdvisor(browser, { get, apiPrefix, shot });
+  await runReliability(browser, { apiPrefix, shot });
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -2863,6 +2864,60 @@ async function runAdvisor(browser, { get, apiPrefix, shot }) {
     }
     await context.close();
   }
+}
+
+/** Item 8: bad input answers a sentence, the whole county is drawn, and nothing the page asks for is slow. */
+async function runReliability(browser, { apiPrefix, shot }) {
+  const asked = async (pathAndQuery, init) => {
+    const began = Date.now();
+    const response = await fetch(`${apiPrefix}${pathAndQuery}`, init);
+    const body = await response.json().catch(() => null);
+    return { status: response.status, body, ms: Date.now() - began };
+  };
+  const bad = [
+    [`/field/${DRY}/plans?horizon=abc`, 422, "The horizon must be a whole number."],
+    [`/field/${DRY}/plans?soil=x`, 422, "The soil must be a number."],
+    [`/field/${DRY}/plans?irrigated=maybe`, 422, "The irrigated must be true or false."],
+    [`/field/${DRY}/plans?horizon=1900`, 400, null],
+    [`/field/${DRY}/plans?limit_in=-4`, 400, null],
+    [`/field/${DRY}/score`, 400, null],
+    [`/field/${DRY}/transition?plan=9`, 400, null],
+    ["/field/no-such-field", 404, "No field with id 'no-such-field'."],
+    ["/layers/nope", 404, null],
+  ];
+  for (const [path, status, sentence] of bad) {
+    const answer = await asked(path);
+    equal(answer.status, status, `${path}: status`);
+    check(typeof answer.body?.detail === "string" && answer.body.detail.length > 10, `${path}: detail must be one sentence, got ${JSON.stringify(answer.body?.detail)}`);
+    if (sentence) equal(answer.body.detail, sentence, `${path}: the sentence`);
+  }
+  const farm = await asked("/farm/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: "[1" });
+  check(farm.status === 400 && typeof farm.body?.detail === "string", "POST /farm/plan with a broken body: a 400 sentence");
+
+  // what the page draws is what the API has, and every answer the panels use arrives quickly
+  const fields = await (await fetch(`${apiPrefix}/fields`)).json();
+  const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  page.setDefaultTimeout(TIMEOUT);
+  const monitor = watch(page, "reliability");
+  await page.goto(`${WEB_URL}/`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('[data-testid="app"][data-fields-drawn]');
+  equal(Number(await page.getAttribute('[data-testid="app"]', "data-fields-drawn")), fields.features.length, "fields drawn on the map vs GET /fields");
+  const slow = [];
+  for (const path of [`/field/${DRY}`, `/field/${DRY}/plans`, `/field/${WET}/plans`, `/field/${DRY}/neighbors`, `/field/${DRY}/twin`, "/layers", "/layers/bare_days", "/groundwater", "/effects"]) {
+    const answer = await asked(path);
+    check(answer.status === 200 || answer.status === 503, `${path} answered ${answer.status}`);
+    if (answer.ms > 1500) slow.push(`${path} ${answer.ms} ms`);
+  }
+  check(slow.length === 0, `answers slower than 1.5 s on a warm server: ${slow.join(", ")}`);
+  await page.selectOption('[data-testid="layer-select"]', "bare_days");
+  await page.waitForSelector('[data-testid="layer-control"][data-state="ready"]');
+  await page.evaluate(() => window.__map.setView([38.0, -100.75], 12, { animate: false }));
+  await page.waitForTimeout(600);
+  const picture = await shot(page, "phase4-county-layer.png");
+  check(monitor.problems.length === 0, `console errors while the county is drawn with a layer on:\n  ${monitor.problems.join("\n  ")}`);
+  await context.close();
+  log(`  ✓ bad input answers a plain sentence (${bad.length + 1} cases), the page draws all ${fields.features.length} fields, warm answers come in under 1.5 s → ${picture}`);
 }
 
 let browser;

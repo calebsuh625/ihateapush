@@ -13,7 +13,7 @@ Branch `phase-4`, cut from `main` at `15aceb7`. Nothing is pushed. One commit pe
 | 5 | Map layers + time-lapse | done (checked, committed) |
 | 6 | Water reality check | done (checked, committed) |
 | 7 | Farm advisor (chat) | done (checked, committed) |
-| 8 | Performance + reliability | not started |
+| 8 | Performance + reliability | done (checked, committed) |
 
 ## Decisions made without you
 
@@ -170,9 +170,17 @@ which limit binds, and the rotation and start year chosen for each field with wh
 - Decisions: Gemini over REST (key from env or git-ignored .env); model `gemini-flash-latest` with fallbacks (gemini-3.5-flash, gemini-3-flash-preview) because the default was often busy; 60 s total limit; one self-correction round when numbers are unmatched.
 - Limits: the number check catches invented numbers, not wrong sentences; answers take 5 to 40 s, no streaming; every question uses your Gemini quota (the checker's live questions hit the quota, so the panel showed its plain "busy" error; a missing id was only covered by tests).
 
+### 8. Performance + reliability
+
+- The map and every endpoint were already fast when measured (frame median 16.7 ms, warm endpoints median under 5 ms, 95th percentile under 11 ms), so the map and endpoints were left alone. What changed: a startup warm-up (first /plans after a restart 532 ms to 8 ms), plain one-sentence errors for unreadable query values (status stays 422), error boundaries so one failing panel part no longer blanks the page, two real-data tests that now skip on a clone with no data/, and `make check`.
+- Try: `make check` (pytest, web tests, typecheck, all browser suites, one line each); `make perf` / `npm --prefix web run perf` for the numbers. Before/after: data/logs/phase4/perf_before.txt, perf_after.txt, README table. Notes: data/logs/phase4/item_8.md.
+- Decisions: no vector tiles, zoom-dependent geometry or library swap (numbers showed no need); `API_WARMUP=0` turns the warm-up off; `/fields` gzip level 9 (wire size 1,000 to 965 kB, small).
+- Checker: reran all suites and checked four real fields plus a missing id through the live API (plain 404 sentence).
+- Limits: the gzip gain is small; the first-run frame spikes in the early "before" numbers came from the test harness, not the map; the real-browser perf numbers are from headless Chromium, not a phone.
+
 ## What is left
 
-Item 8 in the table above.
+Nothing from the eight-item list.
 
 ## For you in the morning
 
@@ -224,3 +232,4 @@ Item 8 in the table above.
 - Item 6: `data/groundwater.parquet` and its cache are under data/ (git-ignored); another machine needs
   `make groundwater` (7 small requests) or the section says the levels are not built.
 - Item 7: the free Gemini quota runs out quickly (each `make e2e` and pytest run with a key makes one live call; set ADVISOR_LIVE_TESTS off if you want to save it). Decide whether to keep the model fallback chain. Never commit .env.
+- Item 8: unreadable query values answer 422 with a sentence (an older test asserts 422, so it was not changed to 400). Say if you want 400.

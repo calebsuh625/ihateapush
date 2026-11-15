@@ -1106,3 +1106,16 @@ Written only by `python -m api.planner.soil_effect` and the sanity script. Keys:
 (name, size and modification time of the source tables; the cache is ignored when they differ), `built`,
 `by_crop` (`practice -> crop -> bare days a year`), `by_prev` (`practice -> crop -> previous crop -> bare
 days`), `n_crop`, `n_prev`, `info`.
+
+## Errors, every endpoint (Phase 4, item 8)
+
+Every error answer is JSON with `detail` as one plain sentence (a string, never a list or an object), so a page
+can show it as it is. `400` bad input (a number out of range, an unknown crop, an empty body); `404` no such
+field or layer; `422` a query value that cannot be read at all (`horizon=abc`): `{"detail": "The horizon must
+be a whole number."}` (the name is the parameter's; "a number" and "true or false" for the other types); `503`
+a table the answer needs has not been built (the sentence names the `make` command or the missing step);
+`429`/`502`/`504` the advisor's outside service. A server fault is `500`; none is known, and
+`tests/test_reliability.py` asks every endpoint with the data files missing and with bad input to keep it so.
+`GET /fields` and `GET /layers...` answer `ETag` and honour `If-None-Match` (304); both are gzipped once.
+The API does first-use work in the background right after it starts (`API_WARMUP=0` turns that off); it
+changes no answer.

@@ -2,7 +2,7 @@ PY := .venv/bin/python
 API_PORT ?= 8010
 WEB_PORT ?= 5173
 
-.PHONY: help setup fake pipeline satellite soil-obs soil-health causal validate climate nass field-traits calibrate planner-sanity groundwater api web dev test e2e
+.PHONY: help setup fake pipeline satellite soil-obs soil-health causal validate climate nass field-traits calibrate planner-sanity groundwater api web dev test e2e check perf
 
 help:
 	@echo "make setup     create .venv, install Python + web dependencies"
@@ -23,6 +23,8 @@ help:
 	@echo "make api       start only the API"
 	@echo "make web       start only the web dev server"
 	@echo "make test      run the Python tests and the web unit tests"
+	@echo "make check     every check (pytest, web tests, typecheck, all browser suites) with one summary; needs 'make dev' running"
+	@echo "make perf      server timings and map frame times -> data/logs/phase4/perf_latest.txt; needs 'make dev' running"
 	@echo "make e2e       click real fields in a headless browser (needs 'make dev' running)"
 
 setup:
@@ -123,3 +125,12 @@ e2e:
 			echo "$$s: FAILED (see $$log)"; grep -E 'FAIL|Error' $$log | head -5; fail=1; \
 		fi; \
 	done; exit $$fail
+
+# Everything in one go with one summary (see scripts/check.sh). Needs `make dev` running for the browser suites.
+check:
+	@bash scripts/check.sh
+
+# Server timings and map frame times, not part of `make check`. Needs `make dev` running.
+perf:
+	@mkdir -p data/logs/phase4
+	WEB_URL=http://localhost:$(WEB_PORT) npm --prefix web run perf -- --out ../data/logs/phase4/perf_latest.txt

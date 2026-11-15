@@ -64,6 +64,7 @@ from api.advisor import router as advisor_router
 from api.causal import router as causal_router
 from api.groundwater import GroundwaterService, attach_outlook, router as groundwater_router, what_if_block
 from api.twin import router as twin_router
+from api import reliability
 from api.layers import LayerService, router as layers_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from api.planner import config as planner_config
@@ -594,7 +595,7 @@ def build_store(gdf, source: Path) -> FieldStore:
         records=records,
         bbox=bbox,
         fields_geojson=payload,
-        fields_geojson_gzip=gzip.compress(payload, compresslevel=6, mtime=0),
+        fields_geojson_gzip=gzip.compress(payload, compresslevel=9, mtime=0),
         fields_etag=f'W/"{hashlib.sha1(payload).hexdigest()[:20]}"',
     )
 
@@ -1038,6 +1039,7 @@ class ReadableStartupErrors:
             raise
 
 
+
 def create_app(planner: Planner = rank_plans) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -1096,6 +1098,7 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
             except Exception as exc:
                 log.warning("smart planner warm-up failed: %s: %s", type(exc).__name__, exc)
             log.info("Smart planner: %s", "ready" if app.state.climate_ready else "not available, using the basic planner")
+        reliability.start_warm_up(app)
         yield
 
     app = FastAPI(
@@ -1105,6 +1108,7 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.planner = planner
+    reliability.install_plain_errors(app)  # Phase 4: unreadable query values get a sentence, not a list
     app.state.default_planner = planner is rank_plans
     app.include_router(router)
     app.include_router(causal_router)  # Phase 2B: /effects, /field/{id}/neighbors

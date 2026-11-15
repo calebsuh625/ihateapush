@@ -1177,3 +1177,12 @@ button {
   stroke-dasharray: 6 4;
   stroke-linejoin: round;
 }
+
+/* A part of the page that failed to draw (components/ErrorBoundary.tsx). */
+.boundary-panel {
+  padding: 16px;
+}
+.boundary--page {
+  margin: 48px auto;
+  max-width: 32rem;
+}

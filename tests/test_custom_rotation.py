@@ -510,6 +510,8 @@ def test_real_tables_score_a_real_fields_rotation(monkeypatch):
 
 def test_real_tables_an_all_fallow_rotation_is_not_ranked(monkeypatch):
     """Carry-over from the check of item 1: fallow every year gets no rank and no "would come first"."""
+    if not (api_tests.main.REAL_PATH.exists() or api_tests.main.FAKE_PATH.exists()):  # a fresh clone has no data/
+        pytest.skip("no fields file (a fresh clone has no data/)")
     for var in list(api_tests.ENV_PATHS):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.delenv("PLANNER_ENGINE", raising=False)

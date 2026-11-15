@@ -3,12 +3,15 @@ import { createRoot } from "react-dom/client";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
 import App from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("index.html has no #root element");
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary what="the app" level="page">
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

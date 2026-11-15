@@ -646,6 +646,8 @@ REAL_FARM = ["KS-013847", "KS-013970", "KS-013989", "KS-013990", "KS-014041", "K
 
 
 def test_real_tables_plan_a_mixed_farm_of_real_neighbours(monkeypatch):
+    if not (api_tests.main.REAL_PATH.exists() or api_tests.main.FAKE_PATH.exists()):  # a fresh clone has no data/
+        pytest.skip("no fields file (a fresh clone has no data/)")
     for var in list(api_tests.ENV_PATHS):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.delenv("PLANNER_ENGINE", raising=False)

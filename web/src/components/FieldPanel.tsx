@@ -15,6 +15,7 @@ import type { PlannerChoices } from "../lib/planner";
 import { organicMatterClass, slopeClass } from "../thresholds";
 import type { FieldDetail, FieldSatellite, FieldSoil, Plan, Streak } from "../types";
 import { AdvisorButton } from "./AdvisorButton";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { Neighbors } from "./Neighbors";
 import { OwnRotation } from "./OwnRotation";
 import { PlanCard } from "./PlanCard";
@@ -162,21 +163,29 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
         )}
         {!unknownField && waterOutlook && (
           <Section title="Water outlook" id="section-water" meta="Measured wells near this field">
-            <WaterOutlookBlock outlook={waterOutlook} limitIn={plannerChoices.limitIn ?? null} onLimitIn={setLimitIn} />
+            <ErrorBoundary what="the water outlook" resetKey={fieldId}>
+              <WaterOutlookBlock outlook={waterOutlook} limitIn={plannerChoices.limitIn ?? null} onLimitIn={setLimitIn} />
+            </ErrorBoundary>
           </Section>
         )}
         {!unknownField && smartPlans && (
-          <OwnRotation
-            key={fieldId}
-            fieldId={fieldId}
-            plansQuery={plannerQuery}
-            slots={ownSlots}
-            onSlots={(slots) => setOwn({ fieldId, slots })}
-            currentCycle={slotsFrom(smartPlans.current?.cycle ?? smartPlans.current?.rotation)}
-            jump={ownJump}
-          />
+          <ErrorBoundary what="your own rotation" resetKey={fieldId}>
+            <OwnRotation
+              key={fieldId}
+              fieldId={fieldId}
+              plansQuery={plannerQuery}
+              slots={ownSlots}
+              onSlots={(slots) => setOwn({ fieldId, slots })}
+              currentCycle={slotsFrom(smartPlans.current?.cycle ?? smartPlans.current?.rotation)}
+              jump={ownJump}
+            />
+          </ErrorBoundary>
         )}
-        {!unknownField && <Neighbors fieldId={fieldId} twin={twin} />}
+        {!unknownField && (
+          <ErrorBoundary what="the neighbors" resetKey={fieldId}>
+            <Neighbors fieldId={fieldId} twin={twin} />
+          </ErrorBoundary>
+        )}
       </div>
     </aside>
   );
