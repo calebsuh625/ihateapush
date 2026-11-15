@@ -655,8 +655,10 @@ Read the numbers as a comparison between plans, not a forecast.
   -0.9), so it cannot say how much of a bad year was heat and how much was water. The split leans on
   textbook values, and hot days rise in every model while rain does not.
 - **Dryland wheat's heat loss is an assumption.** Fitted freely it came out near zero (0.04 % a day); the
-  planner keeps the textbook 1 % a day as the cautious choice. The first dryland plan in 2060 can depend on
-  it, and has not been rerun with the fitted value since the fixes.
+  planner keeps the textbook 1 % a day as the cautious choice. The dryland answer in 2060 depends on it.
+  Rerun with the fitted value on a typical dryland field (default priorities): wheat-fallow takes first
+  place from wheat-sorghum-fallow in 2060 under both scenarios, and under `ssp585` it returns $16 an acre
+  and holds up in 6 of 6 futures, against -$3 and 2 of 6 for wheat-sorghum-fallow with the textbook value.
 - **Hot days beyond the record are capped.** Several model years have more than 85 hot days (one model
   averages 101 in 2050-2060 under `ssp585`). The cap removes a guess; it adds no knowledge of such years.
 - **Models disagree on rain.** The range crosses zero in every window; they agree on warming and on more
