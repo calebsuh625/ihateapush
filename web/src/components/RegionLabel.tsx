@@ -35,7 +35,7 @@ export function RegionLabel() {
   const notes = info.borrowed.map((b) => b.note).join("\n");
   return (
     <span data-testid="region-label" title={`Borrowed from Finney County until this county has its own:\n${notes}`}>
-      {info.label} <span className="region-borrowed" style={{ opacity: 0.75 }}>· some inputs from Finney County</span>
+      {info.label} <span className="region-borrowed" style={{ opacity: 0.75 }}>· partly Finney data</span>
     </span>
   );
 }

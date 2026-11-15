@@ -272,7 +272,7 @@ What each new county gets, and what it borrows:
 | Rotation effects on bare soil (Phase 2B) | Finney's, labelled | Needs the county's own satellite bare-soil views (`make soil-obs`, Earth Engine) before `make causal` |
 
 Borrowed inputs are never passed off as local: `GET /region` lists them and the header badge says
-"some inputs from Finney County". Do not run `make causal` in a county without its own
+"partly Finney data". Do not run `make causal` in a county without its own
 `soil_health.parquet`: it would fall back to the fake soil table. Field ids keep the `KS-000123` form and
 are unique within a county, not across counties; one API process serves one county.
 
