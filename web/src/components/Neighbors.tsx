@@ -31,7 +31,7 @@ export function Neighbors({ fieldId }: { fieldId: string }) {
         <p className="section-meta">
           {isFake ? (
             <span className="badge badge--demo" title="The soil scores are made up until the satellite soil data is in">
-              Demo soil data
+              Fake soil data · not findings
             </span>
           ) : (
             "Look-alike fields nearby, farmed differently since 2016"
@@ -221,7 +221,7 @@ function Takeaway({ n, outcome, isFake }: { n: Neighbor; outcome: Outcome; isFak
             {formatSigned(e.effect)} (95% CI {formatSigned(e.ci_low)} to {formatSigned(e.ci_high)})
           </span>
           {e.ci_excludes_zero ? "" : " — not distinguishable from zero"}
-          {isFake ? " · demo data, not a finding" : ""}
+          {isFake ? " · fake soil data, not a finding" : ""}
         </p>
       )}
     </div>
