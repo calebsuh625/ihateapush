@@ -24,6 +24,7 @@ import { plansQuery } from "../lib/planner";
 import type { PlannerChoices } from "../lib/planner";
 import type { FarmBand, FarmField, FarmLimit, FarmPlan, FarmYear } from "../types";
 import { ErrorNote } from "./FieldPanel";
+import { inchesWords } from "../lib/water";
 import { PlannerControls } from "./PlannerControls";
 import "./Farm.css";
 
@@ -150,6 +151,14 @@ export function FarmPanel({ ids, areaById, choices, onChoices, water, minimum, o
         {ids.length > 0 && (
           <FarmSection title="What the plan should do" id={`${id}-inputs`}>
             <PlannerControls choices={choices} onChange={onChoices} climate={climateAnswer?.climate} horizon={climateAnswer?.settings?.horizon} />
+            {typeof choices.limitIn === "number" && (
+              <p className="farm-small" data-testid="farm-whatif">
+                What-if set on a field: no field may pump more than {inchesWords(choices.limitIn)} on an acre in a year.{" "}
+                <button type="button" className="link-button" data-testid="farm-whatif-reset" onClick={() => onChoices({ ...choices, limitIn: null })}>
+                  Remove
+                </button>
+              </p>
+            )}
             <div className="farm-limits" data-testid="farm-limits">
               <LimitInput
                 id={`${id}-water`}

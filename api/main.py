@@ -15,6 +15,9 @@ Endpoints (the frontend is written against exactly these shapes):
                                    (?plan=1|2|3) or to a rotation (?target=corn,soy), against carrying on as
                                    now (smart planner only; 503 without it)
     GET /climate                   the climate futures the smart planner uses (or {"available": false})
+    GET /groundwater               measured groundwater levels, the county picture (api/groundwater.py); the plans
+                                   of an irrigated field carry the wells near it as `water_outlook`, and /plans,
+                                   /score, /transition and /farm/plan take `limit_in`, a lower pumping limit to try
     GET /field/{field_id}/satellite  yearly Landsat greenness for that field (optional side file)
     GET /field/{field_id}/soil     yearly satellite organic matter and bare-soil days (optional side file)
     GET /layers, /layers/{name}    county-wide per-field values the map can colour by (api/layers.py)
@@ -58,13 +61,14 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from api.causal import router as causal_router
+from api.groundwater import GroundwaterService, attach_outlook, router as groundwater_router, what_if_block
 from api.twin import router as twin_router
 from api.layers import LayerService, router as layers_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from api.planner import config as planner_config
 from api.planner import custom, farm, smart, transition
 from api.planner.traits import FieldTraits
-from pipeline import satellite_schema
+from pipeline import groundwater_schema, satellite_schema
 from pipeline.soil import health_schema
 from pipeline.schema import FAKE_PATH, REAL_PATH, ROOT, SchemaError, load_fields, parse_crop_history
 
@@ -79,6 +83,7 @@ MAP_COORD_DECIMALS = 5  # 0.00001° is about 1 m
 DEFAULT_SATELLITE_PATH = satellite_schema.SATELLITE_PATH
 DEFAULT_SOIL_HEALTH_PATH = health_schema.SOIL_HEALTH_PATH
 DEFAULT_SOIL_HEALTH_META_PATH = health_schema.SOIL_HEALTH_META_PATH
+DEFAULT_GROUNDWATER_PATH = groundwater_schema.GROUNDWATER_PATH
 
 
 class StartupError(RuntimeError):
@@ -709,7 +714,11 @@ async def plans(
     scenario: str = planner_config.DEFAULT_SCENARIO,
     horizon: int = planner_config.TODAY,
     irrigated: bool | None = None,
+    limit_in: float | None = None,
 ) -> JSONResponse:
+    """`limit_in` (Phase 4, item 6): a what-if, the most inches that can be pumped on an acre in a year,
+    from 1 up to the planner's own limit; the plans are scored again under it. An irrigated field's answer
+    also carries `water_outlook` (the measured wells near it, and one line per plan)."""
     record = _record(request, field_id)
     if _use_smart(request):
         given = {"soil": soil, "water": water, "money": money, "risk": risk}
@@ -724,11 +733,14 @@ async def plans(
             # The fake fields reuse ids that real fields have, so they must never pick up a real field's
             # row of field_traits.parquet: empty traits = guess irrigation from the fake history alone.
             traits = FieldTraits() if _store(request).is_fake else None
+            engine = _engine_for(limit_in)
             result = smart.rank_plans_smart(
                 record.planner_input(), weights=weights, scenario=scenario, horizon=horizon, irrigated=irrigated,
-                traits=traits,
+                traits=traits, engine=engine,
             )
-            return JSONResponse(result.to_dict())
+            return JSONResponse(_with_water_outlook(request, record, result.to_dict(), engine))
+        except HTTPException:
+            raise
         except ValueError as exc:
             raise _bad_request(str(exc).split("\n")[0]) from exc
         except Exception as exc:
@@ -739,6 +751,42 @@ async def plans(
     return JSONResponse(
         {"field_id": record.field_id, "engine": "basic", "plans": [plan_to_json(plan) for plan in ranked]}
     )
+
+
+def _engine_for(limit_in: float | None):
+    """The planner's tables, or those for the lower pumping limit asked for; a plain 400 for a bad limit."""
+    try:
+        return smart.engine_for_limit(limit_in)
+    except ValueError as exc:
+        raise _bad_request(str(exc)) from exc
+
+
+def _centre(record: FieldRecord) -> tuple[float, float] | None:
+    """(lon, lat) of the middle of the field's outline, or None for an outline we cannot read."""
+    try:
+        point = shapely.centroid(shapely.polygons(record.geometry["coordinates"][0]))
+        return float(shapely.get_x(point)), float(shapely.get_y(point))
+    except Exception:
+        return None
+
+
+def _with_water_outlook(request: Request, record: FieldRecord, body: dict, engine) -> dict:
+    """Phase 4, item 6: an irrigated field's plans gain `water_outlook` (the measured wells near the field
+    the pumping limit the plans were scored under, and one line per plan). Dryland answers are
+    left as they are. A failure here never costs the plans: it is logged and the answer goes out without."""
+    try:
+        if not (body.get("settings") or {}).get("irrigated"):
+            return body
+        centre = _centre(record)
+        service: GroundwaterService = request.app.state.groundwater
+        outlook = (service.outlook(centre[0], centre[1], body["settings"].get("horizon")) if centre is not None
+                   else {"available": False, "reason": "no_wells_nearby"})
+        return attach_outlook(body, outlook, what_if_block(engine, smart.get_engine()))
+    except Exception as exc:
+        log.warning("water outlook failed for %s, answering without it: %s: %s", record.field_id,
+                    type(exc).__name__, exc)
+        body.pop("water_outlook", None)
+        return body
 
 
 TRANSITION_NEEDS_CLIMATE = (
@@ -761,10 +809,11 @@ async def score(
     scenario: str = planner_config.DEFAULT_SCENARIO,
     horizon: int = planner_config.TODAY,
     irrigated: bool | None = None,
+    limit_in: float | None = None,
 ) -> JSONResponse:
     """Phase 4, item 1 (api/planner/custom.py). Same settings as /plans plus `rotation`: 2 to 6 crops,
     one a year, as typed ("corn, milo, wheat, fallow"). 400 with one plain sentence for a rotation we
-    cannot score, 503 when only the basic planner is available."""
+    cannot score, 503 when only the basic planner is available. `limit_in`: as /plans."""
     record = _record(request, field_id)
     if not _use_smart(request):
         raise HTTPException(status_code=503, detail=SCORE_NEEDS_CLIMATE)
@@ -777,10 +826,12 @@ async def score(
         raise _bad_request("The scenario must be ssp245 (middle road) or ssp585 (high emissions).")
     if not planner_config.HORIZON_MIN <= horizon <= planner_config.HORIZON_MAX:
         raise _bad_request(f"The year must be between {planner_config.HORIZON_MIN} and {planner_config.HORIZON_MAX}.")
+    engine = _engine_for(limit_in)
     try:
         traits = FieldTraits() if _store(request).is_fake else None      # as in /plans: fake ids are not real fields
         body = custom.score_rotation(record.planner_input(), cycle, weights=weights, scenario=scenario,
-                                     horizon=horizon, irrigated=irrigated, traits=traits)
+                                     horizon=horizon, irrigated=irrigated, traits=traits,
+                                     engine=engine)
     except ValueError as exc:
         raise _bad_request(str(exc).split("\n")[0]) from exc
     except Exception as exc:
@@ -803,8 +854,9 @@ async def transition_path(
     scenario: str = planner_config.DEFAULT_SCENARIO,
     horizon: int = planner_config.TODAY,
     irrigated: bool | None = None,
+    limit_in: float | None = None,
 ) -> JSONResponse:
-    """Phase 4, item 2 (api/planner/transition.py). `target`: the rotation to get to, 2 to 6 crops as typed;
+    """Phase 4, item 2 (api/planner/transition.py). `limit_in`: as /plans. `target`: the rotation to get to, 2 to 6 crops as typed;
     or `plan`: 1, 2 or 3, that pick of /plans for the same settings (the default). `years`: 4 to 12. The
     other parameters are those of /plans. 400 with one plain sentence, 503 on the basic planner."""
     record = _record(request, field_id)
@@ -823,11 +875,12 @@ async def transition_path(
         raise _bad_request("The scenario must be ssp245 (middle road) or ssp585 (high emissions).")
     if not planner_config.HORIZON_MIN <= horizon <= planner_config.HORIZON_MAX:
         raise _bad_request(f"The year must be between {planner_config.HORIZON_MIN} and {planner_config.HORIZON_MAX}.")
+    engine = _engine_for(limit_in)
     try:
         traits = FieldTraits() if _store(request).is_fake else None      # as in /plans: fake ids are not real fields
         body = transition.transition_path(record.planner_input(), target=cycle, plan=plan, years=years,
                                           weights=weights, scenario=scenario, horizon=horizon, irrigated=irrigated,
-                                          traits=traits)
+                                          traits=traits, engine=engine)
     except ValueError as exc:
         raise _bad_request(str(exc).split("\n")[0]) from exc
     except Exception as exc:
@@ -839,7 +892,8 @@ async def transition_path(
 FARM_NEEDS_CLIMATE = (
     "Planning a whole farm needs the future-weather tables, which are not set up on this server."
 )
-FARM_KEYS = ("field_ids", "weights", "scenario", "horizon", "water_budget_acre_in", "min_income", "irrigated")
+FARM_KEYS = ("field_ids", "weights", "scenario", "horizon", "water_budget_acre_in", "min_income", "irrigated",
+             "limit_in")
 
 
 def _farm_request(body: Any) -> dict:
@@ -890,8 +944,11 @@ def _farm_request(body: Any) -> dict:
     stray = sorted(str(key) for key in irrigated if key not in ids)
     if stray:
         raise _bad_request(f"The irrigation setting names field {stray[0]}, which is not one of the farm's fields.")
+    limit_in = body.get("limit_in")
+    if limit_in is not None and (isinstance(limit_in, bool) or not isinstance(limit_in, (int, float))):
+        raise _bad_request("The pumping limit must be a number of inches an acre a year.")
     return {"field_ids": ids, "weights": weights, "scenario": scenario, "horizon": horizon,
-            "water_budget_acre_in": budget, "min_income": minimum, "irrigated": irrigated}
+            "water_budget_acre_in": budget, "min_income": minimum, "irrigated": irrigated, "limit_in": limit_in}
 
 
 @router.post("/farm/plan", summary="Several fields planned together as one farm, under farm limits")
@@ -899,7 +956,8 @@ async def farm_plan(request: Request) -> JSONResponse:
     """Phase 4, item 3 (api/planner/farm.py). JSON body: `field_ids` (1 to 60), and optionally `weights`
     {soil, water, money, risk}, `scenario`, `horizon` (as /plans), `water_budget_acre_in` (the most the
     farm may pump in any year), `min_income` (the least it must return over direct costs in every year),
-    `irrigated` {field_id: true/false}. 400 with one plain sentence, 404 for an unknown field, 503 when
+    `irrigated` {field_id: true/false}, `limit_in` (as /plans: a lower per-acre pumping limit to try, inside
+    every field's plans). 400 with one plain sentence, 404 for an unknown field, 503 when
     only the basic planner is available. The solve runs in a worker thread (up to about 10 seconds)."""
     try:
         body = await request.json()
@@ -910,11 +968,12 @@ async def farm_plan(request: Request) -> JSONResponse:
     if not _use_smart(request):
         raise HTTPException(status_code=503, detail=FARM_NEEDS_CLIMATE)
     traits = FieldTraits() if _store(request).is_fake else None          # as in /plans: fake ids are not real fields
+    engine = _engine_for(asked["limit_in"])
     try:
         result = await run_in_threadpool(
             farm.plan_farm_cached, [record.planner_input() for record in records], weights=asked["weights"],
             scenario=asked["scenario"], horizon=asked["horizon"], water_budget_acre_in=asked["water_budget_acre_in"],
-            min_income=asked["min_income"], irrigated=asked["irrigated"], traits=traits)
+            min_income=asked["min_income"], irrigated=asked["irrigated"], traits=traits, engine=engine)
     except ValueError as exc:
         raise _bad_request(str(exc).split("\n")[0]) from exc
     except Exception as exc:
@@ -1005,6 +1064,10 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
             f"{len(store.fields_geojson) / 1000:,.1f}",
             f"{len(store.fields_geojson_gzip) / 1000:,.1f}",
         )
+        # Phase 4 groundwater levels (api/groundwater.py): read on first use; only next to the real fields.
+        app.state.groundwater = GroundwaterService(
+            resolve_satellite_path(os.environ.get("GROUNDWATER_PATH"), store.source, REAL_PATH, DEFAULT_GROUNDWATER_PATH)
+        )
         # Phase 4 map layers (api/layers.py): built on first use, nothing is read here. The traits table is
         # never paired with the fake fields (they reuse real ids), exactly as in /plans.
         layer_paths = planner_config.settings()
@@ -1046,6 +1109,7 @@ def create_app(planner: Planner = rank_plans) -> FastAPI:
     app.include_router(causal_router)  # Phase 2B: /effects, /field/{id}/neighbors
     app.include_router(twin_router)  # Phase 4: /field/{id}/twin
     app.include_router(layers_router)  # Phase 4: /layers, /layers/{name}
+    app.include_router(groundwater_router)  # Phase 4: /groundwater
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
     # Local dev: the Vite page on :5173 calls this API on another port. No cookies, so "*" is fine.
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])

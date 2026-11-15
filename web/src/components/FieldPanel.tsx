@@ -10,6 +10,7 @@ import { formatOneDecimal, formatPercent, hectaresToAcres, plural } from "../lib
 import { emptySlots, slotsFrom } from "../lib/custom";
 import type { Slot } from "../lib/custom";
 import { plansQuery, spreadDomain } from "../lib/planner";
+import { resetWords, whatIfLine } from "../lib/water";
 import type { PlannerChoices } from "../lib/planner";
 import { organicMatterClass, slopeClass } from "../thresholds";
 import type { FieldDetail, FieldSatellite, FieldSoil, Plan, Streak } from "../types";
@@ -21,6 +22,7 @@ import { PlannerControls } from "./PlannerControls";
 import { SatelliteChart } from "./Satellite";
 import { SoilTimelineChart } from "./SoilTimeline";
 import { Timeline } from "./Timeline";
+import { WaterOutlookBlock } from "./WaterOutlook";
 
 const EN_DASH = "–";
 /** Height of the loaded satellite block at the 424 px panel (chart, summary, note). */
@@ -66,6 +68,9 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
   };
   // Only the future-weather planner can score a rotation of the farmer's own.
   const smartPlans = plans.status === "ready" && plans.data.engine === "smart" && plans.data.settings !== undefined ? plans.data : null;
+  // The water reality check belongs to irrigated fields: the answer carries it only for them.
+  const waterOutlook = smartPlans?.settings?.irrigated ? smartPlans.water_outlook : undefined;
+  const setLimitIn = (limitIn: number | null) => onPlannerChoices({ ...plannerChoices, limitIn });
   // A third, optional one: the satellite numbers. Its failure stays inside its own section.
   const [satellite, retrySatellite] = useResource(fieldId, api.satellite);
   // And a fourth: the yearly soil condition table. Same rule: its failure stays in its own section.
@@ -135,6 +140,11 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
             fieldId={fieldId}
             plannerQuery={plannerQuery}
           />
+        )}
+        {!unknownField && waterOutlook && (
+          <Section title="Water outlook" id="section-water" meta="Measured wells near this field">
+            <WaterOutlookBlock outlook={waterOutlook} limitIn={plannerChoices.limitIn ?? null} onLimitIn={setLimitIn} />
+          </Section>
         )}
         {!unknownField && smartPlans && (
           <OwnRotation
@@ -440,6 +450,9 @@ function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrig
   const settings = smart ? data.settings : undefined;
   const climate = smart ? data.climate : undefined;
   const profitDomain = data && smart ? spreadDomain(data.plans.map((plan) => plan.spread?.profit_per_acre)) : undefined;
+  // Irrigated fields only: the pumping what-if the cards were scored under, and each card's water line.
+  const water = settings?.irrigated ? data?.water_outlook : undefined;
+  const whatIf = whatIfLine(water?.what_if);
   return (
     <Section title="Rotation plans" id="section-plans" meta="Next 4 years · scores 0–1, higher is better">
       {plans.status === "error" && (
@@ -485,6 +498,14 @@ function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrig
             data-updating={planner.updating ? "true" : "false"}
             data-query={planner.shownQuery ?? undefined}
           >
+            {water && whatIf && (
+              <p className="plans-whatif" data-testid="plans-whatif">
+                <span>{whatIf}</span>
+                <button type="button" className="link-button" data-testid="plans-whatif-reset" onClick={() => onChoices({ ...choices, limitIn: null })}>
+                  {resetWords(water.what_if)}
+                </button>
+              </p>
+            )}
             {data.plans.length === 0 ? (
               <p className="muted">No rotation plans are available for this field.</p>
             ) : (
@@ -500,6 +521,7 @@ function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrig
                     irrigationLimitIn={settings?.irrigation_limit_in}
                     onEdit={smart ? () => onEditPlan(plan) : undefined}
                     howTo={smart ? { fieldId, plansQuery: plannerQuery } : undefined}
+                    waterLine={water?.plan_lines[index]}
                   />
                 ))}
               </ol>

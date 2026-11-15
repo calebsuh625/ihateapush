@@ -299,6 +299,34 @@ Per-field traits for the planner. Validator: `pipeline/field_traits_schema.py`. 
 The irrigation value is a guess from outline shape, crops grown and (when OpenET ran) water use. It is
 not a record of water rights or wells.
 
+## `data/groundwater.parquet` (Phase 4: water reality check)
+
+Measured depth to water in wells in and next to the county (its bounding box widened by 0.15 degrees, about
+10 miles). Validator: `pipeline/groundwater_schema.py`. Built by `python -m pipeline.groundwater`
+(`make groundwater`) from the USGS Water Data API (to 2015, where its record for this area stops) and the
+Kansas Geological Survey's WIZARD database (the same wells, to this winter). Optional: without it the app
+shows no water outlook. Plain Parquet, one row per well and day (33,958 rows, 1,941 wells, 1911-2026).
+
+| column          | type   | null? | meaning |
+|-----------------|--------|-------|---------|
+| `well_id`       | string | no    | The USGS monitoring-location id (`USGS-375018100171901`); `KGS-<number>` for a well only the KGS lists |
+| `date`          | date   | no    | Day of the measurement; the 15th when only the month is on record |
+| `date_exact`    | bool   | no    | True when the record gives the day |
+| `depth_ft`      | float  | no    | Depth to water below the land surface, feet (0 to 2,000) |
+| `status`        | string | yes   | What the record says about the well at the time (`Static`, `Pumping`, `Recently pumped`, ...) |
+| `well_depth_ft` | float  | yes   | Depth of the finished well, feet (the KGS figure when both sources have one; the hole depth when only that is known) |
+| `lon`, `lat`    | float  | no    | Where the well is, degrees |
+| `aquifer`       | string | yes   | USGS national aquifer code (`N100HGHPLN` = High Plains), or `KGS:<geological unit or aquifer code>` |
+| `county_fips`   | string | yes   | Five-digit county code (`20055` = Finney) |
+| `source`        | string | no    | `usgs` or `kgs`: whose database the reading came from |
+
+A well and day appears once (two readings on one day are averaged; a reading both sources hold is kept from
+the USGS). The trend rules are not in the file: `pipeline/groundwater.py` applies them (winter level = median
+of the December-March readings not marked as disturbed; a well counts with 10 or more winters since 1996
+spanning 10 or more years, the last within 5 winters of the newest; Theil-Sen slope with a 95% interval;
+wells whose record names a bedrock aquifer are left out). Downloads are cached in `data/raw/nwis/` and
+`data/raw/kgs/`.
+
 ## Tracked planner files (`api/planner/`)
 
 Both are in git so a fresh clone works. Never edit `crop_response.json` by hand.
@@ -360,6 +388,91 @@ plan in either answer keeps `name`, `rotation`, `scores.soil/water/money/overall
 Errors: `400 {"detail": "<one plain sentence>"}` for a negative or non-finite priority, all four zero,
 unknown scenario or a horizon outside 2025-2060 (smart planner only); `404` no such field; `422` a value
 that is not a number.
+
+### `limit_in` and `water_outlook` (Phase 4: water reality check)
+
+`limit_in` (optional number, smart planner only): a what-if, the most inches that can be pumped on an acre
+in a year, from 1 up to the planner's own limit (24). The plans are scored again under it and
+`settings.irrigation_limit_in/mm` and `settings.limits` echo it; nothing else about the request changes and
+the default answer is untouched. Outside the range: `400 "The pumping limit must be between 1 and 24 inches
+an acre a year."`. `GET /field/{id}/score`, `GET /field/{id}/transition` and `POST /farm/plan` (body key
+`limit_in`) take the same parameter. Dryland numbers do not change with it.
+
+When `settings.irrigated` is true the smart answer has one more key, `water_outlook` (dryland answers and
+the basic answer do not have it; the plans themselves are unchanged):
+
+```
+"water_outlook": {
+  "available": true,
+  "source": "Depth to water measured in wells: USGS Water Data API ... and the Kansas Geological Survey WIZARD ...",
+  "rule": "A well counts when it has at least 10 winter measurements ...",
+  "search": {"nearest": 5, "max_miles": 10.0, "min_wells": 3},
+  "wells_used": 5,
+  "distance_mi": {"nearest": 1.9, "farthest": 5.7},
+  "winters": [1996, 2026],
+  "decline_ft_per_year": {"median": 3.6, "low": 2.3, "high": 5.4},
+  "falling": 5, "rising": 0,
+  "depth_to_water_ft": {"median": 303, "low": 264, "high": 338},
+  "column": {"wells": 5, "now_ft": {"median": 187, "low": 136, "high": 214},
+             "years": [{"year": 2040, "at_bottom": 0, "left_ft": {"median": 138, "low": 70, "high": 146}},
+                       {"year": 2060, "at_bottom": 1, "left_ft": {"median": 67, "low": 0, "high": 100}}]},
+  "sentence": "The 5 nearest wells with a long record (1.9 to 5.7 miles from this field) have been dropping about 3.6 feet a year in the middle well, winters 1996 to 2026; the slowest about 2.3 and the fastest about 5.4.",
+  "extrapolation": "The 5 wells with a depth on record hold about 187 feet of water today in the middle well (136 to 214 across the wells). If each well's measured rate simply continued, that would be about 138 feet in 2040 (70 to 146) and about 67 feet in 2060 (0 to 100).",
+  "caveat": "This is the measured rate carried forward in a straight line, not a forecast: ...",
+  "column_note": "Water column is the well's depth minus the depth to water ...",
+  "threshold": null,
+  "threshold_note": "No minimum usable water column is drawn. ...",
+  "wells": [{"well_id": "USGS-374747100552101", "lon": -100.92294, "lat": 37.79641, "distance_mi": 1.9,
+             "winters": 29, "first_winter": 1996, "last_winter": 2024,
+             "decline_ft_per_year": 5.4, "interval": [5.2, 5.7],
+             "depth_to_water_ft": 284, "well_depth_ft": 498, "column_ft": 214,
+             "points": [[1996, 142.3], ...], "fit": [[1996, 139.4], [2024, 291.5]]}, ...],
+  "what_if": {"limit_in": 24.0, "default_in": 24.0, "active": false, "min_in": 1.0, "max_in": 24.0, "note": "..."},
+  "plan_lines": ["This plan pumps about 21 inches a year; wells near this field have been dropping about 3.6 feet a year.", ...],
+  "current_line": "This plan pumps about 19 inches a year; wells near this field have been ..."
+}
+```
+
+- Wells: the 5 nearest that meet the trend rule, no farther than 10 miles from the middle of the field; nearest
+  first. Fewer than 3 within 10 miles, or no groundwater table: `{"available": false, "reason":
+  "no_wells_nearby" | "not_built", "what_if", "plan_lines": [null, ...], "current_line": null}` (plus `note`
+  for `no_wells_nearby`).
+- `decline_ft_per_year`: change in winter depth to water per year, above zero = falling; `median`, `low` and
+  `high` are the middle, slowest and fastest of the wells used (0.1 ft). A well's own `interval` is its 95%
+  interval. `falling` / `rising`: wells whose whole interval is above / below zero.
+- `column`: null when no well used has a depth on record. `left_ft` for a year is each well's column minus its
+  own rate times the years since its last winter, never below 0 or above the well's depth, then the middle,
+  lowest and highest; `at_bottom` counts the wells whose straight line has reached the bottom of the well.
+  `years` holds 2040 and 2060, and the chosen `horizon` when it is a later year than the newest winter. It is
+  an extrapolation, not a forecast (`caveat`), and there is no threshold (`threshold` is always null).
+- `points`: the well's winter levels since 1996, `[winter, feet]`; `fit`: the two ends of its trend line.
+- `what_if`: the limit the plans were scored under (`limit_in`), the planner's own (`default_in`), whether a
+  what-if is on (`active`) and the range `limit_in` takes. `plan_lines` follow the order of `plans`.
+
+## `GET /groundwater` (Phase 4: water reality check)
+
+The county picture from `data/groundwater.parquet`. `{"available": false, "reason": "not_built", "source"}`
+without the file. Otherwise:
+
+```
+{"available": true, "source", "county": "Finney County, Kansas",
+ "table": {"measurements": 33958, "wells": 1941, "first_year": 1911, "last_year": 2026, "from_usgs": 27109, "from_kgs": 6849},
+ "rule": {"text", "winter_months": [12, 1, 2, 3], "trend_from": 1996, "min_winters": 10, "min_span_years": 10, "max_stale_winters": 5},
+ "summary": {"wells": 64, "winters": [1996, 2026],
+             "decline_ft_per_year": {"median": 2.6, "p25": 0.8, "p75": 3.6, "min": -0.1, "max": 5.4},
+             "falling": 63, "rising": 1,
+             "depth_to_water_ft": {"median": 165, "p25", "p75", "min", "max"},
+             "column": {"wells": 59, "now_ft": {"median": 110, ...},
+                        "years": [{"year": 2040, "left_ft": {"median": 77, ...}, "at_bottom": 5}, {"year": 2060, ...}]}},
+ "nearby_summary": {...the same for all 154 wells of the table that meet the rule: the county's and those next to it...},
+ "sentence", "extrapolation", "caveat", "threshold": null, "threshold_note", "limits": [...],
+ "wells": [{"well_id", "lon", "lat", "winters", "first_winter", "last_winter", "decline_ft_per_year", "interval",
+            "depth_to_water_ft", "well_depth_ft", "column_ft", "in_county"}, ...]}
+```
+
+`summary` is the wells whose `county_fips` is the county's; its bands are the median, the middle half
+(`p25`, `p75`) and the full range across wells. Rates to 0.1 ft a year, depths and columns to whole feet.
+`summary` is null (and `available` false, `reason: "no_wells"`) when no county well meets the rule.
 
 ## `GET /field/{id}/score` (Phase 4: build-your-own rotation)
 

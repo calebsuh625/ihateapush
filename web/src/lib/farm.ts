@@ -141,6 +141,8 @@ export interface FarmChoices {
   weights: Record<"soil" | "water" | "money" | "risk", number>;
   horizon: number;
   scenario: string;
+  /** the pumping what-if set on a field ("What if I can only pump N inches a year?"); null = not set */
+  limitIn?: number | null;
 }
 
 export interface FarmRequest {
@@ -150,6 +152,8 @@ export interface FarmRequest {
   horizon: number;
   water_budget_acre_in: number | null;
   min_income: number | null;
+  /** only while the pumping what-if is on: the most inches a field may pump on an acre in a year */
+  limit_in?: number;
 }
 
 /**
@@ -162,7 +166,7 @@ export function farmRequest(ids: readonly string[], choices: FarmChoices, waterT
   const water = parseAmount(waterText);
   const minimum = parseAmount(minimumText, true);
   if (!water.ok || !minimum.ok) return null;
-  return {
+  const request: FarmRequest = {
     field_ids: [...ids],
     weights: {
       soil: choices.weights.soil,
@@ -175,6 +179,8 @@ export function farmRequest(ids: readonly string[], choices: FarmChoices, waterT
     water_budget_acre_in: water.value,
     min_income: minimum.value,
   };
+  if (typeof choices.limitIn === "number" && Number.isFinite(choices.limitIn)) request.limit_in = choices.limitIn;
+  return request;
 }
 
 // ---------------------------------------------------------------------------------------------

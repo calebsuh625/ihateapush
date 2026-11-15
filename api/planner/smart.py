@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import math
 import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field as dataclass_field
 from functools import lru_cache
 from pathlib import Path
@@ -93,6 +94,11 @@ YIELD_CHANGE_NOTE = (
     "They do not include new varieties or any other adaptation."
 )
 MM_PER_INCH = money.MM_PER_INCH
+# "What if I can only pump N inches a year?" (Phase 4, item 6): an engine is built for one irrigation limit,
+# so each limit asked for gets its own engine, and the last few are kept (`Engine.with_limit`).
+LIMIT_ENGINES_KEPT = 8
+WHAT_IF_MIN_IN = 1.0            # the smallest limit the what-if takes; 0 would mean "no limit" to the engine
+WHAT_IF_MAX_IN_NO_LIMIT = 60.0  # the largest when the planner itself has no limit (no crop here needs 36)
 
 
 def limits_for(irrigation_limit_mm: float) -> list:
@@ -290,6 +296,8 @@ class Engine:
         self.source = source
         self._lock = threading.Lock()
         self._plan_sets: dict = {}
+        self._tables = (yearly, monthly)            # kept for `with_limit`
+        self._limited: OrderedDict = OrderedDict()  # limit in tenths of a mm -> Engine
 
         c = self.climate
         rows = yearly[yearly["scenario"].isin(c.scenarios)]
@@ -324,6 +332,36 @@ class Engine:
                                     - self.economics.pump_per_mm * self._response["irrigation_mm"])
         self._window = lru_cache(maxsize=256)(self._window_uncached)
         self._base = lru_cache(maxsize=512)(self._base_uncached)
+
+    def with_limit(self, irrigation_limit_mm: float) -> "Engine":
+        """The same tables under another irrigation limit (mm per acre per year, above 0): this engine when
+        the limit is its own, else an engine built for that limit. The last `LIMIT_ENGINES_KEPT` are kept,
+        on this engine, so they go when it is rebuilt."""
+        if (isinstance(irrigation_limit_mm, bool) or not isinstance(irrigation_limit_mm, (int, float))
+                or not math.isfinite(irrigation_limit_mm) or irrigation_limit_mm <= 0):
+            raise ValueError(f"irrigation limit {irrigation_limit_mm!r}: expected mm per acre per year, above 0")
+        key = int(round(float(irrigation_limit_mm) * 10))
+        if key == int(round(self.irrigation_limit_mm * 10)):
+            return self
+        with self._lock:
+            hit = self._limited.get(key)
+            if hit is not None:
+                self._limited.move_to_end(key)
+                return hit
+        yearly, monthly = self._tables
+        built = Engine(yearly, monthly, params=self.params, economics=self.economics, soil=self.soil,
+                       traits=self.traits, observed=self.observed, source=self.source, irrigation_limit_mm=key / 10)
+        with self._lock:
+            built = self._limited.setdefault(key, built)        # two requests raced: both get the first one
+            self._limited.move_to_end(key)
+            while len(self._limited) > LIMIT_ENGINES_KEPT:
+                self._limited.popitem(last=False)
+        return built
+
+    def what_if_range_in(self) -> tuple:
+        """(lowest, highest) limit in inches the what-if takes: up to this engine's own limit."""
+        top = self.irrigation_limit_mm / MM_PER_INCH if self.irrigation_limit_mm > 0 else WHAT_IF_MAX_IN_NO_LIMIT
+        return WHAT_IF_MIN_IN, round(top, 1)
 
     # --- plans ---
     def plan_set(self, rotations: Sequence, irrigated: bool, first_prev: str | None = None,
@@ -776,6 +814,19 @@ def get_engine() -> Engine:
         if _ENGINE["engine"] is None:
             raise RuntimeError(f"the smart planner is not available: {_ENGINE['error']}") from _ENGINE["error"]
         return _ENGINE["engine"]
+
+
+def engine_for_limit(limit_in: float | None) -> Engine:
+    """The default engine, or (with `limit_in`, inches per acre per year) the one for that lower pumping
+    limit. ValueError, one plain sentence, when the limit is outside what the what-if takes."""
+    engine = get_engine()
+    if limit_in is None:
+        return engine
+    low, high = engine.what_if_range_in()
+    if (isinstance(limit_in, bool) or not isinstance(limit_in, (int, float)) or not math.isfinite(limit_in)
+            or not low <= limit_in <= high + 1e-9):
+        raise ValueError(f"The pumping limit must be between {low:g} and {high:g} inches an acre a year.")
+    return engine.with_limit(round(float(limit_in), 1) * MM_PER_INCH)
 
 
 def reset() -> None:

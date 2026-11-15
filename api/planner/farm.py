@@ -818,7 +818,7 @@ def plan_farm_cached(fields: Sequence[FieldInput], *, engine: Engine | None = No
         return value
 
     key = (tuple((f.field_id, f.area_ha, f.slope_pct, frozen(f.crop_history or {})) for f in fields),
-           frozen(settings))
+           frozen(settings), round(engine.irrigation_limit_mm, 1))
     with _CACHE_LOCK:
         hit = _CACHE.get(key)
         if hit is not None and hit[0] is engine:

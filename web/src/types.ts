@@ -400,6 +400,83 @@ export interface FieldPlans {
   current?: CurrentPattern | null;
   current_note?: string | null;
   candidates?: number;
+  /** irrigated fields on the smart engine only: the measured wells near the field and the pumping what-if */
+  water_outlook?: WaterOutlook;
+}
+
+/** low, middle and high across the wells used (feet, or feet a year) */
+export interface WaterBand {
+  median: number;
+  low: number;
+  high: number;
+}
+
+/** One measured well near the field. */
+export interface WaterWell {
+  well_id: string;
+  lon: number;
+  lat: number;
+  distance_mi: number;
+  /** winters with a measurement since the trend's first year */
+  winters: number;
+  first_winter: number;
+  last_winter: number;
+  /** change in depth to water, feet a year; above zero = the level is falling */
+  decline_ft_per_year: number;
+  /** its 95% interval */
+  interval: [number, number];
+  depth_to_water_ft: number;
+  /** null when the well's depth is not on record */
+  well_depth_ft: number | null;
+  column_ft: number | null;
+  /** [winter, depth to water in feet], oldest first */
+  points: [number, number][];
+  /** the straight-line trend, its two ends */
+  fit: [[number, number], [number, number]];
+}
+
+/** The pumping limit the plans were scored under, and what the what-if may ask for. */
+export interface WaterWhatIf {
+  limit_in: number | null;
+  default_in: number | null;
+  active: boolean;
+  min_in: number;
+  max_in: number;
+  note: string;
+}
+
+/** `water_outlook` of GET /field/{field_id}/plans (api/groundwater.py). */
+export interface WaterOutlook {
+  available: boolean;
+  /** when not available: "not_built" or "no_wells_nearby" */
+  reason?: string;
+  note?: string;
+  source?: string;
+  rule?: string;
+  what_if: WaterWhatIf;
+  /** one sentence per plan card, in the cards' order; null when there are no wells to speak of */
+  plan_lines: (string | null)[];
+  current_line: string | null;
+  // available only
+  wells_used?: number;
+  distance_mi?: { nearest: number; farthest: number };
+  winters?: [number, number];
+  decline_ft_per_year?: WaterBand;
+  falling?: number;
+  rising?: number;
+  depth_to_water_ft?: WaterBand;
+  column?: {
+    wells: number;
+    now_ft: WaterBand;
+    years: { year: number; at_bottom: number; left_ft: WaterBand }[];
+  } | null;
+  sentence?: string;
+  extrapolation?: string | null;
+  caveat?: string;
+  column_note?: string;
+  threshold?: null;
+  threshold_note?: string;
+  wells?: WaterWell[];
 }
 
 export interface SatelliteYear {

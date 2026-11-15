@@ -11,7 +11,7 @@ Branch `phase-4`, cut from `main` at `15aceb7`. Nothing is pushed. One commit pe
 | 3 | Whole-farm planner | done (checked, committed) |
 | 4 | Twin view | done (checked, committed) |
 | 5 | Map layers + time-lapse | done (checked, committed) |
-| 6 | Water reality check | not started |
+| 6 | Water reality check | done (checked, committed) |
 | 7 | Farm advisor (chat) | not started |
 | 8 | Performance + reliability | not started |
 
@@ -26,6 +26,9 @@ Branch `phase-4`, cut from `main` at `15aceb7`. Nothing is pushed. One commit pe
 - **`make e2e` runs every browser suite**, not only the first one, so each item is checked against all
   existing features.
 - No Earth Engine jobs, no pushes, no deploys, no accounts.
+- **Item 6 uses two groundwater sources, not one.** The USGS record for this area stops in January 2015, so
+  the Kansas Geological Survey WIZARD database (public, no account) carries the same wells to January 2026.
+  The brief allowed KGS only "if USGS cannot be reached"; a record ending eleven years ago would mislead.
 
 ## Done
 
@@ -135,9 +138,34 @@ which limit binds, and the rotation and start year chosen for each field with wh
   "cannot tell"; 2016 has 295 fields with no bare-days reading (grey); the layer is not in the page address;
   a field's own layer value is not in its panel; on a phone with a field open the card covers most of the map.
 
+### 6. Water reality check
+
+- On an irrigated field the farmer now sees "Water outlook" under the plan cards: what the 5 nearest long-record
+  wells (within 10 miles; distances shown) have measured, a chart of depth to water each winter with trend lines,
+  each well's rate with its 95% interval, the water column left and what it would be in 2040 and 2060 "if the
+  measured rate simply continued" (labelled not a forecast, no failure date), one line on each plan card tying
+  its pumping to the measured decline, and a slider "What if I can only pump N inches a year?" that re-ranks the
+  cards and carries into own-rotation, "How to get there" and the farm plan. Dryland fields show none of it.
+- Try: http://localhost:5173/#KS-014376, scroll to "Water outlook", move the slider to 12. API `GET /groundwater`;
+  `limit_in=` on `/field/{id}/plans`, `/score`, `/transition` and in the `POST /farm/plan` body; `make groundwater`
+  rebuilds `data/groundwater.parquet` from the cache. Notes: data/logs/phase4/item_6.md.
+- Real numbers: 64 Finney County wells meet the rule (winters 1996-2026); the middle well drops about 2.6 ft a
+  year (0.8 to 3.6 for the middle half), 63 of 64 falling beyond their own uncertainty.
+- Decisions: USGS to 2015 plus KGS WIZARD since (see above); winter (December-March) resting levels only; trend
+  rule 10+ winters since 1996 spanning 10+ years, last reading within 5 winters, Theil-Sen slope; no minimum
+  usable water column is drawn because no figure in feet could be sourced (the page says so); default plan
+  scores are unchanged; the per-plan line lives in `water_outlook.plan_lines`, not inside each plan.
+- Checker fixes: a plan the card shows at 10.5 in read "pumps about 10 inches" (halves now round up, "1 inch").
+  Checked by hand: one well's slope, depth and column recomputed from the table match the API (4.7 ft a year,
+  264 ft, 136 ft); page text equals the API for two irrigated fields; bad limits answer 400 / 422.
+- Limits: the wells are 2 to 6 miles from the field and are not its own well; "water column" is well depth
+  minus depth to water, not the aquifer's base; one straight line over 1996-2026 averages any change in rate;
+  some nearby wells only start in 2007-2013; the what-if is one fixed limit for every year and crop; the map
+  layers always use the default limit; the what-if stays on when another field is opened (shown, with "Remove").
+
 ## What is left
 
-Items 6 to 8 in the table above.
+Items 7 and 8 in the table above.
 
 ## For you in the morning
 
@@ -179,3 +207,12 @@ Items 6 to 8 in the table above.
   six models).
 - Item 5: the wind erosion time-lapse is dominated by 2022 (wind factor 300 against 46-136 in other years),
   so that year turns the whole county dark. It is the observed factor and the caveat says so.
+- Item 6, decide: keep the KGS WIZARD data alongside USGS (my call: yes, otherwise every trend ends in 2015).
+  To go back to USGS only see "The data source" in data/logs/phase4/item_6.md.
+- Item 6, decide: no minimum usable water column is shown because none could be sourced in feet. If you have
+  a citable figure (for example from a KGS or K-State publication), it can be added as a threshold.
+- Item 6, look at: the trend window starts in 1996 (a choice). Near KS-014376 two of the five wells only have
+  records from 2012-2013; the page says "winters 1996 to 2026" for the group and gives each well's own years
+  only in a hover title.
+- Item 6: `data/groundwater.parquet` and its cache are under data/ (git-ignored); another machine needs
+  `make groundwater` (7 small requests) or the section says the levels are not built.

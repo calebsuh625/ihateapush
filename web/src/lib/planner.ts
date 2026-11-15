@@ -11,6 +11,11 @@ export interface PlannerChoices {
   /** 2025 (today) .. 2060 */
   horizon: number;
   scenario: ScenarioId;
+  /**
+   * "What if I can only pump N inches a year?": a lower pumping limit to score irrigated plans under.
+   * Missing or null = the planner's own limit (nothing is sent).
+   */
+  limitIn?: number | null;
 }
 
 export const WEIGHT_KEYS: readonly WeightKey[] = ["soil", "water", "money", "risk"];
@@ -75,13 +80,15 @@ export const isDefaultWeights = (weights: Record<WeightKey, number>): boolean =>
 /**
  * The query string for GET /field/{id}/plans, without the "?". Always in the same order, so two
  * equal sets of choices give the same string (the app uses it as the request's identity).
- * `irrigated` is only sent when the user overrode our guess.
+ * `irrigated` is only sent when the user overrode our guess, and `limit_in` only while the pumping
+ * what-if is on.
  */
 export function plansQuery(choices: PlannerChoices, irrigated: boolean | null = null): string {
   const parts = WEIGHT_KEYS.map((key) => `${key}=${clampInt(choices.weights[key], WEIGHT_MIN, WEIGHT_MAX)}`);
   parts.push(`scenario=${choices.scenario === "ssp585" ? "ssp585" : "ssp245"}`);
   parts.push(`horizon=${horizonAt(horizonIndex(choices.horizon))}`);
   if (irrigated !== null) parts.push(`irrigated=${irrigated ? "true" : "false"}`);
+  if (typeof choices.limitIn === "number" && Number.isFinite(choices.limitIn)) parts.push(`limit_in=${choices.limitIn}`);
   return parts.join("&");
 }
 

@@ -1,0 +1,281 @@
+/* Water outlook (Phase 4, item 6): the measured wells near an irrigated field and the pumping what-if. */
+
+.water {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.water-sentence {
+  font-size: var(--text-md);
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------------ chart */
+
+.water-chart {
+  margin: 0;
+  min-width: 0;
+}
+
+.water-chart figcaption {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.water-chart-wrap {
+  position: relative;
+  margin-top: var(--s2);
+}
+
+.water-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+}
+
+.water-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.water-tick {
+  font-size: 10.5px;
+  fill: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One hue for every well: the wells are told apart by the distance written at the end of each line. */
+.water-line {
+  fill: none;
+  stroke: #1f6fb0;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.water-fit {
+  stroke: var(--line-strong);
+  stroke-width: 1.25;
+  stroke-dasharray: 4 3;
+}
+
+.water-end {
+  font-size: 10.5px;
+  fill: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.water-cross {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.water-dot {
+  fill: #1f6fb0;
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.water-tip {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  margin-left: 8px;
+  padding: 6px 8px;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+.water-tip--left {
+  margin-right: 8px;
+  margin-left: 0;
+}
+
+.water-tip-title {
+  font-weight: 650;
+}
+
+.water-key {
+  margin-top: var(--s2);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.water-key-line,
+.water-key-fit {
+  display: inline-block;
+  width: 16px;
+  margin-right: 4px;
+  vertical-align: middle;
+  border-top: 2px solid #1f6fb0;
+}
+
+.water-key-fit {
+  margin-left: 10px;
+  border-top: 1.5px dashed var(--line-strong);
+}
+
+/* ------------------------------------------------------------------ tables */
+
+.water-table {
+  width: 100%;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  border-collapse: collapse;
+}
+
+.water-table th,
+.water-table td {
+  padding: 5px 8px 5px 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.water-table thead th {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.water-table tbody th {
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------------ if the rate continued */
+
+.water-later {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+
+.water-later h4 {
+  font-size: var(--text-md);
+  font-weight: 650;
+}
+
+.water-later p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.water-later .water-caveat {
+  padding-left: var(--s2);
+  color: var(--ink);
+  border-left: 3px solid var(--demo-line);
+}
+
+/* ------------------------------------------------------------------ what-if */
+
+.water-whatif {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.water-whatif[data-active="true"] {
+  background: var(--accent-soft);
+  border-color: var(--track);
+}
+
+.water-whatif-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.water-whatif-head label {
+  font-size: var(--text-md);
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.water-whatif-head output {
+  color: var(--accent-ink);
+}
+
+.water-whatif input[type="range"] {
+  width: 100%;
+  margin: var(--s1) 0 0;
+  accent-color: var(--accent);
+}
+
+.water-whatif-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.water-hint {
+  margin-top: var(--s1);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ small print */
+
+.water-about {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.water-about summary {
+  cursor: pointer;
+  color: var(--accent-ink);
+}
+
+.water-about p {
+  margin-top: var(--s2);
+}
+
+/* ------------------------------------------------------------------ on the plan cards */
+
+.plan-water-line {
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  border-top: 1px solid var(--line);
+}
+
+.plans-whatif {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s3);
+  padding: var(--s2) var(--s3);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+}
+
+.plans-whatif .link-button {
+  flex: none;
+}

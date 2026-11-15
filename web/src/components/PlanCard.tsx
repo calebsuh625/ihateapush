@@ -144,10 +144,12 @@ interface PlanCardProps {
   onEdit?: () => void;
   /** Smart planner only: the field and the settings the cards were asked with, for "How to get there". */
   howTo?: { fieldId: string; plansQuery: string };
+  /** Irrigated fields with measured wells nearby: the plan's pumping next to the measured decline. */
+  waterLine?: string | null;
 }
 
 /** One ranked rotation plan. The future-weather parts appear only when the answer carries them. */
-export function PlanCard({ plan, rank, irrigated = false, profitDomain, candidates, irrigationLimitIn, onEdit, howTo }: PlanCardProps) {
+export function PlanCard({ plan, rank, irrigated = false, profitDomain, candidates, irrigationLimitIn, onEdit, howTo, waterLine }: PlanCardProps) {
   const top = rank === 1;
   const headingId = `plan-${rank}-name`;
   const profit = plan.spread?.profit_per_acre;
@@ -237,6 +239,12 @@ export function PlanCard({ plan, rank, irrigated = false, profitDomain, candidat
       </div>
 
       {plan.numbers && <NumbersLine numbers={plan.numbers} irrigated={irrigated} />}
+
+      {waterLine && (
+        <p className="plan-water-line" data-testid="plan-water-line">
+          {waterLine}
+        </p>
+      )}
 
       {howTo ? (
         // keyed by field: an opened path belongs to the field it was opened for

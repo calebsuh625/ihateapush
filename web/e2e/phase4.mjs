@@ -35,11 +35,18 @@
 // fields in view against an independent count from GET /fields and GET /layers/{name} (whole county, zoomed, panned,
 // empty), layers with one value, selection and farm mode on top, and phone width.
 //
+// Item 6, the water reality check: for an irrigated field the "Water outlook" block (the sentence, one chart line
+// and one table row per well, the extrapolation with its caveat, the small print) and the line on each plan card
+// are compared with `water_outlook` of a direct GET /field/{id}/plans, and its wells with GET /groundwater. The
+// "What if I can only pump N inches a year?" slider re-ranks the cards (compared with a direct call carrying
+// limit_in), is passed to the own-rotation score and to "How to get there", and can be taken back. A dryland
+// field shows none of it until it is switched to irrigated. Phone width fits.
+//
 // Environment: WEB_URL (default http://localhost:5173), E2E_TIMEOUT_MS (default 20000),
 // DRY_FIELD (default KS-013847), IRRIGATED_FIELD (default KS-014376), PATH_FIELD (default
 // KS-004139, a dryland field with four real years of the six crops), BRIDGE_FIELD (default
 // KS-012807, irrigated with a young alfalfa stand), SETTLED_FIELD (default KS-004074, already in
-// wheat-sorghum-fallow).
+// wheat-sorghum-fallow). PHASE4_ONLY=water runs the item 6 checks alone (while working on them).
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -52,6 +59,7 @@ import { cropLabel } from "../src/crops.ts";
 import { sheetHeight, signed } from "../src/lib/twin.ts";
 import { DEFAULT_CHOICES, formatDollars, formatInches, formatShare, plansQuery, wellQualifier } from "../src/lib/planner.ts";
 import { DEFAULT_SPAN, SPANS, shortYear, signedDollars, signedRange, transitionQuery } from "../src/lib/transition.ts";
+import { feetBand, inchesWords, milesText, rateWithInterval, resetWords, whatIfLine } from "../src/lib/water.ts";
 
 const WEB_URL = (process.env.WEB_URL ?? "http://localhost:5173").replace(/\/+$/, "");
 const TIMEOUT = Number.parseInt(process.env.E2E_TIMEOUT_MS ?? "20000", 10) || 20000;
@@ -1883,6 +1891,170 @@ const colourSwatchHex = (layer, index) => {
   return keyed[layer.classes[index].key];
 };
 
+// ---- item 6: the water reality check ----------------------------------------------------------------
+
+async function runWater(browser, { get, apiPrefix, shot }) {
+  const json = async (pathAndQuery, init) => {
+    const response = await fetch(`${apiPrefix}${pathAndQuery}`, init);
+    if (!response.ok) throw new Failure(`${pathAndQuery} answered ${response.status}`);
+    return response.json();
+  };
+  const usualQuery = plansQuery(DEFAULT_CHOICES);
+  const usual = await json(`/field/${WET}/plans?${usualQuery}`);
+  const outlook = usual.water_outlook;
+  check(usual.settings.irrigated === true && outlook, `${WET} must be an irrigated field with a water_outlook for this check`);
+  check(outlook.available === true && outlook.wells.length >= 3, `${WET} needs measured wells nearby (run make groundwater): ${outlook.reason ?? ""}`);
+
+  // the API itself: the county picture, and this field's wells are among its wells with the same numbers
+  const county = await json("/groundwater");
+  check(county.available === true && county.summary.wells > 0, "GET /groundwater: the county picture is there");
+  check(county.sentence.includes(`${county.summary.wells} wells`) && county.caveat.includes("not a forecast"), "GET /groundwater: the sentence carries the count, the caveat says it is not a forecast");
+  equal(county.threshold, null, "GET /groundwater: no threshold is drawn");
+  const byId = new Map(county.wells.map((well) => [well.well_id, well]));
+  for (const well of outlook.wells) {
+    const same = byId.get(well.well_id);
+    check(same !== undefined, `the field's well ${well.well_id} is in GET /groundwater`);
+    equal(same.decline_ft_per_year, well.decline_ft_per_year, `${well.well_id}: the same rate in both answers`);
+    equal(same.column_ft, well.column_ft, `${well.well_id}: the same water column in both answers`);
+  }
+  equal((await fetch(`${apiPrefix}/field/${WET}/plans?limit_in=0`)).status, 400, "a pumping limit of 0 is refused");
+  equal((await fetch(`${apiPrefix}/field/${WET}/plans?limit_in=${outlook.what_if.max_in + 1}`)).status, 400, "a pumping limit above the planner's own is refused");
+  const farmTight = await json("/farm/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ field_ids: [WET], limit_in: 12 }) });
+  equal(farmTight.settings.irrigation_limit_in, 12, "POST /farm/plan takes the pumping limit");
+  log(`  ✓ API: GET /groundwater (${county.summary.wells} county wells, winters ${county.summary.winters.join("–")}); ${WET}'s ${outlook.wells.length} wells match it; bad limits answer 400; the farm takes limit_in`);
+
+  const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  page.setDefaultTimeout(TIMEOUT);
+  const monitor = watch(page, "water");
+  await openField(page, WET);
+  const block = page.locator('[data-testid="water-outlook"]');
+  await block.waitFor();
+  equal(await block.getAttribute("data-available"), "true", "water: the block shows measured wells");
+  equal(await text(page, "water-sentence"), outlook.sentence, "water: the sentence is the API's");
+  check(outlook.sentence.includes(`${outlook.wells_used} nearest wells`) && outlook.sentence.includes(`${outlook.distance_mi.farthest}`), "water: the sentence says how many wells and how far");
+  equal(await text(page, "water-extrapolation"), outlook.extrapolation, "water: the extrapolation is the API's");
+  equal(await text(page, "water-caveat"), outlook.caveat, "water: the caveat is shown with the extrapolation");
+  check(outlook.caveat.includes("not a forecast"), "water: the caveat says it is not a forecast");
+  equal(await page.locator('[data-testid="water-well-line"]').count(), outlook.wells.length, "water: one chart line per well");
+  const rows = page.locator('[data-testid="water-well-row"]');
+  equal(await rows.count(), outlook.wells.length, "water: one table row per well");
+  for (const [i, well] of outlook.wells.entries()) {
+    const cells = (await rows.nth(i).locator("th, td").allTextContents()).map(squash);
+    const expected = [`${milesText(well.distance_mi)} away`, rateWithInterval(well.decline_ft_per_year, well.interval), `${well.depth_to_water_ft} ft`,
+      well.column_ft === null ? "depth not on record" : `${well.column_ft} ft`];
+    equal(cells.join(" | "), expected.join(" | "), `water: row ${i + 1} of the wells table`);
+  }
+  if (outlook.column) {
+    equal(await text(page, "water-column-now"), feetBand(outlook.column.now_ft), "water: the column today");
+    const later = (await page.locator('[data-testid="water-column-year"]').allTextContents()).map(squash);
+    equal(later.join(" | "), outlook.column.years.map((entry) => `${entry.year}${feetBand(entry.left_ft)}`).join(" | "), "water: the column in the later years");
+  }
+  await page.locator('[data-testid="water-about"] summary').click();
+  equal(await text(page, "water-threshold-note"), outlook.threshold_note, "water: the small print says why no minimum is drawn");
+  const cardLines = await texts(page, '[data-testid="plan-card"] [data-testid="plan-water-line"]');
+  equal(cardLines.join(" | "), outlook.plan_lines.join(" | "), "water: each plan card carries its line");
+  check(outlook.plan_lines.every((line, i) => line.includes(`${Math.round(usual.plans[i].numbers.irrigation_in)} inches a year`)), "water: each line is tied to what that plan pumps");
+  equal(await page.locator('[data-testid="plans-whatif"]').count(), 0, "water: no what-if notice on the usual plans");
+  equal(await page.locator('[data-testid="water-limit"]').inputValue(), String(outlook.what_if.default_in), "water: the slider starts at the planner's own limit");
+
+  // the chart answers the pointer with that winter's depths
+  const svg = page.locator('[data-testid="water-chart"] svg');
+  await svg.scrollIntoViewIfNeeded();
+  const box = await svg.boundingBox();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+  const tip = squash(await page.locator('[data-testid="water-tip"]').textContent());
+  const winter = Number(/Winter (\d{4})/.exec(tip)?.[1]);
+  check(winter >= outlook.winters[0] && winter <= outlook.winters[1], `water: the hover names a winter inside the record (${tip})`);
+  for (const well of outlook.wells) {
+    const point = well.points.find(([w]) => w === winter);
+    if (point) check(tip.includes(`${milesText(well.distance_mi)} away ${point[1]} ft`) || tip.includes(`${milesText(well.distance_mi)} away ${Math.round(point[1])} ft`), `water: the hover shows ${well.well_id}'s depth in ${winter} (${tip})`);
+  }
+  const first = await shot(page.locator('section[aria-labelledby="section-water"]'), "phase4-water-outlook.png");
+  await page.mouse.move(0, 0);
+  log(`  ✓ ${WET}: sentence, ${outlook.wells.length} lines and rows, the extrapolation with its caveat and the card lines match the API → ${first}`);
+
+  // the what-if: 12 inches
+  const tightQuery = plansQuery({ ...DEFAULT_CHOICES, limitIn: 12 });
+  const tight = await json(`/field/${WET}/plans?${tightQuery}`);
+  equal(tight.settings.irrigation_limit_in, 12, "what-if: the API echoes the limit");
+  check(tight.plans.every((plan) => plan.numbers.irrigation_in <= 12 + 1e-6), "what-if: no plan pumps more than the limit");
+  await page.locator('[data-testid="water-limit"]').fill("12");
+  await page.waitForSelector(`[data-testid="plans-region"][data-updating="false"][data-query="${tightQuery}"]`);
+  equal(await text(page, "water-limit-value"), inchesWords(12), "what-if: the label shows the number");
+  equal(squash(await page.locator('[data-testid="plans-whatif"] span').first().textContent()), whatIfLine(tight.water_outlook.what_if), "what-if: the notice above the cards");
+  equal((await texts(page, '[data-testid="plan-card"] [data-testid="plan-name"]')).join(" | "), tight.plans.map((plan) => plan.name).join(" | "), "what-if: the cards are the API's plans under the limit");
+  equal((await texts(page, '[data-testid="plan-card"] [data-testid="plan-water-line"]')).join(" | "), tight.water_outlook.plan_lines.join(" | "), "what-if: the card lines follow");
+  equal((await texts(page, '[data-testid="plan-card"] [data-testid="plan-holds-note"]'))[0], wellQualifier(12), "what-if: the holds-up badge names the limit");
+  equal(await text(page, "water-sentence"), outlook.sentence, "what-if: the measured wells do not change");
+  const changed = tight.plans.map((plan) => plan.name).join("|") !== usual.plans.map((plan) => plan.name).join("|");
+  // it rides along to the own-rotation score and to "How to get there"
+  await pick(page, [C, B, C, B]);
+  await page.waitForFunction(() => document.querySelector('[data-testid="own-result"]')?.getAttribute("data-query")?.includes("limit_in=12"));
+  check(monitor.scoreRequests.some((request) => request.includes("limit_in=12")), `what-if: the own-rotation score is asked with limit_in=12 (${monitor.scoreRequests.at(-1)})`);
+  const shownOwn = await page.locator('[data-testid="own-result"]').getAttribute("data-query");
+  const own = await json(`/field/${WET}/score?${shownOwn}`);
+  equal(own.settings.irrigation_limit_in, 12, "what-if: the own rotation is scored under the limit");
+  equal(shownOwn, scoreQuery(tightQuery, [C, B, C, B]), "what-if: the score is asked with the cards' settings");
+  await page.locator('[data-testid="plan-card"]').first().locator('[data-testid="how-toggle"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="plan-card"] [data-testid="how-summary"]') !== null);
+  check(monitor.pathRequests.some((request) => request.includes("limit_in=12")), `what-if: the path is asked with limit_in=12 (${monitor.pathRequests.at(-1)})`);
+  const path12 = await json(`/field/${WET}/transition?${transitionQuery(tightQuery, { plan: 1 })}`);
+  equal(await text(page, "how-summary"), path12.summary, "what-if: the path on the card is the one under the limit");
+  const second = await shot(page.locator('section[aria-labelledby="section-plans"]'), "phase4-water-whatif.png");
+  // and back
+  equal(squash(await page.locator('[data-testid="plans-whatif-reset"]').textContent()), resetWords(tight.water_outlook.what_if), "what-if: the way back names the usual limit");
+  await page.locator('[data-testid="plans-whatif-reset"]').click();
+  await page.waitForSelector(`[data-testid="plans-region"][data-updating="false"][data-query="${usualQuery}"]`);
+  equal(await page.locator('[data-testid="plans-whatif"]').count(), 0, "what-if: the notice goes with it");
+  equal((await texts(page, '[data-testid="plan-card"] [data-testid="plan-name"]')).join(" | "), usual.plans.map((plan) => plan.name).join(" | "), "what-if: the usual plans are back");
+  equal(await page.locator('[data-testid="water-limit"]').inputValue(), String(outlook.what_if.default_in), "what-if: the slider is back");
+  log(`  ✓ what-if 12 inches: cards${changed ? " re-ranked" : ""}, notice, card lines, own-rotation score and the path all follow the API under limit_in=12, and it can be taken back → ${second}`);
+
+  // a dryland field shows none of it, until the farmer says it is irrigated
+  await openField(page, DRY);
+  equal(await page.locator('[data-testid="water-outlook"]').count(), 0, "dryland: no water outlook");
+  equal(await page.locator('[data-testid="plan-water-line"]').count(), 0, "dryland: no water line on the cards");
+  const dry = await json(`/field/${DRY}/plans?${usualQuery}`);
+  check(dry.settings.irrigated === false && dry.water_outlook === undefined, "dryland: the API sends no water_outlook");
+  await page.locator('[data-testid="irrigation-switch"]').check();
+  const forcedQuery = plansQuery(DEFAULT_CHOICES, true);
+  await page.waitForSelector(`[data-testid="plans-region"][data-updating="false"][data-query="${forcedQuery}"]`);
+  const forced = await json(`/field/${DRY}/plans?${forcedQuery}`);
+  await page.locator('[data-testid="water-outlook"]').waitFor();
+  equal(await page.locator('[data-testid="water-outlook"]').getAttribute("data-available"), String(forced.water_outlook.available), "switched to irrigated: the block follows the API");
+  if (forced.water_outlook.available) equal(await text(page, "water-sentence"), forced.water_outlook.sentence, "switched to irrigated: its own nearest wells");
+  check(monitor.problems.length === 0, `console errors in the water outlook:\n  ${monitor.problems.join("\n  ")}`);
+  await context.close();
+  log(`  ✓ ${DRY} (dryland): no water outlook; switched to irrigated it shows ${forced.water_outlook.available ? "its own nearest wells" : "why there is none"}`);
+
+  // phone width
+  const phoneContext = await browser.newContext({ viewport: PHONE, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  const phone = await phoneContext.newPage();
+  phone.setDefaultTimeout(TIMEOUT);
+  const phoneMonitor = watch(phone, "water phone");
+  await openField(phone, WET);
+  await phone.locator('[data-testid="water-outlook"]').waitFor();
+  await phone.evaluate(() => {
+    document.querySelector("#section-water").scrollIntoView({ block: "start" });
+    return new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+  });
+  const fit = await phone.evaluate(() => {
+    const body = document.querySelector(".panel-body");
+    const blockBox = document.querySelector('[data-testid="water-outlook"]').getBoundingClientRect();
+    const wide = [...document.querySelectorAll('[data-testid="water-outlook"] *')].filter((node) => node.getBoundingClientRect().right > blockBox.right + 1).length;
+    const small = [...document.querySelectorAll('[data-testid="water-chart"] svg text')].map((node) => node.getBoundingClientRect().height).filter((h) => h > 0 && h < 9).length;
+    return { page: document.documentElement.scrollWidth, sideways: body.scrollWidth - body.clientWidth, wide, small };
+  });
+  check(fit.page <= PHONE.width && fit.sideways <= 0, `water phone: no sideways scroll (page ${fit.page}px, panel body +${fit.sideways}px)`);
+  equal(fit.wide, 0, "water phone: nothing sticks out of the block");
+  equal(fit.small, 0, "water phone: chart labels are still readable");
+  const phoneShot = await shot(phone, "phase4-water-outlook-phone.png");
+  check(phoneMonitor.problems.length === 0, `console errors on the phone:\n  ${phoneMonitor.problems.join("\n  ")}`);
+  await phoneContext.close();
+  log(`  ✓ phone width: the water outlook fits, no sideways scroll → ${phoneShot}`);
+}
+
 async function run(browser) {
   const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
   const page = await context.newPage();
@@ -1906,6 +2078,10 @@ async function run(browser) {
     await target.screenshot({ path: path.join(SHOTS, name) });
     return `e2e/screenshots/${name}`;
   };
+  if (process.env.PHASE4_ONLY === "water") {
+    await context.close();
+    return runWater(browser, { get, apiPrefix, shot });
+  }
   const toSection = (target) =>
     target.evaluate(() => {
       document.querySelector("#section-own").scrollIntoView({ block: "start" });
@@ -2274,6 +2450,7 @@ async function run(browser) {
   await runTwin(browser, { get, shot });
   await runLayers({ get: (pathAndQuery, init) => fetch(`${apiPrefix}${pathAndQuery}`, init) });
   await runLayersScreen(browser, { get });
+  await runWater(browser, { get, apiPrefix, shot });
 }
 
 let browser;

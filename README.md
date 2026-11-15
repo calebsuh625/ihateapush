@@ -1071,3 +1071,44 @@ first load of a layer (every year comes in one answer, `GET /layers/{name}`).
   with the fields on the map; otherwise the card says so instead of colouring the wrong fields.
 - Limits: the phone starts with the legend folded; a field partly in view counts as in view; the layer is
   not in the page address (a reload goes back to Fields). See `data/logs/phase4/item_5.md`.
+
+### Water reality check (item 6)
+
+Irrigated plans assume a well that keeps delivering. This item puts the measured groundwater next to them.
+
+- **Data** (`make groundwater`, `pipeline/groundwater.py` -> `data/groundwater.parquet`, contract in
+  `pipeline/groundwater_schema.py`): depth to water in wells in and within about 10 miles of the county.
+  Two public sources, seven small requests, cached under `data/raw/nwis/` and `data/raw/kgs/`: the USGS Water
+  Data API (`api.waterdata.usgs.gov`, field measurements of parameter 72019; the old `nwis/gwlevels` service is
+  retired), whose record for this area stops in January 2015, and the Kansas Geological Survey's WIZARD
+  database, which holds the same wells and carries them to this winter. 33,958 measurements, 1,941 wells,
+  1911-2026.
+- **Trend rule**: a well's winter level is the median of its December-March readings (pumps off; readings
+  marked pumping, recently pumped or anomalous are left out). A well counts with 10 or more winters since
+  1996, spanning 10 or more years, the last within 5 winters of the newest. Its rate is a Theil-Sen slope
+  with a 95% interval. 154 wells meet it, 64 of them in Finney County: the middle well has been dropping
+  about 2.6 feet a year (0.8 to 3.6 for the middle half of the wells), 63 of 64 by more than their own
+  uncertainty.
+- **Water column**: where the well's depth is on record (59 of the 64), well depth minus depth to water:
+  about 110 feet in the middle well today. If each well's measured rate simply continued that would be about
+  77 feet in 2040 and about 30 in 2060. This is straight-line arithmetic, not a forecast, and the app says so
+  wherever it shows it. No failure year is given for any well or field, and no minimum usable column is drawn:
+  we could not source one figure in feet (KGS Public Information Circular 18 states its assumption as enough
+  saturated thickness to pump 400 gallons a minute through the growing season, with no number of feet).
+- **API**: `GET /groundwater` (the county picture). `GET /field/{id}/plans` of an irrigated field gains
+  `water_outlook`: the 5 nearest wells that meet the rule, within 10 miles (how many, how far), their decline
+  with its range, the column today and in 2040, 2060 and the chosen future year, each well's series for the
+  chart, and one line per plan ("This plan pumps about 21 inches a year; wells near this field have been
+  dropping about 3.6 feet a year."). Plan scores are not changed by any of this.
+- **What-if**: `limit_in=<inches>` on `/plans`, `/score`, `/transition` and in the body of `POST /farm/plan`
+  scores the plans as if no more than that could be pumped on an acre in a year (1 up to the planner's 24).
+  The planner keeps one engine per limit asked for, the last eight (`Engine.with_limit`).
+- **In the app**: irrigated fields get a "Water outlook" section under the plan cards: the sentence, a chart
+  of depth to water by winter for the nearby wells with each well's trend line, a table of the wells, the
+  "if the measured rate simply continued" box with its caveat, and the slider "What if I can only pump N
+  inches a year?". Moving it re-ranks the cards (a notice above them says so and takes it back), and the
+  own-rotation score, "How to get there" and the farm plan follow. Dryland fields do not show the section.
+- Limits: the wells are a few miles from the field and say nothing about that field's own well; winter
+  levels are the recovered ones, summer pumping levels are lower; a well's depth is not the bottom of the
+  aquifer; the what-if is the farmer's number, not a measurement. Tests: `tests/test_groundwater.py`,
+  `web/tests/water.test.mjs`, browser checks in `e2e:phase4`. Notes: `data/logs/phase4/item_6.md`.

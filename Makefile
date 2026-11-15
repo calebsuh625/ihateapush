@@ -2,7 +2,7 @@ PY := .venv/bin/python
 API_PORT ?= 8010
 WEB_PORT ?= 5173
 
-.PHONY: help setup fake pipeline satellite soil-obs soil-health causal validate climate nass field-traits calibrate planner-sanity api web dev test e2e
+.PHONY: help setup fake pipeline satellite soil-obs soil-health causal validate climate nass field-traits calibrate planner-sanity groundwater api web dev test e2e
 
 help:
 	@echo "make setup     create .venv, install Python + web dependencies"
@@ -17,6 +17,7 @@ help:
 	@echo "make field-traits  Phase 3 per-field irrigation guess, wind erodibility, OpenET water use (about 0.07 EECU-hours)"
 	@echo "make calibrate fit the crop response to NASS yields -> api/planner/crop_response.json (local, seconds)"
 	@echo "make planner-sanity  run the planner's checks on real fields -> data/planner_sanity.md"
+	@echo "make groundwater  Phase 4 measured groundwater levels (USGS + Kansas Geological Survey; small, cached) -> data/groundwater.parquet"
 	@echo "make validate  check the active data file against schema.md and summarise it"
 	@echo "make dev       start API (:$(API_PORT)) and web (:$(WEB_PORT)) together"
 	@echo "make api       start only the API"
@@ -78,6 +79,12 @@ calibrate:
 
 planner-sanity:
 	$(PY) -m api.planner.sanity
+
+# Phase 4 water reality check: depth to water in wells in and next to the county, from the USGS Water Data
+# API and the Kansas Geological Survey's WIZARD database. Seven small requests the first time, cached under
+# data/raw/nwis/ and data/raw/kgs/; later runs use the cache. Optional: without it the app shows no water outlook.
+groundwater:
+	$(PY) -m pipeline.groundwater
 
 validate:
 	$(PY) pipeline/schema.py
