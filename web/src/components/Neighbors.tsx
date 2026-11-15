@@ -1,11 +1,33 @@
-// "Your neighbors": look-alike fields nearby that were farmed differently after 2016, side by side
-// with this field (crop strips + soil score lines). Data: GET /field/{id}/neighbors (api/causal.py).
+// "Your neighbors": look-alike fields nearby that grew different crops from the switch year on,
+// side by side with this field (crop strips + one line per field for the outcome, by default the
+// days a year the soil sits bare). Data: GET /field/{id}/neighbors (api/causal.py).
+// Every year and every "better / worse" comes from the response: the years from `design`, the
+// direction from `outcome.higher_is_better` (bare days: fewer is better).
+// Each pair gets two separate sentences, because they can point opposite ways: where the two fields
+// stood in the "after" years (a level; the "better protected / more exposed" tag belongs to this
+// one only) and how much each changed since the "before" years (a change; no tag).
 // Self-contained so the field panel only needs one line to show it.
 import type { CSSProperties } from "react";
 import { getJson } from "../api";
 import { cropBackground, cropLabel, cropPalette } from "../crops";
 import { useResource } from "../hooks/useResource";
-import { chartGeometry, formatSigned, rotationLabel, sharedHistoryPct } from "../lib/neighbors";
+import {
+  afterGap,
+  changeText,
+  chartGeometry,
+  effectDecimals,
+  effectReading,
+  formatSigned,
+  levelText,
+  rotationHint,
+  rotationLabel,
+  sharedHistoryPct,
+  unitsText,
+  valueDecimals,
+  verdictLabel,
+  verdictOf,
+  yearSpan,
+} from "../lib/neighbors";
 import type { FieldNeighbors, Neighbor, Outcome, SoilPoint } from "../lib/neighbors";
 import { ErrorNote } from "./FieldPanel";
 import "./Neighbors.css";
@@ -25,16 +47,22 @@ export function Neighbors({ fieldId }: { fieldId: string }) {
   const isFake = res.status === "ready" && res.data.is_fake;
 
   return (
-    <section className="section" aria-labelledby="section-neighbors" data-testid="neighbors">
+    <section className="section" aria-labelledby="section-neighbors" data-testid="neighbors" data-state={res.status}>
       <div className="section-head">
         <h3 id="section-neighbors">Your neighbors</h3>
         <p className="section-meta">
           {isFake ? (
-            <span className="badge badge--demo" title="The soil scores are made up until the satellite soil data is in">
+            <span
+              className="badge badge--demo"
+              data-testid="neighbors-fake"
+              title="The soil numbers are made up because the satellite soil table is missing"
+            >
               Fake soil data · not findings
             </span>
+          ) : res.status === "ready" ? (
+            `Look-alike fields nearby that grew different crops ${grewWhen(res.data)}`
           ) : (
-            "Look-alike fields nearby, farmed differently since 2016"
+            "Look-alike fields nearby"
           )}
         </p>
       </div>
@@ -59,6 +87,11 @@ export function Neighbors({ fieldId }: { fieldId: string }) {
   );
 }
 
+/** "in 2020–2024", from the run's rotation years (older responses: "from 2020"). */
+function grewWhen(data: FieldNeighbors): string {
+  return data.design ? `in ${yearSpan(data.design.rotation_years)}` : `from ${data.switch_year}`;
+}
+
 function NeighborsBody({ data }: { data: FieldNeighbors }) {
   if (data.neighbors.length === 0) {
     return (
@@ -80,12 +113,22 @@ function NeighborsBody({ data }: { data: FieldNeighbors }) {
       </div>
     );
   }
+  const d = data.design;
   return (
     <>
       <p className="nb-intro">
-        Nearby fields that matched this one in soil, slope, starting soil score and 2008–2015 crops, then
-        went a different way.
+        Nearby fields that matched this one in mapped soil, slope{d ? `, ${yearSpan(d.history_years)} crops` : ", past crops"}
+        {d ? ` and where they stood in ${yearSpan(d.baseline_years)}` : " and starting level"}, and grew different crops{" "}
+        {grewWhen(data)}.
+        {d
+          ? ` They were close in ${yearSpan(d.baseline_years)} only: by ${yearSpan(d.pre_years)} some pairs were already far apart, and the numbers under each chart show it.`
+          : ""}
       </p>
+      {data.outcome?.note && (
+        <p className="nb-note muted" data-testid="neighbors-note">
+          {data.outcome.note}
+        </p>
+      )}
       <ol className="nb-list">
         {data.neighbors.map((n) => (
           <NeighborCard key={n.pair_id} data={data} n={n} />
@@ -111,7 +154,7 @@ function NeighborCard({ data, n }: { data: FieldNeighbors; n: Neighbor }) {
         {[
           n.similarity.slope_diff !== null && `slope within ${n.similarity.slope_diff.toFixed(1)} pts`,
           n.similarity.ssurgo_om_diff !== null && `mapped soil OM within ${n.similarity.ssurgo_om_diff.toFixed(2)} pts`,
-          shared !== null && `${shared}% same crops 2008–15`,
+          shared !== null && `${shared}% same crops ${data.design ? yearSpan(data.design.history_years) : "before"}`,
         ]
           .filter(Boolean)
           .join(" · ")}
@@ -126,7 +169,7 @@ function NeighborCard({ data, n }: { data: FieldNeighbors; n: Neighbor }) {
         <SoilChart self={data.soil} other={n.soil} switchYear={data.switch_year} outcome={outcome} />
       )}
 
-      {outcome && n.divergence !== null && <Takeaway n={n} outcome={outcome} isFake={data.is_fake} />}
+      {outcome && n.divergence !== null && <Takeaway data={data} n={n} outcome={outcome} />}
     </li>
   );
 }
@@ -155,7 +198,10 @@ function Row({
     <div className={`nb-row nb-row--${tone}`}>
       <p className="nb-row-label">
         <span className="nb-key" aria-hidden="true" />
-        {label} <span className="tag">{rotationLabel(rotation)}</span>
+        {label}{" "}
+        <span className="tag" title={rotationHint(rotation) ?? undefined}>
+          {rotationLabel(rotation)}
+        </span>
       </p>
       <ol className="nb-strip" style={{ "--cells": cells.length } as CSSProperties} aria-label={`${label}: crops ${first} to ${last}`}>
         {cells.map((y) => {
@@ -181,12 +227,16 @@ function SoilChart({ self, other, switchYear, outcome }: { self: SoilPoint[]; ot
   if (self.length === 0 && other.length === 0) return null;
   const g = chartGeometry([self, other], W, H, 6);
   const sx = g.x(switchYear) - (g.x(switchYear) - g.x(switchYear - 1)) / 2;
+  const decimals = valueDecimals(outcome);
   return (
     <figure className="nb-chart">
       <figcaption className="nb-chart-cap">
-        <span>{outcome.label}</span>
+        <span>
+          {outcome.label}
+          <span className="muted"> · {outcome.higher_is_better ? "higher" : "lower"} is better</span>
+        </span>
         <span className="muted tabular">
-          {g.min.toFixed(2)}–{g.max.toFixed(2)}
+          {g.min.toFixed(decimals)}–{g.max.toFixed(decimals)}
         </span>
       </figcaption>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${outcome.label} by year, this field and its neighbor`} preserveAspectRatio="none">
@@ -196,32 +246,73 @@ function SoilChart({ self, other, switchYear, outcome }: { self: SoilPoint[]; ot
       </svg>
       <div className="nb-axis tabular muted">
         <span>{g.firstYear}</span>
-        <span>rotations split {switchYear}</span>
+        <span>compared from {switchYear}</span>
         <span>{g.lastYear}</span>
       </div>
     </figure>
   );
 }
 
-function Takeaway({ n, outcome, isFake }: { n: Neighbor; outcome: Outcome; isFake: boolean }) {
+function Takeaway({ data, n, outcome }: { data: FieldNeighbors; n: Neighbor; outcome: Outcome }) {
   const d = n.divergence ?? 0;
-  const better = outcome.higher_is_better ? d > 0 : d < 0;
+  // the tag is about the "after" level only; the change (d) can point the other way
+  const gap = afterGap(n);
+  const verdict = verdictOf(gap, outcome);
   const e = n.comparison_effect;
+  const design = data.design;
+  const vd = valueDecimals(outcome);
+  const fmt = (v: number | null | undefined) => (v === null || v === undefined ? "?" : v.toFixed(vd));
+  const change = (before: number | null, after: number | null) =>
+    before === null || after === null ? null : formatSigned(after - before, vd);
+  const changeThis = n.before && n.after ? change(n.before.this, n.after.this) : null;
+  const changeOther = n.before && n.after ? change(n.before.neighbor, n.after.neighbor) : null;
+  const ed = effectDecimals(outcome);
   return (
     <div className="nb-takeaway">
-      <p>
-        Since the split, this field's score rose <strong className="tabular">{Math.abs(d).toFixed(2)}</strong>{" "}
-        {outcome.units} {d >= 0 ? "more" : "less"} than its look-alike's{" "}
-        <span className={`tag nb-verdict nb-verdict--${better ? "better" : "worse"}`}>{better ? "better" : "worse"}</span>
+      {n.before && n.after && (
+        <p className="tabular" data-testid="neighbor-levels">
+          {design ? `${yearSpan(design.pre_years)} → ${yearSpan(design.post_years)}` : "Before → after"}: this field{" "}
+          {fmt(n.before.this)} → {fmt(n.after.this)}, look-alike {fmt(n.before.neighbor)} → {fmt(n.after.neighbor)}{" "}
+          {unitsText(outcome)}
+        </p>
+      )}
+      {gap !== null && (
+        <p data-testid="neighbor-level">
+          {design ? `In ${yearSpan(design.post_years)}` : "Afterwards"} this field{" "}
+          <strong className="tabular">{levelText(gap, outcome)}</strong> its look-alike
+          {verdict && (
+            <>
+              {" "}
+              <span className={`tag nb-verdict nb-verdict--${verdict}`}>{verdictLabel(verdict, outcome)}</span>
+            </>
+          )}
+        </p>
+      )}
+      <p data-testid="neighbor-divergence">
+        Change since {design ? yearSpan(design.pre_years) : "before"}:
+        {changeThis !== null && changeOther !== null && (
+          <span className="tabular">
+            {" "}
+            this field {changeThis}, look-alike {changeOther} {unitsText(outcome)}.
+          </span>
+        )}{" "}
+        This field's change was <strong className="tabular">{changeText(d, outcome)}</strong>
+        {changeText(d, outcome) === "the same" ? " as" : " than"} its look-alike's.
       </p>
       {e && e.effect !== null && e.ci_low !== null && e.ci_high !== null && (
-        <p className="muted">
-          Across {e.n_pairs} look-alike pairs, {rotationLabel(e.a).toLowerCase()} vs {rotationLabel(e.b).toLowerCase()}:{" "}
+        <p className="muted" data-testid="neighbor-effect">
+          Across {e.n_pairs} look-alike pairs, {rotationLabel(e.a).toLowerCase()} vs {rotationLabel(e.b).toLowerCase()},
+          the same difference in change averages{" "}
           <span className="tabular">
-            {formatSigned(e.effect)} (95% CI {formatSigned(e.ci_low)} to {formatSigned(e.ci_high)})
+            {formatSigned(e.effect, ed)} {unitsText(outcome)} (95% CI {formatSigned(e.ci_low, ed)} to{" "}
+            {formatSigned(e.ci_high, ed)})
           </span>
-          {e.ci_excludes_zero ? "" : " — not distinguishable from zero"}
-          {isFake ? " · fake soil data, not a finding" : ""}
+          {" — "}
+          {effectReading(e, outcome)}
+          {e.ci_excludes_zero && e.from_crops && e.from_crops.effect !== null
+            ? `; the crops grown would predict ${formatSigned(e.from_crops.effect, ed)} on their own`
+            : ""}
+          {data.is_fake ? " · fake soil data, not a finding" : ""}
         </p>
       )}
     </div>

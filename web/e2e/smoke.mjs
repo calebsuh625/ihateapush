@@ -610,6 +610,109 @@ const outlined = (page, color) =>
 const selectedOnMap = (page) => outlined(page, SELECTED_OUTLINE);
 
 /** Move the real mouse onto a point and report what the map shows there. */
+/**
+ * The "Your neighbors" section against GET /field/{id}/neighbors (`answer` = {status, body}).
+ * With matched pairs it must show them, in the API's order and with the API's direction
+ * (bare days: fewer is better); without, it must say why. Returns how many neighbours it showed.
+ */
+async function checkNeighbors(page, fieldId, answer) {
+  const section = page.locator('[data-testid="panel"] [data-testid="neighbors"]');
+  await page.waitForSelector('[data-testid="neighbors"]:not([data-state="loading"])', { timeout: TIMEOUT });
+  equal(await section.count(), 1, `${fieldId}: "Your neighbors" section`);
+  equal(((await section.locator("h3").textContent()) ?? "").trim(), "Your neighbors", `${fieldId}: neighbors heading`);
+  const cards = section.locator('[data-testid="neighbor"]');
+
+  if (answer.status !== 200) {
+    // no causal results on this server: the section must say so and show nothing else
+    equal(await cards.count(), 0, `${fieldId}: neighbors shown although the API answered ${answer.status}`);
+    const note = ((await section.locator('[data-testid="error-note"]').textContent()) ?? "").trim();
+    check(note.includes("make causal"), `${fieldId}: neighbors error does not say how to fix it: "${note}"`);
+    return null;
+  }
+
+  const data = answer.body;
+  const said = ((await section.textContent()) ?? "").replace(/\s+/g, " ");
+  equal(await section.locator('[data-testid="neighbors-fake"]').count(), data.is_fake ? 1 : 0, `${fieldId}: fake-data badge in neighbors`);
+  check(!/soil health (has )?improved|improved (the )?soil|healthier soil/i.test(said), `${fieldId}: neighbors section claims a soil improvement: "${said}"`);
+
+  if (data.neighbors.length === 0) {
+    equal(await cards.count(), 0, `${fieldId}: neighbor cards shown although the API has none`);
+    const empty = section.locator('[data-testid="neighbors-empty"]');
+    equal(await empty.count(), 1, `${fieldId}: "no look-alike" note`);
+    const emptyText = ((await empty.textContent()) ?? "").replace(/\s+/g, " ");
+    check(emptyText.includes(data.reason), `${fieldId}: neighbors note reads "${emptyText}", expected the API's reason "${data.reason}"`);
+    equal(await empty.locator("a").count(), data.examples.length, `${fieldId}: example fields linked`);
+    return 0;
+  }
+
+  equal(await section.locator('[data-testid="neighbors-empty"]').count(), 0, `${fieldId}: "no look-alike" note shown next to neighbors`);
+  const ids = await cards.evaluateAll((nodes) => nodes.map((n) => n.dataset.neighborId));
+  equal(ids.join(","), data.neighbors.map((n) => n.field_id).join(","), `${fieldId}: neighbor cards`);
+  const rotationSpan = `${data.design.rotation_years[0]}${EN_DASH}${data.design.rotation_years[1]}`;
+  if (!data.is_fake) check(said.includes(`grew different crops in ${rotationSpan}`), `${fieldId}: neighbors header does not name the rotation years ${rotationSpan}`);
+  check(!/farmed differently/i.test(said), `${fieldId}: neighbors section says "farmed differently": "${said.slice(0, 200)}"`);
+  check(said.includes(`${data.design.history_years[0]}${EN_DASH}${data.design.history_years[1]} crops`), `${fieldId}: neighbors intro does not name the crop-history years`);
+  equal(await section.locator('[data-testid="neighbors-note"]').count(), data.outcome.note ? 1 : 0, `${fieldId}: how-to-read note for ${data.outcome.column}`);
+
+  const lowerIsBetter = data.outcome.higher_is_better === false;
+  const days = /\bdays?\b/.test(data.outcome.units);
+  for (let i = 0; i < data.neighbors.length; i++) {
+    const n = data.neighbors[i];
+    const card = cards.nth(i);
+    const what = `${fieldId} vs ${n.field_id}`;
+    equal(await card.locator(".nb-row").count(), 2, `${what}: crop strips (this field + neighbor)`);
+    equal(await card.locator(".nb-line").count(), 2, `${what}: lines in the chart`);
+    const caption = ((await card.locator(".nb-chart-cap").textContent()) ?? "").replace(/\s+/g, " ");
+    check(caption.includes(data.outcome.label), `${what}: chart caption "${caption}" does not name "${data.outcome.label}"`);
+    check(caption.includes(lowerIsBetter ? "lower is better" : "higher is better"), `${what}: chart caption "${caption}" has the wrong direction`);
+
+    if (n.divergence === null) continue;
+    // the change: plain arithmetic, and never the words that belong to a level
+    const line = ((await card.locator('[data-testid="neighbor-divergence"]').textContent()) ?? "").replace(/\s+/g, " ");
+    if (days) {
+      const size = Math.abs(n.divergence).toFixed(0);
+      const expected = size === "0" ? "the same" : `${size} days a year ${n.divergence < 0 ? "lower" : "higher"}`;
+      check(line.includes(`change was ${expected}`), `${what}: divergence ${n.divergence} reads "${line}", expected "change was ${expected}"`);
+    }
+    check(!/fewer|protected|exposed|ended/i.test(line), `${what}: the change line talks about a level: "${line}"`);
+    equal(await card.locator('[data-testid="neighbor-divergence"] .nb-verdict').count(), 0, `${what}: verdict tag on the change line`);
+
+    // the level after the switch: the tag follows it, whatever the change says
+    const gap = n.after.this === null || n.after.neighbor === null ? null : n.after.this - n.after.neighbor;
+    if (gap === null) {
+      equal(await card.locator(".nb-verdict").count(), 0, `${what}: verdict tag without "after" levels`);
+      continue;
+    }
+    check(Math.abs(n.after_gap - gap) < 0.011, `${what}: API after_gap ${n.after_gap} is not after.this - after.neighbor (${gap})`);
+    if (n.after_gap !== 0) {
+      equal(n.verdict, n.after_gap > 0 === data.outcome.higher_is_better ? "better" : "worse", `${what}: API verdict for an "after" gap of ${n.after_gap}`);
+    } else equal(n.verdict, null, `${what}: API verdict without a gap`);
+    const level = ((await card.locator('[data-testid="neighbor-level"]').textContent()) ?? "").replace(/\s+/g, " ");
+    const shown = Math.abs(n.after_gap).toFixed(days ? 0 : 2);
+    if (Number(shown) === 0) {
+      equal(await card.locator(".nb-verdict").count(), 0, `${what}: verdict tag for a gap that shows as zero`);
+    } else {
+      const better = n.after_gap > 0 === data.outcome.higher_is_better;
+      const tag = ((await card.locator('[data-testid="neighbor-level"] .nb-verdict').textContent()) ?? "").trim();
+      const expected = data.outcome.column === "bare_days" ? (better ? "better protected" : "more exposed") : better ? "better" : "worse";
+      equal(tag, expected, `${what}: verdict tag for an "after" gap of ${n.after_gap} (${lowerIsBetter ? "lower" : "higher"} is better)`);
+      if (days) {
+        const word = n.after_gap < 0 ? "fewer" : "more";
+        check(level.includes(`${shown} ${word} day`), `${what}: "after" gap ${n.after_gap} reads "${level}", expected "${shown} ${word} days a year"`);
+      }
+    }
+    const e = n.comparison_effect;
+    if (e && e.effect !== null) {
+      const effect = ((await card.locator('[data-testid="neighbor-effect"]').textContent()) ?? "").replace(/\s+/g, " ");
+      check(effect.includes(`Across ${e.n_pairs} look-alike pairs`), `${what}: effect line "${effect}" does not give the ${e.n_pairs} pairs`);
+      check(effect.includes("95% CI"), `${what}: effect line "${effect}" has no interval`);
+      equal(effect.includes("not distinguishable from zero"), !e.ci_excludes_zero, `${what}: "not distinguishable from zero" in "${effect}"`);
+      if (days) check(effect.includes("days a year"), `${what}: effect line "${effect}" has no units`);
+    }
+  }
+  return data.neighbors.length;
+}
+
 async function hoverAt(page, target) {
   await page.mouse.move(target.x - 2, target.y - 2);
   await page.waitForTimeout(60); // Leaflet looks at the pointer at most every 32 ms
@@ -775,6 +878,12 @@ async function run(browser) {
       if (!response.ok) throw new Error(`${url} answered ${response.status}`);
       return response.json();
     }, apiBase + pathname);
+  // like fetchJson, but an error status is an answer too (503 = `make causal` has not run)
+  const fetchAnswer = (from, pathname) =>
+    from.evaluate(async (url) => {
+      const response = await fetch(url);
+      return { status: response.status, body: await response.json().catch(() => null) };
+    }, apiBase + pathname);
   const fieldData = (from, id) => Promise.all([
     fetchJson(from, `/field/${id}`),
     fetchJson(from, `/field/${id}/plans`),
@@ -855,6 +964,7 @@ async function run(browser) {
     if (elapsed !== null) clickTimes.push(elapsed);
 
     await checkPanel(page, id, detail, plans, satellite, soil);
+    await checkNeighbors(page, id, await fetchAnswer(page, `/field/${id}/neighbors`));
     equal(await page.evaluate(() => window.location.hash), `#${id}`, `${id}: URL hash after the click`);
     equal((await selectedOnMap(page)).join(","), id, `${id}: polygon highlighted as selected`);
     equal(await page.locator('[data-testid="hint"]').count(), 0, `${id}: hint still shown with a field selected`);
@@ -895,6 +1005,67 @@ async function run(browser) {
   check(restored.zoom > overview.zoom || restored.zoom >= 15, `#${linked.id}: the map did not zoom in to the linked field (zoom ${restored.zoom}, overview ${overview.zoom})`);
   await checkPanel(page, linked.id, ...(await fieldData(page, linked.id)));
   log(`  ✓ #${linked.id} restored on a cold load: panel populated, field highlighted, zoom ${restored.zoom}`);
+
+  // --- neighbours -----------------------------------------------------------------------------
+  // One field that has matched look-alikes and one that has none, opened through the URL hash.
+  const effects = await fetchAnswer(page, "/effects");
+  if (effects.status === 200) {
+    const openByHash = async (id) => {
+      await page.evaluate((hash) => { window.location.hash = hash; }, id);
+      await waitForPanel(page, id);
+    };
+    const featureIds = features.map((feature) => String(feature.id));
+    const matchedId = (effects.body.demo_pairs ?? []).map((pair) => pair.field_a).find((id) => featureIds.includes(id));
+    if (matchedId) {
+      await openByHash(matchedId);
+      const shown = await checkNeighbors(page, matchedId, await fetchAnswer(page, `/field/${matchedId}/neighbors`));
+      check(shown > 0, `${matchedId}: a demo pair field shows no neighbors`);
+      await page.locator('[data-testid="neighbors"]').scrollIntoViewIfNeeded();
+      log(`  ✓ ${matchedId}: "Your neighbors" shows ${shown} look-alike${shown === 1 ? "" : "s"} with crops, chart, direction and interval → ${await shot(page, "neighbors-matched.png")}`);
+    } else {
+      warnings.push("neighbors: /effects lists no demo pair among the served fields; matched case not checked");
+    }
+    let unmatchedId = null;
+    for (const id of featureIds.slice(0, 60)) {
+      const answer = await fetchAnswer(page, `/field/${id}/neighbors`);
+      if (answer.status === 200 && answer.body.neighbors.length === 0) {
+        unmatchedId = id;
+        break;
+      }
+    }
+    if (unmatchedId) {
+      await openByHash(unmatchedId);
+      const answer = await fetchAnswer(page, `/field/${unmatchedId}/neighbors`);
+      equal(await checkNeighbors(page, unmatchedId, answer), 0, `${unmatchedId}: neighbors shown for a field without a match`);
+      await page.locator('[data-testid="neighbors"]').scrollIntoViewIfNeeded();
+      log(`  ✓ ${unmatchedId}: no look-alike, and the section says why ("${answer.body.reason}") → ${await shot(page, "neighbors-none.png")}`);
+    } else {
+      warnings.push("neighbors: every one of the first 60 fields has a match; unmatched case not checked");
+    }
+    // A pair whose change and "after" level point opposite ways (about 3 pairs in 10 do): the tag
+    // must follow the level. checkNeighbors compares every card with the API, so opening it is the test.
+    let mixedId = null;
+    for (const id of featureIds.slice(0, 400)) {
+      const answer = await fetchAnswer(page, `/field/${id}/neighbors`);
+      if (answer.status !== 200) break;
+      const opposite = (n) => n.divergence !== null && n.after_gap !== null && n.divergence * n.after_gap < 0 && Math.abs(n.divergence) >= 10 && Math.abs(n.after_gap) >= 10;
+      if (answer.body.neighbors.some(opposite)) {
+        mixedId = id;
+        break;
+      }
+    }
+    if (mixedId) {
+      await openByHash(mixedId);
+      const shown = await checkNeighbors(page, mixedId, await fetchAnswer(page, `/field/${mixedId}/neighbors`));
+      check(shown > 0, `${mixedId}: no neighbors shown`);
+      await page.locator('[data-testid="neighbors"]').scrollIntoViewIfNeeded();
+      log(`  ✓ ${mixedId}: change and "after" level point opposite ways, and the tag follows the level → ${await shot(page, "neighbors-mixed.png")}`);
+    } else {
+      warnings.push("neighbors: no pair with opposite change and level among the first 400 fields; that case not checked");
+    }
+  } else {
+    warnings.push(`neighbors: GET /effects answered ${effects.status} (run \`make causal\`); matched / unmatched cases not checked`);
+  }
 
   // --- stale answers --------------------------------------------------------------------------
   // Click A then B at once while A's answers are held back: the panel must show B, and must
