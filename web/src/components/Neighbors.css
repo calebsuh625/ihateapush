@@ -181,3 +181,8 @@
   background: var(--danger-bg);
   border-color: var(--danger-line);
 }
+
+/* the "Compare with its twin" button (opens the wide view, TwinView.tsx) */
+.nb-compare {
+  margin: 0 0 var(--s3);
+}

@@ -22,7 +22,7 @@ declare global {
 // ---------------------------------------------------------------------------------------------
 
 type ZoomBand = "far" | "mid" | "near";
-type FieldState = "base" | "hover" | "selected" | "farm" | "farmHover";
+type FieldState = "base" | "hover" | "selected" | "twin" | "farm" | "farmHover";
 
 /** How the pointer picks fields in farm mode: one at a time, a freehand loop, or a box. */
 export type FarmTool = "click" | "loop" | "box";
@@ -34,6 +34,10 @@ const OUTLINE_HOVER = "#0c3523";
 const FILL = "#2f8f5b";
 const SELECTED_OUTLINE = "#1d4ed8";
 const SELECTED_FILL = "#3b82f6";
+// The twin in the "Compare with its twin" view: amber and dashed, so it stays apart from the blue
+// selected field by pattern as well as by colour (the charts in that view use the same amber).
+const TWIN_OUTLINE = "#b45309";
+const TWIN_FILL = "#f59e0b";
 const FARM_OUTLINE = "#9a3412";
 const FARM_FILL = "#f97316";
 
@@ -42,6 +46,7 @@ const STYLES: Record<ZoomBand, Record<FieldState, L.PathOptions>> = {
     base: { color: OUTLINE, weight: 0.75, opacity: 0.7, fillColor: FILL, fillOpacity: 0.3 },
     hover: { color: OUTLINE_HOVER, weight: 2.5, opacity: 1, fillColor: FILL, fillOpacity: 0.55 },
     selected: { color: SELECTED_OUTLINE, weight: 3, opacity: 1, fillColor: SELECTED_FILL, fillOpacity: 0.45 },
+    twin: { color: TWIN_OUTLINE, weight: 3, opacity: 1, fillColor: TWIN_FILL, fillOpacity: 0.5, dashArray: "6 3" },
     farm: { color: FARM_OUTLINE, weight: 1.5, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.65 },
     farmHover: { color: FARM_OUTLINE, weight: 3, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.8 },
   },
@@ -49,6 +54,7 @@ const STYLES: Record<ZoomBand, Record<FieldState, L.PathOptions>> = {
     base: { color: OUTLINE, weight: 1.25, opacity: 0.9, fillColor: FILL, fillOpacity: 0.2 },
     hover: { color: OUTLINE_HOVER, weight: 3, opacity: 1, fillColor: FILL, fillOpacity: 0.4 },
     selected: { color: SELECTED_OUTLINE, weight: 3.5, opacity: 1, fillColor: SELECTED_FILL, fillOpacity: 0.35 },
+    twin: { color: TWIN_OUTLINE, weight: 3.5, opacity: 1, fillColor: TWIN_FILL, fillOpacity: 0.4, dashArray: "6 3" },
     farm: { color: FARM_OUTLINE, weight: 2.5, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.5 },
     farmHover: { color: FARM_OUTLINE, weight: 3.5, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.65 },
   },
@@ -56,6 +62,7 @@ const STYLES: Record<ZoomBand, Record<FieldState, L.PathOptions>> = {
     base: { color: OUTLINE, weight: 2, opacity: 1, fillColor: FILL, fillOpacity: 0.12 },
     hover: { color: OUTLINE_HOVER, weight: 3.5, opacity: 1, fillColor: FILL, fillOpacity: 0.28 },
     selected: { color: SELECTED_OUTLINE, weight: 4, opacity: 1, fillColor: SELECTED_FILL, fillOpacity: 0.25 },
+    twin: { color: TWIN_OUTLINE, weight: 4, opacity: 1, fillColor: TWIN_FILL, fillOpacity: 0.3, dashArray: "8 4" },
     farm: { color: FARM_OUTLINE, weight: 3, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.4 },
     farmHover: { color: FARM_OUTLINE, weight: 4, opacity: 1, fillColor: FARM_FILL, fillOpacity: 0.55 },
   },
@@ -98,6 +105,8 @@ interface FieldsLayer {
   show(): void;
   /** Mark `id` as the selected field (null clears). Unknown ids select nothing. */
   select(id: string | null): void;
+  /** The twin shown in the "Compare with its twin" view (null clears). Unknown ids mark nothing. */
+  setTwin(id: string | null): void;
   /** The fields picked for the farm (empty outside farm mode). Only the difference is restyled. */
   setFarm(ids: Iterable<string>): void;
   /** Fields whose centre lies inside a loop of [lon, lat] points. */
@@ -130,11 +139,12 @@ function createFieldsLayer(map: L.Map, fields: FieldCollection, onPick: (id: str
   const idOf = new Map<L.Layer, string>();
   let band = bandFor(map.getZoom());
   let selected: string | null = null;
+  let twin: string | null = null;
   let hovered: string | null = null;
   let farm = new Set<string>();
 
   const stateOf = (id: string): FieldState =>
-    id === selected ? "selected" : farm.has(id) ? (id === hovered ? "farmHover" : "farm") : id === hovered ? "hover" : "base";
+    id === selected ? "selected" : id === twin ? "twin" : farm.has(id) ? (id === hovered ? "farmHover" : "farm") : id === hovered ? "hover" : "base";
   const restyle = (id: string | null) => {
     if (id === null) return;
     byId.get(id)?.setStyle(STYLES[band][stateOf(id)]);
@@ -247,6 +257,16 @@ function createFieldsLayer(map: L.Map, fields: FieldCollection, onPick: (id: str
       restyle(next);
       if (next !== null) byId.get(next)?.bringToFront();
       syncRing();
+    },
+    setTwin(id) {
+      const next = id !== null && byId.has(id) ? id : null;
+      if (next === twin) return;
+      const previous = twin;
+      twin = next;
+      restyle(previous);
+      restyle(next);
+      if (next !== null) byId.get(next)?.bringToFront();
+      if (selected !== null) byId.get(selected)?.bringToFront();
     },
     setFarm(ids) {
       const next = new Set<string>();
@@ -379,18 +399,22 @@ interface FieldsProps {
   /** Farm mode only: a click picks one field, a loop or a box picks every field centred inside. */
   tool: FarmTool;
   onLasso?: (ids: string[]) => void;
+  /** The twin to outline in a second colour, or null. */
+  twin: string | null;
+  /** Pixels of the bottom of the viewport the twin view covers (the map is fitted above it). */
+  twinCover: number;
 }
 
 const NO_FARM: readonly string[] = [];
 
-function Fields({ fields, selection, onSelect, onRendered, farm, tool, onLasso }: FieldsProps) {
+function Fields({ fields, selection, onSelect, onRendered, farm, tool, onLasso, twin, twinCover }: FieldsProps) {
   const map = useMap();
   const layerRef = useRef<FieldsLayer | null>(null);
   /** The selection the view has already been moved for. */
   const shownRef = useRef<Selection | null>(null);
-  const latest = useRef({ selection, onSelect, onRendered, farm, onLasso });
+  const latest = useRef({ selection, onSelect, onRendered, farm, onLasso, twin, twinCover });
   useEffect(() => {
-    latest.current = { selection, onSelect, onRendered, farm, onLasso };
+    latest.current = { selection, onSelect, onRendered, farm, onLasso, twin, twinCover };
   });
 
   // Build the layer once per collection, then frame it: the linked field if the URL names one
@@ -402,6 +426,7 @@ function Fields({ fields, selection, onSelect, onRendered, farm, tool, onLasso }
     const current = latest.current.selection;
     layer.select(current?.id ?? null);
     layer.setFarm(latest.current.farm ?? NO_FARM);
+    layer.setTwin(latest.current.twin);
     shownRef.current = current;
     const linked = current ? layer.bounds(current.id) : null;
     const all = collectionBounds(fields);
@@ -437,6 +462,29 @@ function Fields({ fields, selection, onSelect, onRendered, farm, tool, onLasso }
     if (selection.via === "url") map.fitBounds(bounds, FIT_FIELD); // arrived by link or Back button: go there
     else nudgeIntoView(map, bounds); // clicked on the map: keep the user's view, just make sure it shows
   }, [map, selection]);
+
+  // Follow the twin: outline it, and bring this field and its twin into the part of the map the
+  // twin view leaves uncovered.
+  useEffect(() => {
+    const layer = layerRef.current;
+    if (!layer) return;
+    layer.setTwin(twin);
+    const own = latest.current.selection;
+    if (twin === null || !own) return;
+    const a = layer.bounds(own.id);
+    const b = layer.bounds(twin);
+    if (!a || !b) return;
+    map.invalidateSize({ pan: false });
+    const rect = map.getContainer().getBoundingClientRect();
+    const covered = Math.max(0, rect.bottom - (window.innerHeight - latest.current.twinCover));
+    const narrow = rect.width < 560;
+    map.fitBounds(L.latLngBounds(a.getSouthWest(), a.getNorthEast()).extend(b), {
+      paddingTopLeft: [narrow ? 24 : 48, narrow ? 72 : 120],
+      paddingBottomRight: [narrow ? 24 : 48, covered + 24],
+      maxZoom: 16,
+      animate: false,
+    });
+  }, [map, twin, fields]);
 
   // Follow the farm: only the fields that joined or left it are restyled.
   useEffect(() => {
@@ -503,9 +551,13 @@ interface FieldMapProps {
   farm?: readonly string[] | null;
   tool?: FarmTool;
   onLasso?: (ids: string[]) => void;
+  /** The twin to outline in a second colour (the "Compare with its twin" view); null (the default) for none. */
+  twin?: string | null;
+  /** How many pixels of the viewport's bottom that view covers, so the map is fitted above it. */
+  twinCover?: number;
 }
 
-export function FieldMap({ fields, selection, onSelect, onRendered, farm = null, tool = "click", onLasso }: FieldMapProps) {
+export function FieldMap({ fields, selection, onSelect, onRendered, farm = null, tool = "click", onLasso, twin = null, twinCover = 0 }: FieldMapProps) {
   return (
     <MapContainer
       className="map"
@@ -525,7 +577,17 @@ export function FieldMap({ fields, selection, onSelect, onRendered, farm = null,
       <KeepSized />
       <ExposeMap />
       {fields && (
-        <Fields fields={fields} selection={selection} onSelect={onSelect} onRendered={onRendered} farm={farm} tool={tool} onLasso={onLasso} />
+        <Fields
+          fields={fields}
+          selection={selection}
+          onSelect={onSelect}
+          onRendered={onRendered}
+          farm={farm}
+          tool={tool}
+          onLasso={onLasso}
+          twin={twin}
+          twinCover={twinCover}
+        />
       )}
     </MapContainer>
   );

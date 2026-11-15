@@ -40,9 +40,11 @@ interface FieldPanelProps {
   onPlannerChoices: (next: PlannerChoices) => void;
   /** Shown above the title when the field was opened from somewhere to go back to (the farm plan). */
   back?: { label: string; onClick: () => void };
+  /** The "Compare with its twin" button in the neighbors section: whether the twin view is open, and how to toggle it. */
+  twin?: { open: boolean; onToggle: () => void };
 }
 
-export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlannerChoices, back }: FieldPanelProps) {
+export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlannerChoices, back, twin }: FieldPanelProps) {
   // Two independent requests, started together; each can fail and be retried on its own.
   const [detail, retryDetail] = useResource(fieldId, api.field);
   // The irrigated / dryland override belongs to one field: it is forgotten when another is opened.
@@ -145,7 +147,7 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
             jump={ownJump}
           />
         )}
-        {!unknownField && <Neighbors fieldId={fieldId} />}
+        {!unknownField && <Neighbors fieldId={fieldId} twin={twin} />}
       </div>
     </aside>
   );

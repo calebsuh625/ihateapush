@@ -42,7 +42,7 @@ function loadNeighbors(fieldId: string, signal: AbortSignal) {
   );
 }
 
-export function Neighbors({ fieldId }: { fieldId: string }) {
+export function Neighbors({ fieldId, twin }: { fieldId: string; twin?: { open: boolean; onToggle: () => void } }) {
   const [res, retry] = useResource(fieldId, loadNeighbors);
   const isFake = res.status === "ready" && res.data.is_fake;
 
@@ -82,7 +82,7 @@ export function Neighbors({ fieldId }: { fieldId: string }) {
             onRetry={res.message.includes("make causal") ? undefined : retry}
           />
         ))}
-      {res.status === "ready" && <NeighborsBody data={res.data} />}
+      {res.status === "ready" && <NeighborsBody data={res.data} twin={twin} />}
     </section>
   );
 }
@@ -92,7 +92,7 @@ function grewWhen(data: FieldNeighbors): string {
   return data.design ? `in ${yearSpan(data.design.rotation_years)}` : `from ${data.switch_year}`;
 }
 
-function NeighborsBody({ data }: { data: FieldNeighbors }) {
+function NeighborsBody({ data, twin }: { data: FieldNeighbors; twin?: { open: boolean; onToggle: () => void } }) {
   if (data.neighbors.length === 0) {
     return (
       <div className="nb-empty" data-testid="neighbors-empty">
@@ -127,6 +127,19 @@ function NeighborsBody({ data }: { data: FieldNeighbors }) {
       {data.outcome?.note && (
         <p className="nb-note muted" data-testid="neighbors-note">
           {data.outcome.note}
+        </p>
+      )}
+      {twin && (
+        <p className="nb-compare">
+          <button
+            type="button"
+            className="button"
+            data-testid="compare-twin"
+            aria-expanded={twin.open}
+            onClick={twin.onToggle}
+          >
+            {twin.open ? "Close the comparison" : "Compare with its twin"}
+          </button>
         </p>
       )}
       <ol className="nb-list">

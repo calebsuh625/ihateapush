@@ -9,7 +9,7 @@ Branch `phase-4`, cut from `main` at `15aceb7`. Nothing is pushed. One commit pe
 | 1 | Build-your-own rotation | done (checked, committed) |
 | 2 | Transition path | done (checked, committed) |
 | 3 | Whole-farm planner | done (checked, committed) |
-| 4 | Twin view | not started |
+| 4 | Twin view | done (checked, committed) |
 | 5 | Map layers + time-lapse | not started |
 | 6 | Water reality check | not started |
 | 7 | Farm advisor (chat) | not started |
@@ -90,9 +90,31 @@ which limit binds, and the rotation and start year chosen for each field with wh
   no irrigated/dryland override on the farm screen (the API takes one); lasso not tried on a touch
   device; tight limits can stop at the time limit with the gap stated.
 
+### 4. Twin view
+
+- The farmer can put a field next to its closest look-alike neighbour: both crop histories 2008-2024 lined
+  up by year, both bare-days lines 2016-2024 with the 2020 cut-off, the pair's measured difference as a
+  bar beside the spread of the other pairs and the comparison's average with its 95% interval, "N of M
+  other pairs point the same way", and the fake-switch result. Both fields are outlined on the map (twin
+  amber and dashed; clicking it opens it).
+- Try: http://localhost:5173/#KS-007027, scroll to "Your neighbors", press "Compare with its twin". Also
+  KS-008993 (irrigated), KS-014011 (6-pair comparison, no average), KS-000311 (a gap in 2016). API
+  `GET /field/{id}/twin` (README "Phase 4", schema.md). Notes: data/logs/phase4/item_4.md.
+- Decisions: the twin is the pair with the smallest match score (ties: distance, then pair id); every
+  difference is "this field minus its twin"; "same way" is the same sign of the pair's change, counted
+  from pairs.parquet, exact zeros counted apart; the 2016-2017 bare-days limit (25 days) is rebuilt from
+  causal_fields.parquet because effects.json keeps only the 0.5 multiplier; bare days shown to 0.1 as in
+  "Your neighbors"; every sentence comes from the API and none says a rotation caused anything.
+- Checker fixes: a pair with zero difference showed "other way 181" under the bar (bar now hidden when
+  there is no direction) and sent -0.0; "Phase 2B" removed from farmer-facing sentences; "the crops grown
+  alone would predict X of that" reworded (X is often larger than the difference itself).
+- Limits: only 1,782 of 7,255 fields have a twin (none of the four usual example fields does; they show
+  no button and the usual reason); one pair is noisy and the view says so; interval and placebo belong
+  to the comparison, not the pair; comparisons under 10 pairs have no average.
+
 ## What is left
 
-Items 4 to 8 in the table above.
+Items 5 to 8 in the table above.
 
 ## For you in the morning
 
@@ -121,3 +143,10 @@ Items 4 to 8 in the table above.
   under it (the range is shown). Say if you want the limit held in the lowest model instead.
 - Item 3: when a limit cannot be met, the sentence's "best achievable" is rounded to the safe side, so it
   can read $100 under the leanest year in the table (for example $4,700 against $4,800).
+- Item 4, look at: the fake-switch test fails for 5 of 8 comparisons and the twin view says so in an
+  amber box on every comparison. That is honest, but it is the first thing a reader may ask about.
+- Item 4, data: KS-007524 and its twin have identical bare-days series every year (0.0 difference),
+  which looks like the same ground under two field outlines. Phase 2B may hold more such pairs; worth a
+  look in pipeline/causal/ (not edited tonight).
+- Item 4: table rows are each rounded to 0.1, so "this minus twin" can be 0.1 off the two rows above it
+  (for example -10.8 and +25.9 against -36.6). Say if you want whole days instead.

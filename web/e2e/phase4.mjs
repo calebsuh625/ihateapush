@@ -19,6 +19,12 @@
 // (no limits, limits met, limits that cannot be met, another future), plus the waiting state, the
 // stale-answer rule, opening a field from a row, the refusal for too many fields and phone width.
 //
+// Item 4, the twin view: "Compare with its twin" in the "Your neighbors" section opens a wide view;
+// its two year-aligned columns (crops and bare days), the one chart with both lines, the bar with its
+// interval, every sentence and the count of pairs that agree are compared with a direct call to
+// GET /field/{id}/twin. On the map the twin is outlined in a second colour (read from the canvas) and a
+// click on it opens it. Escape closes the view, then the field. Phone width stacks it.
+//
 // Environment: WEB_URL (default http://localhost:5173), E2E_TIMEOUT_MS (default 20000),
 // DRY_FIELD (default KS-013847), IRRIGATED_FIELD (default KS-014376), PATH_FIELD (default
 // KS-004139, a dryland field with four real years of the six crops), BRIDGE_FIELD (default
@@ -32,6 +38,8 @@ import {
   FIELD_TAGS, LIMIT_TAGS, addFields, farmRequest, fieldChange, formatAcres, formatFarmDollars, formatFarmScore, formatWhole, insideLoop,
   limitTone, metWords, rangeWords,
 } from "../src/lib/farm.ts";
+import { cropLabel } from "../src/crops.ts";
+import { sheetHeight, signed } from "../src/lib/twin.ts";
 import { DEFAULT_CHOICES, formatDollars, formatInches, formatShare, plansQuery, wellQualifier } from "../src/lib/planner.ts";
 import { DEFAULT_SPAN, SPANS, shortYear, signedDollars, signedRange, transitionQuery } from "../src/lib/transition.ts";
 
@@ -42,6 +50,8 @@ const WET = process.env.IRRIGATED_FIELD ?? "KS-014376";
 const PATH_FIELD = process.env.PATH_FIELD ?? "KS-004139";
 const BRIDGE_FIELD = process.env.BRIDGE_FIELD ?? "KS-012807";
 const SETTLED_FIELD = process.env.SETTLED_FIELD ?? "KS-004074";
+const TWIN_FIELD = process.env.TWIN_FIELD ?? "KS-007027"; // has a twin, and a gap in no year
+const UNMATCHED_FIELD = process.env.UNMATCHED_FIELD ?? "KS-000005"; // in no matched pair
 const SHOTS = path.join(path.dirname(fileURLToPath(import.meta.url)), "screenshots");
 const DESKTOP = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
@@ -1206,6 +1216,203 @@ async function runFarmScreen(browser, { get, apiPrefix, shot }) {
   log(`  ✓ farm screen at phone width: the saved farm comes back, no sideways scroll, rows open fields → ${phoneTop}, ${phoneTable}, ${phoneRows}`);
 }
 
+// ------------------------------------------------------------------------------------------
+// Item 4: the twin view
+// ------------------------------------------------------------------------------------------
+
+/** A point inside a polygon ring (lon/lat), found on a grid over its bounding box. */
+function innerPoint(ring) {
+  const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const inside = (x, y) => {
+    let hit = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+    }
+    return hit;
+  };
+  let best = null, bestScore = -1;
+  for (let a = 1; a < 12; a++) for (let b = 1; b < 12; b++) {
+    const x = x0 + ((x1 - x0) * a) / 12, y = y0 + ((y1 - y0) * b) / 12;
+    if (!inside(x, y)) continue;
+    const score = -Math.hypot(a - 6, b - 6); // the most central grid point that is inside
+    if (score > bestScore) { bestScore = score; best = [x, y]; }
+  }
+  if (!best) throw new Failure("no point found inside a field outline");
+  return best;
+}
+
+/** [r, g, b] of the map canvas under a field's inner point, and where that is on screen. */
+async function colourAtField(page, geometry) {
+  const [lon, lat] = innerPoint(geometry.coordinates[0]);
+  return page.evaluate(([lng, lt]) => {
+    const point = window.__map.latLngToContainerPoint([lt, lng]);
+    const box = window.__map.getContainer().getBoundingClientRect();
+    const canvas = document.querySelector(".leaflet-overlay-pane canvas") ?? document.querySelector("canvas.leaflet-zoom-animated");
+    const rect = canvas.getBoundingClientRect();
+    const scale = canvas.width / rect.width;
+    const px = (box.left + point.x - rect.left) * scale, py = (box.top + point.y - rect.top) * scale;
+    const data = canvas.getContext("2d").getImageData(Math.round(px), Math.round(py), 1, 1).data;
+    return { rgb: [data[0], data[1], data[2], data[3]], x: box.left + point.x, y: box.top + point.y };
+  }, [lon, lat]);
+}
+
+async function runTwin(browser, { get, shot }) {
+  const answer = await (await get(`/field/${TWIN_FIELD}/twin`)).json();
+  check(answer.has_twin && answer.twin && answer.comparison && answer.measured && answer.match, `${TWIN_FIELD} needs a twin for this check`);
+  const twinId = answer.twin.field_id;
+  equal((await get(`/field/KS-999999/twin`)).status, 404, "twin: an unknown field answers 404");
+  const none = await (await get(`/field/${UNMATCHED_FIELD}/twin`)).json();
+  equal(none.has_twin, false, "twin: a field in no pair answers has_twin false");
+  check(typeof none.reason === "string" && none.reason.length > 10 && none.twin === null, "twin: the unmatched answer gives a plain reason and no twin");
+
+  const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  page.setDefaultTimeout(TIMEOUT);
+  const monitor = watch(page, "twin");
+  const twinRequests = [];
+  page.on("request", (r) => { if (/\/field\/[^/]+\/twin$/.test(new URL(r.url()).pathname)) twinRequests.push(r.url()); });
+  await page.goto(`${WEB_URL}/#${TWIN_FIELD}`, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await page.waitForSelector('[data-testid="app"][data-fields-drawn]');
+  await page.waitForSelector('[data-testid="neighbors"][data-state="ready"]');
+  equal(await page.locator('[data-testid="twin-view"]').count(), 0, "twin: the view is closed until asked for");
+  equal(twinRequests.length, 0, "twin: nothing is requested before the button is pressed");
+  const button = page.locator('[data-testid="compare-twin"]');
+  equal(squash(await button.textContent()), "Compare with its twin", "twin: the button's words");
+  await button.scrollIntoViewIfNeeded();
+  await button.click();
+  await page.waitForSelector('[data-testid="twin-view"][data-state="ready"]');
+  equal(twinRequests.length, 1, "twin: one request for the answer");
+  const view = page.locator('[data-testid="twin-view"]');
+  equal(await view.getAttribute("data-twin-id"), twinId, "twin: the view shows the API's twin");
+  const title = squash(await page.locator("#twin-title").textContent());
+  equal(title, `${TWIN_FIELD} and its twin ${twinId}`, "twin: the title names both fields");
+  equal(await button.getAttribute("aria-expanded"), "true", "twin: the button says the view is open");
+
+  // two columns, one row per year, the same years in both
+  const colTexts = async (side) => (await page.locator(`[data-testid="twin-col-${side}"] .tw-year`).evaluateAll((n) => n.map((e) => e.innerText))).map(squash);
+  const years = Array.from({ length: 17 }, (_, i) => 2008 + i);
+  for (const [side, who] of [["this", answer.this], ["twin", answer.twin]]) {
+    const rows = await colTexts(side);
+    equal(rows.length, years.length, `twin: ${side} column has one row per year 2008-2024`);
+    years.forEach((year, i) => {
+      const crop = who.crop_history[String(year)];
+      const reading = who.bare_days.find((p) => p.year === year);
+      const shown = reading === undefined ? "" : reading.value === null ? "no reading" : `${reading.value.toFixed(1)} d`;
+      equal(rows[i], squash(`${year} ${crop ? cropLabel(crop) : "no data"} ${shown}`), `twin: ${side} column, ${year}`);
+    });
+  }
+  const tops = (side) => page.locator(`[data-testid="twin-col-${side}"] .tw-year`).evaluateAll((n) => n.map((e) => Math.round(e.getBoundingClientRect().top)));
+  const [thisTops, twinTops] = [await tops("this"), await tops("twin")];
+  check(thisTops.every((t, i) => Math.abs(t - twinTops[i]) <= 1), `twin: the year rows do not line up across the two columns (${thisTops[3]} vs ${twinTops[3]})`);
+  check((await text(page, "twin-match")).includes(answer.match.sentence), "twin: the match sentence");
+  for (const item of answer.match.matched_on) {
+    check((await text(page, "twin-match")).includes(item.text), `twin: matched-on line "${item.text}" is missing`);
+  }
+
+  // one chart, both lines, the cut-off
+  equal(await page.locator('[data-testid="twin-chart"]').count(), 1, "twin: one chart");
+  for (const [who, series] of [["this", answer.this.bare_days], ["twin", answer.twin.bare_days]]) {
+    const dots = await page.locator(`[data-testid="twin-dot"][data-who="${who}"]`).evaluateAll((n) => n.map((e) => [Number(e.dataset.year), Number(e.dataset.value)]));
+    const want = series.filter((p) => p.value !== null).map((p) => [p.year, p.value]);
+    equal(JSON.stringify(dots), JSON.stringify(want), `twin: chart points of ${who}`);
+  }
+  equal(await page.locator('[data-testid="twin-cutoff"]').count(), 1, "twin: the cut-off is marked");
+  check((await text(page, "twin-cutoff")).includes(String(answer.switch_year)), "twin: the cut-off says its year");
+  check(await page.locator('[data-testid="twin-cutoff"] line').evaluate((l) => l.getBoundingClientRect().height > 20), "twin: the cut-off line is drawn");
+
+  // the measured difference and the interval
+  const bar = page.locator('[data-testid="twin-bar"]');
+  equal(Number(await bar.getAttribute("data-diff")), answer.measured.difference_in_change, "twin: the bar is the pair's difference in change");
+  const interval = await page.locator('[data-testid="twin-bar-interval"]').count();
+  equal(interval, answer.comparison.estimate ? 1 : 0, "twin: the interval is drawn when the comparison has one");
+  const diffText = await text(page, "twin-difference");
+  if (answer.comparison.estimate) {
+    const e = answer.comparison.estimate;
+    check(diffText.includes(`${signed(e.effect)} (${signed(e.ci_low)} to ${signed(e.ci_high)})`), "twin: the interval's numbers are on the chart");
+  }
+  equal(await text(page, "twin-measured"), squash(answer.measured.sentence), "twin: the measured sentence");
+  equal(await text(page, "twin-estimate"), squash(answer.comparison.sentence), "twin: the comparison sentence");
+  check(diffText.includes("One pair alone is noisy"), "twin: says one pair alone is noisy");
+  equal(await text(page, "twin-agree"), squash(answer.comparison.agreement.sentence), "twin: how many pairs agree");
+  const ag = answer.comparison.agreement;
+  check(ag.other_pairs === answer.comparison.n_pairs - 1, "twin: the other pairs are the comparison's pairs minus this one");
+  check(new RegExp(`^${ag.same_way} of ${ag.other_pairs} other pairs point the same way`).test(await text(page, "twin-agree")), "twin: 'N of M other pairs point the same way'");
+  equal((await text(page, "twin-placebo")).includes(answer.comparison.placebo.sentence), true, "twin: the placebo result is shown");
+  const wholeView = await text(page, "twin-view");
+  check(!/\b(caused|causes|improved|improves|soil health|profit)\b/i.test(wholeView), "twin: the view must not say a rotation caused or improved anything");
+  check(!/NaN|undefined|null/.test(wholeView), "twin: no NaN / undefined / null on the screen");
+
+  // on the map: the field blue, the twin amber, and the twin can be clicked
+  const geometry = async (id) => (await (await get(`/field/${id}`)).json()).geometry;
+  const [selfGeometry, twinGeometry] = [await geometry(TWIN_FIELD), await geometry(twinId)];
+  await page.waitForTimeout(600);
+  const sheetTop = DESKTOP.height - sheetHeight(DESKTOP.height);
+  const atTwin = await colourAtField(page, twinGeometry);
+  const atSelf = await colourAtField(page, selfGeometry);
+  check(atTwin.y < sheetTop && atSelf.y < sheetTop, `twin: both fields are on the map above the view (twin y ${Math.round(atTwin.y)}, view starts ${sheetTop})`);
+  check(atTwin.rgb[0] - atTwin.rgb[2] > 40, `twin: the twin is not drawn in the warm second colour (rgb ${atTwin.rgb})`);
+  check(atSelf.rgb[2] - atSelf.rgb[0] > 20, `twin: this field is not drawn in blue (rgb ${atSelf.rgb})`);
+  await page.screenshot({ path: path.join(SHOTS, "phase4-twin.png") });
+  await page.locator('[data-testid="twin-view"] .tw-body').evaluate((n) => n.scrollTo(0, 560));
+  await page.screenshot({ path: path.join(SHOTS, "phase4-twin-2.png") });
+  log("  ✓ twin view: columns, chart, bar, interval, every sentence and the agreeing pairs match GET /field/{id}/twin; both fields outlined");
+
+  // Escape: the view first, then the field
+  await page.keyboard.press("Escape");
+  equal(await page.locator('[data-testid="twin-view"]').count(), 0, "twin: Escape closes the view");
+  equal(await page.locator('[data-testid="panel"]').getAttribute("data-field-id"), TWIN_FIELD, "twin: Escape keeps the field open");
+  const againColour = await colourAtField(page, twinGeometry);
+  check(!(againColour.rgb[0] - againColour.rgb[2] > 40), "twin: the second colour goes away with the view");
+  await button.scrollIntoViewIfNeeded();
+  await button.click();
+  await page.waitForSelector('[data-testid="twin-view"][data-state="ready"]');
+  await page.locator('[data-testid="twin-close"]').click();
+  equal(await page.locator('[data-testid="twin-view"]').count(), 0, "twin: Close closes the view");
+  await button.click();
+  await page.waitForSelector('[data-testid="twin-view"][data-state="ready"]');
+  await page.waitForTimeout(600);
+
+  // click the twin on the map: it opens
+  const click = await colourAtField(page, twinGeometry);
+  await page.mouse.click(click.x, click.y);
+  await page.waitForSelector(`[data-testid="panel"][data-field-id="${twinId}"]`);
+  equal(await page.locator('[data-testid="twin-view"]').count(), 0, "twin: opening the twin closes the comparison");
+  log(`  ✓ clicking the twin on the map opens ${twinId}; Escape and Close work`);
+
+  // a field with no twin has no button
+  await page.goto(`${WEB_URL}/#${UNMATCHED_FIELD}`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('[data-testid="neighbors"][data-state="ready"]');
+  equal(await page.locator('[data-testid="compare-twin"]').count(), 0, "twin: no button on a field without neighbors");
+  check(monitor.problems.length === 0, `console errors in the twin view:\n  ${monitor.problems.join("\n  ")}`);
+  await context.close();
+
+  // phone width: stacked, no sideways scroll
+  const phoneContext = await browser.newContext({ viewport: PHONE, deviceScaleFactor: 2, hasTouch: true });
+  const phone = await phoneContext.newPage();
+  phone.setDefaultTimeout(TIMEOUT);
+  const phoneMonitor = watch(phone, "twin phone");
+  await phone.goto(`${WEB_URL}/#${TWIN_FIELD}`, { waitUntil: "domcontentloaded" });
+  await phone.waitForSelector('[data-testid="neighbors"][data-state="ready"]');
+  await phone.locator('[data-testid="compare-twin"]').scrollIntoViewIfNeeded();
+  await phone.locator('[data-testid="compare-twin"]').click();
+  await phone.waitForSelector('[data-testid="twin-view"][data-state="ready"]');
+  const boxes = await phone.evaluate(() => {
+    const r = (s) => document.querySelector(s).getBoundingClientRect();
+    const a = r('[data-testid="twin-col-this"]'), b = r('[data-testid="twin-col-twin"]'), c = r(".tw-analysis");
+    return { a: [a.left, a.top, a.bottom], b: [b.left, b.top, b.bottom], c: [c.left, c.top], wide: document.documentElement.scrollWidth - innerWidth };
+  });
+  check(boxes.b[1] >= boxes.a[2] - 1 && boxes.c[1] >= boxes.b[2] - 1, "twin phone: the two fields and the analysis are not stacked");
+  equal(Math.round(boxes.a[0]), Math.round(boxes.b[0]), "twin phone: the columns share a left edge");
+  check(boxes.wide <= 0, `twin phone: the page scrolls sideways by ${boxes.wide}px`);
+  await phone.waitForTimeout(600);
+  const phoneShot = await shot(phone, "phase4-twin-phone.png");
+  check(phoneMonitor.problems.length === 0, `console errors on the phone:\n  ${phoneMonitor.problems.join("\n  ")}`);
+  await phoneContext.close();
+  log(`  ✓ twin view at phone width: stacked, no sideways scroll → ${phoneShot}`);
+}
+
 async function run(browser) {
   const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
   const page = await context.newPage();
@@ -1594,6 +1801,7 @@ async function run(browser) {
   await runTransition(browser, { get, defaults, shot });
   await runFarm(browser, { get, apiPrefix, defaults });
   await runFarmScreen(browser, { get, apiPrefix, shot });
+  await runTwin(browser, { get, shot });
 }
 
 let browser;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { API_BASE, api, apiUrl } from "./api";
+import { API_BASE, api, apiUrl, getJson } from "./api";
 import { FarmPanel } from "./components/FarmPanel";
+import { TwinView } from "./components/TwinView";
 import { FieldMap } from "./components/FieldMap";
 import type { FarmTool } from "./components/FieldMap";
 import { ErrorNote, FieldPanel } from "./components/FieldPanel";
@@ -9,6 +10,8 @@ import { useResource } from "./hooks/useResource";
 import type { Resource } from "./hooks/useResource";
 import { useSelection } from "./hooks/useSelection";
 import { addFields, toggleField } from "./lib/farm";
+import { sheetHeight } from "./lib/twin";
+import type { TwinAnswer } from "./lib/twin";
 import { formatCount, plural } from "./lib/format";
 import { DEFAULT_CHOICES } from "./lib/planner";
 import type { PlannerChoices } from "./lib/planner";
@@ -16,6 +19,12 @@ import type { Health } from "./types";
 
 const loadFields = (_key: string, signal: AbortSignal) => api.fields(signal);
 const loadHealth = (_key: string, signal: AbortSignal) => api.health(signal);
+const loadTwin = (fieldId: string, signal: AbortSignal) =>
+  getJson<TwinAnswer>(
+    `/field/${encodeURIComponent(fieldId)}/twin`,
+    (b) => typeof b === "object" && b !== null && (b as { field_id?: unknown }).field_id === fieldId && "has_twin" in b,
+    signal,
+  );
 
 /** The farm being planned: its fields in the order they were picked, and the two limit boxes as typed. */
 interface Farm {
@@ -62,6 +71,13 @@ export default function App() {
   const [farmMode, setFarmMode] = useState(false);
   const [farm, setFarm] = useState<Farm>(storedFarm);
   const [tool, setTool] = useState<FarmTool>("click");
+  // "Compare with its twin": the field whose twin view is open. It is only open while that field is
+  // the selected one, so opening another field (the twin, from the map) closes it.
+  const [compare, setCompare] = useState<string | null>(null);
+  const compareId = compare !== null && selection?.id === compare ? compare : null;
+  const [twinRes, retryTwin] = useResource(compareId, loadTwin);
+  const twinId = compareId !== null && twinRes.status === "ready" && twinRes.data.has_twin ? (twinRes.data.twin?.field_id ?? null) : null;
+  const twinHeight = sheetHeight(window.innerHeight);
 
   const fieldData = fields.status === "ready" ? fields.data : null;
   const areaById = useMemo(() => {
@@ -87,11 +103,18 @@ export default function App() {
   useEffect(() => {
     if (!selection) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) clear();
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (compareId !== null) setCompare(null); // the comparison closes first, then the field
+      else clear();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selection, clear]);
+  }, [selection, clear, compareId]);
+
+  // A comparison left open for a field that is no longer selected is forgotten.
+  useEffect(() => {
+    if (compare !== null && selection?.id !== compare) setCompare(null);
+  }, [compare, selection]);
 
   useEffect(() => {
     document.title = selection ? `${selection.id} · ${APP_NAME}` : farmMode ? `Farm plan · ${APP_NAME}` : APP_NAME;
@@ -150,6 +173,8 @@ export default function App() {
           farm={farmMode ? farmIds : null}
           tool={tool}
           onLasso={lasso}
+          twin={twinId}
+          twinCover={twinHeight}
         />
 
         <div className="masthead">
@@ -240,6 +265,7 @@ export default function App() {
           plannerChoices={plannerChoices}
           onPlannerChoices={setPlannerChoices}
           back={farmMode ? { label: "Back to the farm plan", onClick: clear } : undefined}
+          twin={{ open: compareId !== null, onToggle: () => setCompare(compareId !== null ? null : selection.id) }}
         />
       ) : (
         farmMode && (
@@ -257,6 +283,17 @@ export default function App() {
             onClose={toggleFarmMode}
           />
         )
+      )}
+
+      {compareId !== null && (
+        <TwinView
+          fieldId={compareId}
+          res={twinRes}
+          onRetry={retryTwin}
+          onClose={() => setCompare(null)}
+          onOpenField={select}
+          height={twinHeight}
+        />
       )}
     </div>
   );

@@ -732,6 +732,75 @@ lists shortened):
   is, the model range, what dollars are, the per-acre pumping limit, the order of the limits when they
   cannot both be met, what is left out).
 
+## `GET /field/{id}/twin` (Phase 4: twin view)
+
+A field and its best-matched look-alike neighbour from Phase 2B. Built by `api/twin.py` from
+`data/pairs.parquet`, `data/effects.json`, `data/causal_fields.parquet` and the soil table named in
+`effects.json` (so it has the same 503 as `/field/{id}/neighbors` until `make causal` has run). 404 for an
+unknown field. A field in no matched pair gets 200 with `has_twin: false`.
+
+The twin is the field's pair with the smallest `match_score` (ties: smaller `distance_km`, then `pair_id`).
+Every difference is **this field minus its twin**. A pair is stored as A minus B; when this field is the B
+side the sign flips and an interval swaps its ends (`comparison.as_stored` keeps the stored row untouched).
+All sentences are written by the API, in one place, and never say a rotation caused or improved anything:
+what the numbers are is a difference between look-alike neighbours in the days the soil sits bare.
+
+```jsonc
+{
+  "field_id": "KS-007027", "is_fake": false,
+  "outcome": { "column": "bare_days", "label": "...", "units": "days per year", "higher_is_better": false, "note": "..." },
+  "switch_year": 2020, "design": { /* year ranges, as /neighbors */ }, "soil_years": [2016, ..., 2024],
+  "this": {                       // the same shape for "twin"
+    "field_id": "KS-007027", "rotation_pre": "diverse", "rotation_post": "diverse",
+    "irrigation": "dryland", "soil_group": "...",
+    "crop_history": { "2008": "fallow", ..., "2024": "corn" },        // 2008-2024 as in /field/{id}
+    "bare_days": [ { "year": 2016, "value": 174.2 }, { "year": 2018, "value": null } ]   // every soil year; null = no reading (a gap)
+  },
+  "has_twin": true, "reason": null, "examples": [],      // no twin: has_twin false, reason + examples (demo pairs), and twin/match/measured/comparison are null
+  "twin": { /* as "this" */ },
+  "match": {
+    "pair_id": "P00123", "pairs_of_this_field": 2,
+    "matched_on": [ { "key": "irrigation|distance|slope|mapped_soil|baseline|crop_mix", "label": "...",
+                      "value": 0.8, "limit": 5.0, "unit": "km", "text": "0.8 km apart (limit 5.0 km)" }, ... ],
+    "closeness": { "score": 1.5, "worst_possible": 5, "closer_than_pct": 62, "n_pairs_in_run": 1098, "median_score": 1.9 },
+    "distance_km": 0.8, "sentence": "..."
+  },
+  "measured": {                   // one pair; noisy on its own
+    "pre_years": [2018, 2019], "post_years": [2020, 2024],
+    "this": { "before": 224.1, "after": 157.9, "change": -66.2 }, "twin": { "before": 53.5, "after": 133.0, "change": 79.5 },
+    "level_gap_after": 24.9,      // this after minus twin after: a level
+    "difference_in_change": -145.8,   // this change minus twin change (the pair's `did`, oriented)
+    "from_crops": -15.7, "beyond_crops": -130.1,   // the pair's `did_crops` / `did_beyond`, oriented
+    "years_used": { "before": 2, "after": 5 }, "sentence": "..."
+  },
+  "comparison": {
+    "name": "diverse vs wheat-sorghum-fallow", "a": "...", "b": "...", "this_is": "a",
+    "this_rotation": "diverse", "twin_rotation": "wheat-sorghum-fallow",
+    "n_pairs": 480,               // pairs of this comparison in pairs.parquet, this one included
+    "estimate": { "effect": 5.7, "ci_low": -1.7, "ci_high": 12.0, "ci_excludes_zero": false },   // effects.json "all" row, oriented this minus twin; null under 10 pairs
+    "from_crops": { /* same shape: what the crops alone predict */ },
+    "as_stored": { "effect": 5.7, "ci_low": ..., "ci_high": ..., "n_pairs": 480, "p_value": ..., "ci_excludes_zero": false, "favours": null },
+    "agreement": {
+      "other_pairs": 479, "same_way": 228, "opposite_way": 251, "no_change": 0,   // same + opposite + no_change = other_pairs
+      "this_pair_direction": "fewer",     // this field's change vs its twin's: fewer / more bare days; null if exactly zero
+      "spread_of_other_pairs": { "n": 479, "median": ..., "p25": ..., "p75": ..., "min": ..., "max": ... },   // their changes, oriented
+      "sentence": "228 of 479 other pairs point the same way: ..."
+    },
+    "placebo": {
+      "fake_switch": { "rows": [ { "fake_switch_year": 2017, "effect": ..., "ci_low": ..., "ci_high": ..., "ci_excludes_zero": true } ], "n_failed": 1, "n": 3 },
+      "shuffled_labels": { "p_value": 0.005, "null_p95_abs": 4.6, "n_shuffles": 200 },    // or null
+      "county": { "comparisons_tested": 8, "comparisons_failed": 5 },
+      "passed": false, "sentence": "..."
+    },
+    "sentence": "..."
+  }
+}
+```
+
+"Points the same way" = the other pair's stored `did` has the same sign as this pair's (same comparison, so the
+same rotation sits on the same side); a `did` of exactly zero is counted as `no_change`. Numbers are rounded
+to one decimal (bare days are measured to a tenth).
+
 ## `GET /climate`
 
 What the smart planner assumes about the future. `{"available": true, "source", "models" (list of 6),

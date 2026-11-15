@@ -1,0 +1,506 @@
+/* "Compare with its twin" (TwinView.tsx): a wide sheet over the bottom of the screen; the map stays
+   visible above it. Uses the tokens from styles.css. This field is blue (as on the map), its twin
+   amber and dashed on the map; markers differ too (circle / square) so colour is never the only cue. */
+
+.tw-sheet {
+  --tw-this: #1d4ed8; /* 6.7:1 on white */
+  --tw-twin: #b45309; /* 4.9:1 on white */
+  position: fixed;
+  z-index: 1200; /* above the field panel and Leaflet's controls */
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  height: var(--tw-height, 62dvh);
+  background: var(--surface);
+  border-top: 1px solid var(--line-strong);
+  box-shadow: 0 -6px 24px rgb(16 24 20 / 22%);
+}
+
+.tw-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s3) var(--s5) var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+
+.tw-head h2 {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: 1.25;
+}
+
+.tw-head h2:focus {
+  outline: none;
+}
+
+.tw-head h2:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.tw-vs {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.tw-name--this {
+  color: var(--tw-this);
+}
+
+.tw-name--twin {
+  color: var(--tw-twin);
+}
+
+.tw-sub {
+  margin: var(--s1) 0 0;
+  max-width: 78ch;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.tw-sub .badge {
+  margin-left: var(--s2);
+}
+
+.tw-close {
+  flex: none;
+}
+
+.tw-body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--s3) var(--s5) var(--s5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* two year-aligned columns, then the analysis */
+.tw-grid {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr) minmax(0, 2.2fr);
+  gap: var(--s5);
+  align-items: start;
+}
+
+.tw-col {
+  min-width: 0;
+}
+
+.tw-col-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+
+.tw-key {
+  display: inline-block;
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--tw-this);
+}
+
+.tw-col--twin .tw-key {
+  background: repeating-linear-gradient(90deg, var(--tw-twin) 0 5px, transparent 5px 7px);
+}
+
+.tw-col-id {
+  height: 28px; /* fixed, so the year rows of the two columns line up */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin: 2px 0 0;
+  font-size: var(--text-lg);
+  font-weight: 650;
+}
+
+.tw-col--this .tw-col-id {
+  color: var(--tw-this);
+}
+
+.tw-col--twin .tw-col-id .link-button {
+  color: var(--tw-twin);
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.tw-col-meta {
+  height: 32px; /* two lines at most, fixed for the same reason */
+  margin: 2px 0 var(--s2);
+  overflow: hidden;
+  font-size: var(--text-xs);
+}
+
+.tw-years {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.tw-year {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 62px;
+  align-items: center;
+  column-gap: 6px;
+  height: 22px;
+  font-size: var(--text-sm);
+}
+
+.tw-year.is-switch {
+  margin-top: 6px;
+}
+
+.tw-year.is-switch::before {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  left: 0;
+  height: 0;
+  content: "";
+  border-top: 1.5px dashed var(--ink);
+}
+
+.tw-y {
+  color: var(--muted);
+}
+
+.tw-crop {
+  display: block;
+  height: 16px;
+  padding: 0 6px;
+  overflow: hidden;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 3px;
+}
+
+.tw-crop.is-empty {
+  font-weight: 400;
+  color: var(--muted);
+  background: repeating-linear-gradient(135deg, var(--surface-2) 0 3px, var(--line) 3px 5px);
+}
+
+.tw-bare {
+  font-size: var(--text-xs);
+  text-align: right;
+  color: var(--ink-2);
+}
+
+.tw-analysis {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.tw-block {
+  min-width: 0;
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+
+.tw-block:last-child {
+  border-bottom: 0;
+}
+
+.tw-block h3 {
+  margin: 0 0 var(--s2);
+  font-size: var(--text-md);
+}
+
+.tw-block p {
+  margin: 0 0 var(--s2);
+  font-size: var(--text-md);
+  line-height: 1.45;
+}
+
+.tw-block .tw-cap {
+  font-size: var(--text-sm);
+}
+
+.tw-matched {
+  display: grid;
+  gap: 2px 20px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  padding-left: 18px;
+  margin: 0 0 var(--s2);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+/* charts */
+
+.tw-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  margin: 0 0 var(--s1);
+  font-size: var(--text-sm);
+}
+
+.tw-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tw-bars {
+  margin-bottom: var(--s2);
+}
+
+.tw-chart,
+.tw-bars {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+}
+
+.tw-tick,
+.tw-cut-label,
+.tw-row-label,
+.tw-row-value {
+  font-family: var(--font);
+  font-size: 12px;
+  fill: var(--muted);
+}
+
+.tw-row-label {
+  fill: var(--ink-2);
+}
+
+.tw-row-value {
+  font-weight: 650;
+  fill: var(--ink);
+}
+
+.tw-cut-label {
+  fill: var(--ink);
+}
+
+.tw-grid-line {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.tw-after {
+  fill: var(--surface-2);
+}
+
+.tw-cut {
+  stroke: var(--ink);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.tw-l {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.tw-l--this {
+  stroke: var(--tw-this);
+}
+
+.tw-l--twin {
+  stroke: var(--tw-twin);
+  stroke-dasharray: 6 3;
+}
+
+.tw-d--this {
+  fill: var(--tw-this);
+  stroke: var(--surface);
+  stroke-width: 1;
+}
+
+.tw-d--twin {
+  fill: var(--tw-twin);
+  stroke: var(--surface);
+  stroke-width: 1;
+}
+
+.tw-zero {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+
+.tw-bar-pair {
+  fill: var(--ink-2);
+}
+
+.tw-bar-spread {
+  fill: var(--track);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.tw-median {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.tw-ci {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.tw-ci-dot {
+  fill: var(--ink);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.tw-table {
+  width: 100%;
+  max-width: 460px;
+  margin: 0 0 var(--s3);
+  font-size: var(--text-sm);
+  border-collapse: collapse;
+}
+
+.tw-table th,
+.tw-table td {
+  padding: 3px 6px;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+}
+
+.tw-table th:first-child {
+  text-align: left;
+  font-weight: 600;
+}
+
+.tw-table thead th {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.tw-table-diff th,
+.tw-table-diff td {
+  font-weight: 650;
+  border-bottom: 0;
+}
+
+/* how many pairs agree */
+
+.tw-block .tw-agree {
+  font-size: var(--text-lg);
+  font-weight: 650;
+}
+
+.tw-share {
+  display: flex;
+  max-width: 460px;
+  height: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+}
+
+.tw-share-same {
+  background: var(--ink-2);
+}
+
+.tw-share-opposite {
+  background: repeating-linear-gradient(135deg, var(--surface) 0 3px, var(--line-strong) 3px 5px);
+}
+
+.tw-share-none {
+  background: var(--surface-2);
+}
+
+.tw-share-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  margin: var(--s1) 0 0;
+  font-size: var(--text-sm);
+}
+
+.tw-sw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+}
+
+.tw-sw--same {
+  background: var(--ink-2);
+}
+
+.tw-sw--opposite {
+  background: repeating-linear-gradient(135deg, var(--surface) 0 2px, var(--line-strong) 2px 4px);
+}
+
+.tw-sw--none {
+  background: var(--surface-2);
+}
+
+.tw-trust {
+  padding: var(--s3);
+  background: var(--demo-bg);
+  border: 1px solid var(--demo-line);
+  border-radius: var(--radius);
+}
+
+.tw-trust p {
+  color: var(--demo-ink);
+}
+
+.tw-none {
+  max-width: 70ch;
+}
+
+/* phones, and tablets held upright: everything stacks, one column */
+@media (max-width: 760px), (max-width: 1000px) and (orientation: portrait) {
+  .tw-head {
+    padding: var(--s2) var(--s4);
+  }
+
+  .tw-head h2 {
+    font-size: var(--text-lg);
+  }
+
+  .tw-sub {
+    font-size: var(--text-xs);
+  }
+
+  .tw-body {
+    padding: var(--s3) var(--s4) var(--s5);
+  }
+
+  .tw-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s4);
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1100px) {
+  .tw-grid {
+    grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr);
+  }
+
+  .tw-analysis {
+    grid-column: 1 / -1;
+  }
+}

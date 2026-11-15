@@ -262,6 +262,7 @@ Base URL `http://127.0.0.1:8010` (interactive docs at `/docs`).
 | `GET /field/{id}/soil` | per-year `om_pred`, `confidence`, `n_obs` and `bare_days` for 2016–2024, the soil-survey value, which signal to trust, the typical noise and a plain verdict; `"available": false` with a reason if the soil table has not been built |
 | `GET /effects` | Phase 2B: `data/effects.json` (503 until `make causal` has run) |
 | `GET /field/{id}/neighbors` | Phase 2B: the field's matched look-alike neighbours, their crops and soil timelines |
+| `GET /field/{id}/twin` | Phase 4: the field and its best-matched neighbour side by side: histories, bare days, the pair's difference, its comparison's interval, how many pairs agree, the placebo (503 until `make causal` has run) |
 
 On startup the API loads `data/fields.parquet` if it exists, otherwise `data/fields_fake.parquet`,
 logs which one, and validates it against `schema.md`; a file that does not match stops the server
@@ -965,3 +966,38 @@ Code: `web/src/components/FarmPanel.tsx` + `Farm.css`, `web/src/lib/farm.ts` (pu
 `web/tests/farm.test.mjs`), `web/src/App.tsx` (farm mode), `web/src/components/FieldMap.tsx` (highlight,
 lasso), `api.farmPlan` in `web/src/api.ts`. Browser checks: `npm --prefix web run e2e:phase4`
 (screenshots `web/e2e/screenshots/phase4-farm*.png`).
+
+### Twin view (item 4): "Compare with its twin"
+
+A field next to its best-matched look-alike neighbour from Phase 2B, on one screen. It shows what was
+measured, not a cause: a **difference between look-alike neighbours in the days the soil sits bare**. The
+fake-switch placebo fails for Phase 2B and the crops grown explain the alfalfa differences, so no sentence
+says a rotation caused or improved anything.
+
+- **Endpoint** `GET /field/{id}/twin` (`api/twin.py`, built from `data/pairs.parquet`, `data/effects.json`,
+  `data/causal_fields.parquet` and the soil table; 503 until `make causal` has run, 404 for an unknown field,
+  200 with `has_twin: false` and a reason for a field in no pair). The twin is the field's pair with the
+  smallest match score. The answer has both crop histories (2008-2024), both bare-days series (2016-2024,
+  a year with no reading is `null`, a gap), what they were matched on and how close (each difference
+  against its limit, the match score and the share of the matched pairs it beats), the pair's before / after
+  means and the difference in change, the comparison it belongs to with its estimate and 95% interval
+  from `effects.json`, how many of the other pairs in that comparison point the same way (counted from
+  `pairs.parquet`), and the comparison's placebo result. Every sentence is written by the API. Shape in `schema.md`.
+- **In the app.** The "Your neighbors" section has a "Compare with its twin" button. It opens a wide sheet
+  over the bottom of the screen (the map stays above it, fitted to both fields): two columns with a row per
+  year (crop and days bare, 2008-2024, rows aligned), one chart with both bare-days lines 2016-2024 and
+  the 2020 cut-off marked (gaps stay gaps, the scale starts at zero), the pair's difference in change as a
+  bar next to the middle half of the other pairs and the comparison's average with its interval, "N of M
+  other pairs point the same way", and the placebo sentence. On the map this field stays blue and the twin
+  is amber and dashed; clicking it opens it. Escape or Close closes the sheet. At phone width everything
+  stacks. A single pair is noisy and the view says so next to its numbers.
+- **Limits.** The twin is the field's closest match, not a typical neighbour, and the numbers of one pair swing
+  widely (the "middle half" band shows by how much). "Points
+  the same way" counts the sign of each pair's change only. The baseline limit ("within 25 days") is
+  rebuilt from `causal_fields.parquet` and only quoted when it reproduces the stored match score; the
+  year ranges come from `effects.json`. A field with no pair gets no button; its reason is the one the
+  neighbours section gives.
+- Code: `api/twin.py`, `web/src/components/TwinView.tsx` + `Twin.css`, `web/src/lib/twin.ts` (pure helpers,
+  unit tests in `web/tests/twin.test.mjs`), a twin outline in `web/src/components/FieldMap.tsx`, the button in
+  `Neighbors.tsx`. Tests: `tests/test_twin.py` (made-up tables; one real-data test), browser checks in
+  `web/e2e/phase4.mjs` (screenshots `web/e2e/screenshots/phase4-twin*.png`).
