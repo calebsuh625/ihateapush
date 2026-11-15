@@ -1,0 +1,293 @@
+{
+ "note": "Prices and costs behind api/planner/money.py. Tracked, so a fresh clone works. Refresh the prices with: python -m api.planner.money --update-prices",
+ "basis": "Return over direct costs, $ per acre per year: price x yield - direct costs - pumping. Land rent and the cost of owning machinery and the pivot are not taken off (K-State: about $100 an acre dryland, $430-490 irrigated).",
+ "read_on": "2026-11-14",
+ "prices": {
+  "years": [
+   2020,
+   2024
+  ],
+  "statistic": "median",
+  "source": "USDA NASS, Kansas marketing-year price received (data/nass_finney.parquet)",
+  "why_these_years": "The costs are 2027 budgets, so the prices should be recent too. The 2020-2024 median is within 10% of the prices K-State uses in the same budgets (see budget_prices); the 2015-2024 median (corn 3.99, sorghum 3.60, wheat 4.84, soybeans 9.46 $/bu, alfalfa 143.5 $/ton) is 18-31% below them.",
+  "written": "2026-11-14",
+  "per_unit": {
+   "corn": {
+    "price": 4.73,
+    "unit": "$/bu",
+    "n_years": 5,
+    "level": "state"
+   },
+   "soybeans": {
+    "price": 12.3,
+    "unit": "$/bu",
+    "n_years": 5,
+    "level": "state"
+   },
+   "winter wheat": {
+    "price": 6.74,
+    "unit": "$/bu",
+    "n_years": 5,
+    "level": "state"
+   },
+   "sorghum": {
+    "price": 4.96,
+    "unit": "$/bu",
+    "n_years": 5,
+    "level": "state"
+   },
+   "alfalfa": {
+    "price": 178.0,
+    "unit": "$/ton",
+    "n_years": 5,
+    "level": "state"
+   }
+  }
+ },
+ "budget_prices": {
+  "note": "Prices the K-State 2027 budgets use, for comparison only (not used by the planner).",
+  "corn": 4.88,
+  "soybeans": 12.04,
+  "winter wheat": 6.98,
+  "sorghum": 4.56,
+  "alfalfa": 196.51
+ },
+ "pumping": {
+  "per_mm": 0.1639,
+  "per_acre_inch": 4.162,
+  "fuel_per_acre_inch": 3.27,
+  "labor_per_acre_inch": 0.892,
+  "status": "verified",
+  "source": "K-State AgManager 2027 irrigated budgets (southwest Kansas, centre pivot): natural gas $4.58 per Mcf, 0.71 Mcf per acre-inch from a 300-foot well = $3.27 fuel per acre-inch; irrigation labour $13.38 for 15 inches = $0.892 per acre-inch.",
+  "url": "https://agmanager.info/node/34292"
+ },
+ "costs": {
+  "corn": {
+   "irrigated": {
+    "per_acre": 518.41,
+    "status": "verified",
+    "source": "K-State AgManager 2027 Farm Management Guide: Irrigated Corn (center-pivot), Southwest Kansas, middle yield, dated 2026-11-01",
+    "url": "https://agmanager.info/sites/default/files/wysiwyg/Irrigated%20Corn%20%28center-pivot%29%20Cost-Return%20Budget_Southwest%20Kansas%20_Nov-01-2026.pdf",
+    "budget_yield": 225,
+    "budget_yield_unit": "bu/acre",
+    "budget_total_direct": 580.79,
+    "minus_irrigation_energy": 49.0,
+    "minus_irrigation_labor": 13.38,
+    "budget_inches_applied": 15,
+    "per_yield_unit": 1.4647,
+    "low_budget": {
+     "yield": 185,
+     "direct_net_of_water_lines": 460.18
+    },
+    "high_budget": {
+     "yield": 245,
+     "direct_net_of_water_lines": 548.06
+    }
+   },
+   "dryland": {
+    "per_acre": 281.05,
+    "status": "verified",
+    "source": "K-State AgManager 2027 Farm Management Guide: Corn (W-C-F rotation), Southwest Kansas, middle yield, dated 2026-11-01",
+    "url": "https://agmanager.info/sites/default/files/wysiwyg/Corn%20Cost-Return%20Budget%20%28W-C-F%20Rotation%29%20in%20Southwest%20Kansas__Nov-01-2026.pdf",
+    "budget_yield": 82,
+    "budget_yield_unit": "bu/acre",
+    "budget_total_direct": 281.05,
+    "per_yield_unit": 1.5505,
+    "low_budget": {
+     "yield": 71,
+     "direct_net_of_water_lines": 264.0
+    },
+    "high_budget": {
+     "yield": 93,
+     "direct_net_of_water_lines": 298.11
+    }
+   }
+  },
+  "soybeans": {
+   "irrigated": {
+    "per_acre": 218.91,
+    "status": "verified",
+    "source": "K-State AgManager 2027 Farm Management Guide: Irrigated Soybeans (center-pivot), Southwest Kansas, middle yield, dated 2026-11-01",
+    "url": "https://agmanager.info/sites/default/files/wysiwyg/Irrigated%20Soybeans%20%28center-pivot%29%20Cost-Return%20Budget_Southwest%20KS_Nov-01-2026.pdf",
+    "budget_yield": 65,
+    "budget_yield_unit": "bu/acre",
+    "budget_total_direct": 264.65,
+    "minus_irrigation_energy": 35.93,
+    "minus_irrigation_labor": 9.81,
+    "budget_inches_applied": 11,
+    "per_yield_unit": 1.679,
+    "low_budget": {
+     "yield": 55,
+     "direct_net_of_water_lines": 202.11
+    },
+    "high_budget": {
+     "yield": 75,
+     "direct_net_of_water_lines": 235.69
+    }
+   },
+   "dryland": {
+    "per_acre": 168.12,
+    "status": "verified",
+    "source": "K-State AgManager 2027 Farm Management Guide: Soybean (W-SB-F rotation), Southwest Kansas, middle yield, dated 2026-11-01",
+    "url": "https://agmanager.info/sites/default/files/wysiwyg/Soybean%20Cost-Return%20Budget%20%28W-SB-F%20Rotation%29%20in%20Southwest%20Kansas__Nov-01-2026.pdf",
+    "budget_yield": 25,
+    "budget_yield_unit": "bu/acre",
+    "budget_total_direct": 168.12,
+    "per_yield_unit": 2.5286,
+    "low_budget": {
+     "yield": 18,
+     "direct_net_of_water_lines": 150.42
+    },
+    "high_budget": {
+     "yield": 32,
+     "direct_net_of_water_lines": 185.82
+    }
+   }
+  },
+  "winter wheat": {
+   "irrigated": {
+    "per_acre": 259.34,
+    "status": "verified",
+    "source": "K-State AgManager 2027 Farm Management Guide: Irrigated Wheat, Western Kansas, limited irrigation, middle yield, dated 2026-11-01",
+    "url": "https://agmanager.info/sites/default/files/wysiwyg/Irrigated%20Wheat%20Cost-Return%20Budget%20in%20Western%20KS_Limited%20irrigation_Nov-01-2026.pdf",
+    "budget_yield": 70,
+    "budget_yield_unit": "bu/acre",
+    "budget_total_direct": 284.29,
+    "minus_irrigation_energy": 19.6,
+    "minus_irrigation_labor": 5.35,
+    "budget_inches_applied": 6,
+    "per_yield_unit": 1.723,
+    "low_budget": {
+     "yield": 60,
+     "direct_net_of_water_lines": 219.78
+    },
+    "high_budget": {
+     "yield": 80,
+     "direct_net_of_water_lines": 254.24
+    }
+   },
+   "dryland": {
+    "per_acre": 233.92,
+    "status": "verified",
+    "source": "K-State AgManager 2027 Farm Management Guide: Durum Wheat, Western Kansas, average yields, middle yield, dated 2026-11-01",
+    "url": "https://agmanager.info/sites/default/files/wysiwyg/Durum%20Wheat%20Cost-Return%20Budget%20in%20Western%20KS_Average%20yields_Nov-01-2026.pdf",
+    "budget_yield": 54,
+    "budget_yield_unit": "bu/acre",
+    "budget_total_direct": 233.92,
+    "note": "The 2027 guide has no hard red winter wheat budget for western Kansas, only durum; durum is grown with the same operations (seed and fungicide cost a little more).",
+    "per_yield_unit": 1.7319,
+    "low_budget": {
+     "yield": 46,
+     "direct_net_of_water_lines": 220.06
+    },
+    "high_budget": {
+     "yield": 62,
+     "direct_net_of_water_lines": 247.77
+    }
+   }
+  },
+  "sorghum": {
+   "irrigated": {
+    "per_acre": 353.65,
+    "status": "verified",
+    "source": "K-State AgManager 2027 Farm Management Guide: Irrigated Grain Sorghum (center-pivot), Southwest Kansas, middle yield, dated 2026-11-01",
+    "url": "https://agmanager.info/sites/default/files/wysiwyg/Irrigated%20Grain%20Sorghum%20%28center-pivot%29%20Cost-Return%20Budget_Southwest%20KS_Nov-01-2026.pdf",
+    "budget_yield": 160,
+    "budget_yield_unit": "bu/acre",
+    "budget_total_direct": 403.55,
+    "minus_irrigation_energy": 39.2,
+    "minus_irrigation_labor": 10.7,
+    "budget_inches_applied": 12,
+    "per_yield_unit": 1.0821,
+    "low_budget": {
+     "yield": 144,
+     "direct_net_of_water_lines": 288.12
+    },
+    "high_budget": {
+     "yield": 172,
+     "direct_net_of_water_lines": 318.42
+    }
+   },
+   "dryland": {
+    "per_acre": 225.85,
+    "status": "verified",
+    "source": "K-State AgManager 2027 Farm Management Guide: Grain Sorghum (W-S-F rotation), Southwest Kansas, middle yield, dated 2026-11-01",
+    "url": "https://agmanager.info/sites/default/files/wysiwyg/Grain%20Sorghum%20%28W-S-F%20Rotation%29%20Cost-Return%20Budget%20in%20Southwest%20Kansas__Nov-01-2026.pdf",
+    "budget_yield": 85,
+    "budget_yield_unit": "bu/acre",
+    "budget_total_direct": 225.85,
+    "per_yield_unit": 1.0345,
+    "low_budget": {
+     "yield": 75,
+     "direct_net_of_water_lines": 215.51
+    },
+    "high_budget": {
+     "yield": 95,
+     "direct_net_of_water_lines": 236.2
+    }
+   }
+  },
+  "alfalfa": {
+   "irrigated": {
+    "per_acre": 465.65,
+    "status": "verified",
+    "source": "K-State AgManager 2027 Farm Management Guide: Irrigated Alfalfa (center-pivot), Western Kansas, middle yield, dated 2026-11-01",
+    "url": "https://agmanager.info/sites/default/files/wysiwyg/Irrigated%20Alfalfa%20%28Center-Pivot%29%20Cost-Return%20Budget_Western%20Kansas_Nov-01-2026.pdf",
+    "budget_yield": 5.0,
+    "budget_yield_unit": "tons/acre",
+    "budget_total_direct": 544.66,
+    "minus_irrigation_energy": 62.06,
+    "minus_irrigation_labor": 16.95,
+    "budget_inches_applied": 19,
+    "note": "Establishment is spread over the stand's life in the budget (seed $29 a year); custom haying $232.",
+    "per_yield_unit": 23.2455,
+    "low_budget": {
+     "yield": 4.4,
+     "direct_net_of_water_lines": 210.3
+    },
+    "high_budget": {
+     "yield": 6.6,
+     "direct_net_of_water_lines": 261.44
+    }
+   },
+   "dryland": {
+    "per_acre": 275.15,
+    "status": "verified",
+    "source": "K-State AgManager 2027 Farm Management Guide: Alfalfa, Southwest Kansas, middle yield, dated 2026-11-01",
+    "url": "https://agmanager.info/sites/default/files/wysiwyg/Alfalfa%20Cost-Return%20Budget%20in%20Southwest%20Kansas__Nov-01-2026.pdf",
+    "budget_yield": 3.0,
+    "budget_yield_unit": "tons/acre",
+    "budget_total_direct": 275.15,
+    "note": "Establishment is spread over the stand's life in the budget (seed $29 a year).",
+    "per_yield_unit": 25.07,
+    "low_budget": {
+     "yield": 2.7,
+     "direct_net_of_water_lines": 108.23
+    },
+    "high_budget": {
+     "yield": 3.7,
+     "direct_net_of_water_lines": 133.3
+    }
+   }
+  },
+  "fallow": {
+   "irrigated": {
+    "per_acre": 55.0,
+    "status": "rough, unverified",
+    "source": "Our estimate: K-State publishes no fallow budget. Three herbicide passes at about $18 each (glyphosate, dicamba and 2,4-D at the prices in the K-State 2027 wheat-sorghum-fallow budgets, about $12.50, plus about $5.60 of fuel, labour and repairs per spraying pass).",
+    "per_yield_unit": 0.0
+   },
+   "dryland": {
+    "per_acre": 55.0,
+    "status": "rough, unverified",
+    "source": "Our estimate: K-State publishes no fallow budget. Three herbicide passes at about $18 each (glyphosate, dicamba and 2,4-D at the prices in the K-State 2027 wheat-sorghum-fallow budgets, about $12.50, plus about $5.60 of fuel, labour and repairs per spraying pass).",
+    "per_yield_unit": 0.0
+   }
+  }
+ },
+ "index_pages": {
+  "irrigated": "https://agmanager.info/node/34292",
+  "dryland": "https://agmanager.info/node/34291"
+ },
+ "cost_rule": "The planner's cost for a crop is the K-State middle-yield budget (per_acre) moved to the county's normal yield (api/planner/crop_response.json) along the line through the low- and high-yield columns of the same budget: per_acre + per_yield_unit x (normal yield - budget_yield). K-State scales fertiliser and harvest with the yield goal, and its yield goals are above the county's normal yields. The low and high columns leave out custom work that the middle column includes (alfalfa haying, some fertiliser application), so they are used for the slope only."
+}
