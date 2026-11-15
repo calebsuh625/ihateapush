@@ -388,12 +388,12 @@ async function main() {
     check(offScale.overshoot >= -1 && offScale.overshoot <= 1, `awkward soil: the 7.2% mark should sit on the top edge (${JSON.stringify(offScale)})`);
     const crop = (year) => awkward.crop_history[String(year)] ?? "no crop on record";
     const soilTips = [
-      ["om", 9, "2017 · 2.3% · low confidence · 1 bare view"],
-      ["om", 12 - 1, "2019 · 7.2% · high confidence · 4 bare views"],
+      ["om", 9, "2017 · 2.3% · 1 bare view"],
+      ["om", 12 - 1, "2019 · 7.2% · 4 bare views"],
       ["om", 10, "2018 · no estimate (no clear bare-soil view) · 0 bare views"],
       ["om", 12, "2020 · no soil data"],
       ["om", 0, "2008 · no soil data"],
-      ["om", 16, "2024 · 4.4% · medium confidence · 3 bare views"],
+      ["om", 16, "2024 · 4.4% · 3 bare views"],
       ["bare", 9, `2017 · ${crop(2017)} · 110 days bare`],
       ["bare", 11, `2019 · ${crop(2019)} · no estimate (too few clear views)`],
       ["bare", 12, `2020 · ${crop(2020)} · no soil data`],

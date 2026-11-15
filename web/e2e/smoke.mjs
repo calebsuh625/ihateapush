@@ -515,7 +515,6 @@ async function checkSatellite(page, fieldId, detail, satellite, spanCells) {
 
 const oneDec = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const OM_SCALE_MAX = 5;
-const confWord = (c) => (c < 0.34 ? "low" : c < 0.67 ? "medium" : "high");
 
 /** The "Soil over time" section against GET /field/{id}/soil. */
 async function checkSoil(page, fieldId, detail, soil, spanCells) {
@@ -588,7 +587,7 @@ async function checkSoil(page, fieldId, detail, soil, spanCells) {
   const omRow = inRange.find((r) => r.om_pred !== null);
   if (omRow) {
     await section.locator(`[data-testid="soil-om-col"][data-year="${omRow.year}"]`).hover();
-    equal(await text(page, "soil-tip"), `${omRow.year} · ${oneDec.format(omRow.om_pred)}% · ${confWord(omRow.confidence)} confidence · ${Math.round(omRow.n_obs)} ${Math.round(omRow.n_obs) === 1 ? "bare view" : "bare views"}`, `${fieldId}: organic-matter tooltip`);
+    equal(await text(page, "soil-tip"), `${omRow.year} · ${oneDec.format(omRow.om_pred)}% · ${Math.round(omRow.n_obs)} ${Math.round(omRow.n_obs) === 1 ? "bare view" : "bare views"}`, `${fieldId}: organic-matter tooltip`);
   }
   const bareRow = inRange.find((r) => r.bare_days !== null);
   if (bareRow) {

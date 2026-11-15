@@ -39,12 +39,6 @@ function buildColumns(history: Record<string, string>, soil: FieldSoil): Column[
 const labelStep = (cellCount: number) => Math.max(1, Math.ceil(cellCount / 9));
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 
-export function confidenceWord(confidence: number): "low" | "medium" | "high" {
-  if (confidence < 0.34) return "low";
-  if (confidence < 0.67) return "medium";
-  return "high";
-}
-
 const views = (n: number) => {
   const rounded = Math.round(n);
   return `${rounded} ${plural(rounded, "bare view")}`;
@@ -54,7 +48,8 @@ const days = (n: number) => {
   return `${rounded} ${plural(rounded, "day")}`;
 };
 
-/** "2019 · 2.4% · medium confidence · 3 bare views" */
+/** "2019 · 2.4% · 3 bare views". Confidence is not shown per year: within one field it does not
+ *  track error (see the soil report), so ranking a field's years by it would mislead. */
 export function describeOm(column: Column): string {
   const parts: string[] = [String(column.year)];
   const row = column.soil;
@@ -63,7 +58,7 @@ export function describeOm(column: Column): string {
     parts.push("no estimate (no clear bare-soil view)", views(row.n_obs));
     return parts.join(" · ");
   }
-  parts.push(`${formatOneDecimal(row.om_pred)}%`, `${confidenceWord(row.confidence)} confidence`, views(row.n_obs));
+  parts.push(`${formatOneDecimal(row.om_pred)}%`, views(row.n_obs));
   return parts.join(" · ");
 }
 
@@ -191,7 +186,6 @@ export function SoilTimelineChart({ history, soil }: Props) {
                   data-value={value}
                   style={{
                     bottom: `calc(${clamp01(value / OM_SCALE_MAX) * 100}% - ${DOT / 2}px)`,
-                    opacity: 0.25 + 0.75 * clamp01(column.soil.confidence),
                   }}
                 />
               )}
@@ -217,10 +211,6 @@ export function SoilTimelineChart({ history, soil }: Props) {
             </span>
           </span>
         )}
-        <span className="soil-key">
-          <span className="soil-swatch soil-swatch-dot" aria-hidden="true" />
-          fainter = less confident
-        </span>
       </p>
     </div>
   );
@@ -309,7 +299,6 @@ export function SoilTimelineChart({ history, soil }: Props) {
                 <th scope="col">Year</th>
                 <th scope="col">Crop</th>
                 <th scope="col">Estimated organic matter</th>
-                <th scope="col">Confidence</th>
                 <th scope="col">Bare views</th>
                 <th scope="col">Bare soil days</th>
               </tr>
@@ -320,7 +309,6 @@ export function SoilTimelineChart({ history, soil }: Props) {
                   <th scope="row">{column.year}</th>
                   <td>{column.crop ?? "no crop on record"}</td>
                   <td>{column.soil?.om_pred == null ? "no data" : `${formatOneDecimal(column.soil.om_pred)}%`}</td>
-                  <td>{column.soil?.om_pred == null ? "no data" : confidenceWord(column.soil.confidence)}</td>
                   <td>{column.soil ? views(column.soil.n_obs) : "no data"}</td>
                   <td>{column.soil?.bare_days == null ? "no data" : days(column.soil.bare_days)}</td>
                 </tr>
