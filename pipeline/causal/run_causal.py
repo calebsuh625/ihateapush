@@ -39,6 +39,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import shapely  # noqa: E402
 
+from pipeline.region import REGION  # noqa: E402
 from pipeline.causal import config, did, irrigation, make_fake_soil, matching, rotations, soil_data  # noqa: E402
 from pipeline.common import EQUAL_AREA_CRS, log  # noqa: E402
 from pipeline.schema import FAKE_PATH, REAL_PATH, load_fields, parse_crop_history  # noqa: E402
@@ -376,6 +377,12 @@ def run(outcome_column: str | None = None, quick: bool = False, counts_only: boo
     )
     fields = load_fields(fields_path)
     soil_path = soil_data.resolve_soil_path()
+    if soil_path is None and not REGION.is_default:
+        # Outside Finney the fake soil table would be planted numbers on real fields of another county.
+        raise SystemExit(
+            f"{REGION.label} has no soil_health.parquet of its own; build it first (make soil-obs, then "
+            "make soil-health, with the same REGION). Until then the planner uses Finney County's effects."
+        )
     if soil_path is None:
         log("no data/soil_health.parquet yet: writing the FAKE soil file (planted effects)")
         make_fake_soil.main()

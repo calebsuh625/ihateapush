@@ -245,6 +245,37 @@ it for everyone (county median 76 days in 2023 against 27–46 in other years), 
 within the same year. `om_pred` is empty in the 10% of field-years with no bare-soil view, mostly
 alfalfa and other fields that are never bare. `confidence` is repeatability, not accuracy, and never exceeds 0.38.
 
+## Other counties (regions)
+
+One setting picks the county: `REGION=<5-digit county FIPS>`. Without it everything is Finney County,
+KS (20055), with its files under `data/` exactly as before. Any other county keeps its outputs under
+`data/regions/<fips>/`; downloads stay shared in `data/raw/` (cached by county or location).
+
+```bash
+REGION=20069 make pipeline        # Gray County, KS: fields, crop history, soil, slope (~10 min first time)
+REGION=20069 .venv/bin/python -m pipeline.field_traits --no-openet   # irrigation guess + wind erodibility
+REGION=20069 make dev             # serve Gray County (GET /region says which county and what is borrowed)
+```
+
+Built so far: Finney (20055), Gray (20069), Haskell (20081) and Kearny (20093), the counties touching
+Finney in the same NASS district (Southwest Kansas, 30). A county outside the known table also needs
+`NASS_ASD=<district>` for `make nass`, and `REGION_NAME` if its Census outline is not cached yet.
+
+What each new county gets, and what it borrows:
+
+| Piece | New county | How |
+|---|---|---|
+| Field outlines, 2008-2024 crops, soil, slope | Its own | National public data (USDA CSB/CDL, SSURGO, USGS 3DEP), clipped by FIPS |
+| Irrigated vs dryland, wind erodibility | Its own | `pipeline.field_traits --no-openet` (OpenET water use needs Earth Engine) |
+| Yields and prices (`make nass`) | Its own, or Finney's | Same 1.1 GB USDA stream; until run, Finney's table (same district) |
+| Climate futures (`make climate`) | Finney's | Earth Engine job per county; neighbouring centres are 35-50 km apart, about two cells of the 0.25-degree model grid |
+| Rotation effects on bare soil (Phase 2B) | Finney's, labelled | Needs the county's own satellite bare-soil views (`make soil-obs`, Earth Engine) before `make causal` |
+
+Borrowed inputs are never passed off as local: `GET /region` lists them and the header badge says
+"some inputs from Finney County". Do not run `make causal` in a county without its own
+`soil_health.parquet`: it would fall back to the fake soil table. Field ids keep the `KS-000123` form and
+are unique within a county, not across counties; one API process serves one county.
+
 ## The API
 
 Base URL `http://127.0.0.1:8010` (interactive docs at `/docs`).
