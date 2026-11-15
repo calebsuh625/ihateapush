@@ -361,6 +361,102 @@ Errors: `400 {"detail": "<one plain sentence>"}` for a negative or non-finite pr
 unknown scenario or a horizon outside 2025-2060 (smart planner only); `404` no such field; `422` a value
 that is not a number.
 
+## `GET /field/{id}/score` (Phase 4: build-your-own rotation)
+
+The farmer's own rotation scored like the plans, next to our top picks, with a comparison against our
+first pick. Smart planner only. Query: `rotation` (required) plus every parameter of `/plans` (`soil`,
+`water`, `money`, `risk`, `scenario`, `horizon`, `irrigated`), with the same defaults and the same checks.
+
+`rotation`: 2 to 6 crops, one a year, read as a repeating cycle. Separated by commas, semicolons, slashes,
+arrows, " - ", "then", "and", new lines or spaces; case does not matter. Names accepted (aliases in
+`api/planner/custom.py`): corn (maize); soybeans (soybean, soy, soya, beans); winter wheat (wheat, hrw,
+ww); sorghum (milo, grain sorghum); alfalfa (lucerne); fallow (idle, summer fallow, chem fallow, rest).
+
+```json
+{
+  "field_id": "KS-013847", "engine": "smart",
+  "understood": ["corn", "sorghum", "winter wheat", "fallow"],
+  "settings": { "...": "exactly the settings block of /plans" },
+  "yours": {
+    "name": "Corn – Sorghum – Winter wheat – Fallow",
+    "cycle": ["corn", "sorghum", "winter wheat", "fallow"],
+    "rotation": ["corn", "sorghum", "winter wheat", "fallow"],
+    "scores": {"soil": 0.255, "water": 0.545, "money": 0.569, "risk": 0.777, "overall": 0.512, "robust": 0.488},
+    "reason": "Returns about $17 an acre a year over direct costs, ...",
+    "futures": {"holds": 4, "total": 6},
+    "spread": {"overall": {"low": 0.448, "mid": 0.498, "high": 0.582}, "profit_per_acre": {"low": -6.0, "mid": 16.0, "high": 41.0}},
+    "numbers": {"bare_days": 97.3, "erosion_index": 1.788, "irrigation_mm": 0.0, "irrigation_in": 0.0,
+                "water_met_share": 0.545, "profit_per_acre": 17.0, "failed_share": 0.223},
+    "rank": 15, "rank_of": 18,
+    "is_candidate": false, "same_as_pick": null,
+    "rules_broken": ["Our plans avoid winter wheat straight after corn, sorghum or soybeans without irrigation (...)."],
+    "scored_as": ["corn", "sorghum", "winter wheat", "fallow"]
+  },
+  "plans": ["... the three plans of /plans for the same settings, unchanged ..."],
+  "candidates": 17,
+  "marks": {"robust": [1], "soil": [1], "water": [3], "money": [3], "risk": [2, 3], "holds": [1, 2, 3],
+            "bare_days": [1], "water_use": [3], "profit": [3], "failed": [2, 3]},
+  "marks_note": "A mark means no other column is ahead of that figure in every climate model. ...",
+  "comparison": {
+    "against": "Winter wheat – Sorghum – Fallow (3-year cycle)",
+    "verdict": "ours",
+    "models": {"yours_ahead": 0, "ours_ahead": 6, "total": 6},
+    "headline": ["Yours is not one of the 17 rotations we compare (it breaks what our plans avoid, listed below). Scored the same way, it would be number 15 of 18 with these priorities.",
+                 "Our first pick scores higher overall in all 6 climate models.",
+                 "Ours is ahead on soil protection, water, money, risk and holding up across the futures; yours is not ahead on anything."],
+    "rows": [
+      {"key": "money", "label": "Money", "unit": "$ an acre a year over direct costs",
+       "yours": 17.0, "ours": 36.0, "diff": -19.0, "verdict": "ours",
+       "models": {"yours_ahead": 0, "ours_ahead": 6, "total": 6},
+       "sentence": "Ours returns about $36 an acre a year over direct costs ($17 to $54 across the climate models). Yours returns about $17 an acre a year over direct costs (−$6 to $41 across the climate models).",
+       "score_yours": 0.569, "score_ours": 0.642, "score_diff": -0.073,
+       "yours_range": [-6, 41], "ours_range": [17, 54]}
+    ],
+    "priorities": [{"priority": "soil", "rank": 8, "of": 18, "first": false, "tied": 0}],
+    "priority_sentences": ["Yours does not come first under any single priority. It gets closest when soil protection is all that matters: number 8 of 18."],
+    "notes": ["Your rotation is scored as a repeating cycle: after its last year comes its first again.",
+              "On dryland the sign of these returns depends on the price years and the cost of fallow, so read the money row as a rough guide."]
+  }
+}
+```
+
+(Values from the live server on 2026-11-15, default settings; `rows` and `priorities` trimmed to one entry.)
+
+- `understood`: the crops read from `rotation`, in the six fixed names. `yours.cycle` is the same list.
+- `yours`: a plan object as in `/plans` plus: `rules_broken` (the "Our plans avoid ..." sentences; empty
+  when none), `is_candidate` (it is one of the rotations the planner compares; then the numbers are that
+  candidate's own), `same_as_pick` (1, 2 or 3 when it is that plan of `plans`, else null), `rank` and
+  `rank_of` (its place on the ranking score; `rank_of` is `candidates`, or `candidates + 1` when yours is
+  not among them, so `rank` can be `candidates + 1`: after all of them), `scored_as` (the cycle the numbers
+  were worked out for: shortest repeating unit, a 1- or 2-year unit written over four years, fixed
+  starting year). `yours.rotation` is the cycle's next four years (a longer cycle's first four).
+- `marks`: for each row of the app's table, the columns to mark; column 0 is yours, 1-3 are `plans` in
+  order. Rows: `robust`, `soil`, `water`, `money`, `risk` (the scores), `holds`, `bare_days`, `water_use`
+  (inches pumped when irrigated, share of need met by rain on dryland), `profit`, `failed`. A column is
+  marked unless another column is ahead of it in every climate model with a different figure at the
+  precision shown; an empty list means nothing separates the columns. `robust` marks the highest value.
+  When yours is fallow every year the app shows "no crop" instead of a share for `failed` and (dryland)
+  `water_use`, and column 0 is never marked in those rows.
+- `comparison` is yours against `plans[0]`. `rows` always has `soil`, `water`, `money`, `risk`, `holds`
+  in that order. `yours`, `ours` and `diff` (yours minus ours, between the rounded values) are in `unit`:
+  bare days a year; inches pumped a year or the share of crop water need met by rain; dollars an acre a
+  year over direct costs; share of planted crops that fail; futures held up in. `score_*` are the 0-1
+  scores (not on `holds`). `verdict`: `"ours"` or `"yours"` when that side is ahead in every climate model
+  where the two differ, `"too_close"` when the models disagree (the sentence then ends with the count),
+  `"same"` when the figures are equal at the precision shown. `models` counts the climate models each
+  side is ahead in (null on `holds`, which is one count). Every figure in a `sentence` is one of the
+  row's own values.
+- `comparison.verdict` and `comparison.models` are the same test on the overall score (the weighted
+  mean of the four) model by model.
+- `comparison.priorities`: one entry per priority in the order soil, water, money, risk: the rotation's
+  place among the candidates when that priority alone has weight. `first` is `rank == 1`; `tied` counts
+  the candidates with exactly the same value.
+
+Errors: `400 {"detail": "<one plain sentence>"}` for a crop that is not one of the six (the sentence lists
+them), fewer than 2 or more than 6 years, no rotation, and the bad settings `/plans` refuses; `404` no such
+field; `503 {"detail": "<one plain sentence>"}` when only the basic planner is available (no climate
+tables, `PLANNER_ENGINE=basic`, a custom planner) or the engine failed. The app hides the feature on 503.
+
 ## `GET /climate`
 
 What the smart planner assumes about the future. `{"available": true, "source", "models" (list of 6),

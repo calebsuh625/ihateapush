@@ -139,10 +139,12 @@ interface PlanCardProps {
   candidates?: number;
   /** Smart planner only: the most a well is assumed to deliver, inches a year; null = no limit. */
   irrigationLimitIn?: number | null;
+  /** When given, the card offers "Edit this plan" (it opens in "Try your own rotation"). */
+  onEdit?: () => void;
 }
 
 /** One ranked rotation plan. The future-weather parts appear only when the answer carries them. */
-export function PlanCard({ plan, rank, irrigated = false, profitDomain, candidates, irrigationLimitIn }: PlanCardProps) {
+export function PlanCard({ plan, rank, irrigated = false, profitDomain, candidates, irrigationLimitIn, onEdit }: PlanCardProps) {
   const top = rank === 1;
   const headingId = `plan-${rank}-name`;
   const profit = plan.spread?.profit_per_acre;
@@ -227,6 +229,14 @@ export function PlanCard({ plan, rank, irrigated = false, profitDomain, candidat
       </div>
 
       {plan.numbers && <NumbersLine numbers={plan.numbers} irrigated={irrigated} />}
+
+      {onEdit && (
+        <p className="plan-edit">
+          <button type="button" className="link-button" data-testid="plan-edit" aria-label={`Edit this plan: ${plan.name}`} onClick={onEdit}>
+            Edit this plan
+          </button>
+        </p>
+      )}
     </li>
   );
 }

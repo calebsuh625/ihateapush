@@ -326,11 +326,16 @@ class Engine:
         self._base = lru_cache(maxsize=512)(self._base_uncached)
 
     # --- plans ---
-    def plan_set(self, rotations: Sequence, irrigated: bool, first_prev: str | None = None) -> PlanSet:
+    def plan_set(self, rotations: Sequence, irrigated: bool, first_prev: str | None = None,
+                 max_years: int = cand.YEARS) -> PlanSet:
         """Index arrays for a list of cycles (3 or 4 crops each). Year 1 follows the cycle's last year
-        unless `first_prev` names the crop that really grew before year 1 (a field's own last years)."""
+        unless `first_prev` names the crop that really grew before year 1 (a field's own last years).
+
+        `max_years`: the longest cycle taken (the candidates and a field's own years stop at four; a
+        farmer's own rotation, custom.py, may run to six). The arrays are as wide as the longest cycle,
+        never under four."""
         cycles = tuple(tuple(r) for r in rotations)
-        n, width = len(cycles), cand.YEARS
+        n, width = len(cycles), max([cand.YEARS, *(len(cycle) for cycle in cycles)])
         prev_kind = {c: _KIND_INDEX[CROP_TABLE[c].as_prev] for c in CROPS}
         crop = np.zeros((n, width), dtype=int)
         kind = np.zeros((n, width), dtype=int)
@@ -339,8 +344,8 @@ class Engine:
         shares = np.zeros((n, len(CROPS)))
         for i, cycle in enumerate(cycles):
             length = len(cycle)
-            if not 1 <= length <= width:
-                raise ValueError(f"a plan is a cycle of at most {width} years, got {length}")
+            if not 1 <= length <= max_years:
+                raise ValueError(f"a plan is a cycle of at most {max_years} years, got {length}")
             for j, name in enumerate(cycle):
                 before = first_prev if (j == 0 and first_prev is not None) else cycle[j - 1]
                 crop[i, j], kind[i, j], weight[i, j] = _CROP_INDEX[name], prev_kind[before], 1.0 / length
@@ -424,10 +429,11 @@ class Engine:
 
     def evaluate(self, irrigated: bool, scenario: str = config.DEFAULT_SCENARIO, horizon: int = config.TODAY, *,
                  rotations: Sequence | None = None, first_prev: str | None = None,
-                 wei=None, weg=None, slope_pct=None) -> Evaluation:
+                 wei=None, weg=None, slope_pct=None, max_years: int = cand.YEARS) -> Evaluation:
         """Score the candidates (or the given rotations) in every future of (scenario, horizon).
 
         `first_prev` (with `rotations`): the crop that really grew before year 1, instead of year 4.
+        `max_years` (with `rotations`): the longest cycle taken, four unless the caller says otherwise.
         """
         futures.check_scenario(scenario)
         horizon = futures.check_horizon(horizon)
@@ -435,7 +441,8 @@ class Engine:
         if rotations is None:
             base = self._base(irrigated, scenario, horizon, None)
         else:
-            base = self._base_for(self.plan_set(rotations, irrigated, first_prev), irrigated, scenario, horizon)
+            base = self._base_for(self.plan_set(rotations, irrigated, first_prev, max_years), irrigated, scenario,
+                                  horizon)
         plans = base["plans"]
         index = erosion.erosion_index(plans.bare[:, None], base["erosion_climate"][None, :], wei, weg, slope_pct)
         soil = (config.SOIL_BARE_SHARE * _clip01(1.0 - plans.bare / config.BARE_DAYS_WORST)[:, None]

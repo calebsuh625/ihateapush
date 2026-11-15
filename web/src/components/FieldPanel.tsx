@@ -7,11 +7,14 @@ import type { PlansState } from "../hooks/usePlans";
 import { useResource } from "../hooks/useResource";
 import type { Resource } from "../hooks/useResource";
 import { formatOneDecimal, formatPercent, hectaresToAcres, plural } from "../lib/format";
+import { emptySlots, slotsFrom } from "../lib/custom";
+import type { Slot } from "../lib/custom";
 import { plansQuery, spreadDomain } from "../lib/planner";
 import type { PlannerChoices } from "../lib/planner";
 import { organicMatterClass, slopeClass } from "../thresholds";
-import type { FieldDetail, FieldSatellite, FieldSoil, Streak } from "../types";
+import type { FieldDetail, FieldSatellite, FieldSoil, Plan, Streak } from "../types";
 import { Neighbors } from "./Neighbors";
+import { OwnRotation } from "./OwnRotation";
 import { PlanCard } from "./PlanCard";
 import { CurrentPatternRow, ScoringNote } from "./PlanExtras";
 import { PlannerControls } from "./PlannerControls";
@@ -24,6 +27,8 @@ const EN_DASH = "–";
 const SATELLITE_SKELETON_HEIGHT = 253;
 /** Height of the loaded soil-timeline block at the 424 px panel. */
 const SOIL_SKELETON_HEIGHT = 410;
+/** "Try your own rotation" before the farmer has picked anything: four empty years. */
+const NO_SLOTS: Slot[] = emptySlots();
 
 interface FieldPanelProps {
   fieldId: string;
@@ -41,8 +46,22 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
   // The irrigated / dryland override belongs to one field: it is forgotten when another is opened.
   const [override, setOverride] = useState<{ fieldId: string; value: boolean } | null>(null);
   const irrigationOverride = override !== null && override.fieldId === fieldId ? override.value : null;
-  const planner = usePlans(fieldId, plansQuery(plannerChoices, irrigationOverride));
+  const plannerQuery = plansQuery(plannerChoices, irrigationOverride);
+  const planner = usePlans(fieldId, plannerQuery);
   const plans = planner.resource;
+  // The farmer's own rotation also belongs to one field. `ownJump` counts the times a plan card sent
+  // its rotation there, so the section can bring itself into view.
+  const [own, setOwn] = useState<{ fieldId: string; slots: Slot[] } | null>(null);
+  const ownSlots = own !== null && own.fieldId === fieldId ? own.slots : NO_SLOTS;
+  const [ownJump, setOwnJump] = useState(0);
+  const editPlan = (plan: Plan) => {
+    const slots = slotsFrom(plan.cycle ?? plan.rotation);
+    if (slots === null) return;
+    setOwn({ fieldId, slots });
+    setOwnJump((n) => n + 1);
+  };
+  // Only the future-weather planner can score a rotation of the farmer's own.
+  const smartPlans = plans.status === "ready" && plans.data.engine === "smart" && plans.data.settings !== undefined ? plans.data : null;
   // A third, optional one: the satellite numbers. Its failure stays inside its own section.
   const [satellite, retrySatellite] = useResource(fieldId, api.satellite);
   // And a fourth: the yearly soil condition table. Same rule: its failure stays in its own section.
@@ -103,6 +122,18 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
             onChoices={onPlannerChoices}
             irrigationOverride={irrigationOverride}
             onIrrigationOverride={(value) => setOverride(value === null ? null : { fieldId, value })}
+            onEditPlan={editPlan}
+          />
+        )}
+        {!unknownField && smartPlans && (
+          <OwnRotation
+            key={fieldId}
+            fieldId={fieldId}
+            plansQuery={plannerQuery}
+            slots={ownSlots}
+            onSlots={(slots) => setOwn({ fieldId, slots })}
+            currentCycle={slotsFrom(smartPlans.current?.cycle ?? smartPlans.current?.rotation)}
+            jump={ownJump}
           />
         )}
         {!unknownField && <Neighbors fieldId={fieldId} />}
@@ -383,9 +414,11 @@ interface PlansSectionProps {
   onChoices: (next: PlannerChoices) => void;
   irrigationOverride: boolean | null;
   onIrrigationOverride: (value: boolean | null) => void;
+  /** Send a plan's rotation to "Try your own rotation". */
+  onEditPlan: (plan: Plan) => void;
 }
 
-function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrigationOverride }: PlansSectionProps) {
+function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrigationOverride, onEditPlan }: PlansSectionProps) {
   const plans = planner.resource;
   const data = plans.status === "ready" ? plans.data : null;
   // The future-weather planner answered: show its controls and the extra parts of the cards.
@@ -443,7 +476,16 @@ function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrig
             ) : (
               <ol className="plans" data-testid="plans">
                 {data.plans.slice(0, 3).map((plan, index) => (
-                  <PlanCard key={index} plan={plan} rank={index + 1} irrigated={settings?.irrigated} profitDomain={profitDomain} candidates={data.candidates} irrigationLimitIn={settings?.irrigation_limit_in} />
+                  <PlanCard
+                    key={index}
+                    plan={plan}
+                    rank={index + 1}
+                    irrigated={settings?.irrigated}
+                    profitDomain={profitDomain}
+                    candidates={data.candidates}
+                    irrigationLimitIn={settings?.irrigation_limit_in}
+                    onEdit={smart ? () => onEditPlan(plan) : undefined}
+                  />
                 ))}
               </ol>
             )}

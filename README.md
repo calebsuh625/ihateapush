@@ -255,6 +255,7 @@ Base URL `http://127.0.0.1:8010` (interactive docs at `/docs`).
 | `GET /fields` | GeoJSON FeatureCollection of all fields (`field_id`, `area_ha`, simplified outline) |
 | `GET /field/{id}` | one field: outline, `crop_history` as an object, organic matter, slope, area, and stats (distinct crops, longest same-crop streak, % of years in corn) |
 | `GET /field/{id}/plans` | the planner's top 3 rotations with soil / water / money / overall scores and a one-line reason; with the Phase 3 tables also risk, "holds up in X of 6 futures", and the future weather assumed (see [Phase 3](#phase-3-smart-planner-and-future-weather)) |
+| `GET /field/{id}/score?rotation=...` | Phase 4: the farmer's own rotation scored like the plans, next to our top 3, with a comparison (see [Phase 4](#phase-4); 503 without the Phase 3 tables) |
 | `GET /climate` | Phase 3: the future weather the planner assumes, per scenario and year |
 | `GET /field/{id}/satellite` | per-year `ndvi_peak`, `cover_frac` and `n_obs`, plus averages and the trend per decade; `"available": false` with a reason if the satellite file has not been built |
 | `GET /field/{id}/soil` | per-year `om_pred`, `confidence`, `n_obs` and `bare_days` for 2016–2024, the soil-survey value, which signal to trust, the typical noise and a plain verdict; `"available": false` with a reason if the soil table has not been built |
@@ -694,3 +695,61 @@ Read the numbers as a comparison between plans, not a forecast.
 - **Calibration is weak for some crops** (see the table): sorghum irrigated, soybeans dryland and alfalfa
   run on textbook numbers; the model's yields swing less than real ones and miss some bad years (for
   example the 2023 wheat abandonment).
+
+## Phase 4
+
+### Build-your-own rotation (item 1)
+
+In the field panel, under the plan cards, "Try your own rotation" lets the farmer enter any rotation of
+2 to 6 years: pick a crop per year, reorder the years (drag the handle, or the earlier / later buttons
+for keyboard and touch), add or remove a year, type it ("corn, milo, wheat, fallow"), start from what the
+field grows now, or press "Edit this plan" on one of our cards. It is scored by the same engine, with the
+same field numbers, climate futures and priorities as the cards above it, and follows the sliders, the
+future, the scenario and the irrigation switch (same debounce and stale-answer rule as the cards:
+`web/src/hooks/useLatest.ts`).
+
+What it shows: a table (Yours | Our 1 | 2 | 3) with the ranking score, the four scores, the futures it
+holds up in, bare days, water, return per acre with its lowest and highest climate model, and failed
+crops; then, in the API's own sentences, where yours would rank, how it compares with our first pick row
+by row, under which single priority it would come first, and which of our agronomy rules it breaks
+(worded "Our plans avoid ...").
+
+```
+GET /field/{id}/score?rotation=corn,sorghum,winter wheat,fallow   (+ the query parameters of /plans)
+```
+
+Code: `api/planner/custom.py` (parsing, normal form, comparison, words), `api/main.py` (endpoint),
+`web/src/components/OwnRotation.tsx`, `web/src/lib/custom.ts`. Answer shape: schema.md.
+
+How it is scored and compared:
+
+- The rotation is a **cycle** (after the last year comes the first). It is reduced to its shortest
+  repeating unit and a fixed starting year, so the same cycle typed from another year scores the same.
+  When that is one of the planner's candidates it gets the candidate's own numbers and place; otherwise it
+  is scored on its own and told where it would stand ("number 15 of 18").
+- A row **names a winner only when the same side is ahead in every climate model**. When the models
+  disagree it says "too close to call" and gives the count; when the two figures are equal at the
+  precision shown it says they are the same. The marks in the table follow the same rule (a figure is
+  marked unless another column is ahead of it in every model).
+- "When would yours come first?" tries each priority on its own (that one is all that matters) and
+  reports the place truthfully, also when the answer is "under none".
+
+Limits:
+
+- Only the six crops. Anything else (cotton, a cover crop) is refused with one sentence listing them.
+- Everything that is county-level in the planner is county-level here; the limits listed under "How this
+  is scored" apply unchanged (no yield effect of the previous crop beyond soil water, today's prices).
+- A rotation our rules would never recommend can still score well, because the rules are agronomy the
+  crop model cannot see (see Phase 3). Continuous corn under irrigation would be number 2 of 106 on
+  KS-014376 today; the section says which rule it breaks rather than hiding the score. A rotation that
+  plants nothing gets full marks on water and risk, and the answer says why.
+- On dryland the sign of the dollar figures depends on the price years and the fallow cost; the answer
+  carries that sentence as a note.
+- Cycles of 5 or 6 years are scored but can never be "one of ours": the planner compares 3- and 4-year
+  cycles only. The Phase 2B rotation-type shift of a 5-year cycle is read from 12 years of it, which is
+  not a whole number of rounds.
+- Without the climate tables (basic planner) the endpoint answers 503 and the app hides the section.
+- The rotation built for one field is forgotten when another field is opened.
+
+Checks: `tests/test_custom_rotation.py`, `web/tests/custom.test.mjs`, `npm --prefix web run e2e:phase4`
+(part of `make e2e`; compares the table, the marks and every sentence with a direct API call).

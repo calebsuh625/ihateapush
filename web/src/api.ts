@@ -1,6 +1,6 @@
 // The one place the app talks to the backend. Every call returns typed JSON or throws ApiError
 // (or the browser's AbortError when the caller cancelled the request).
-import type { FieldCollection, FieldDetail, FieldPlans, FieldSatellite, FieldSoil, Health } from "./types";
+import type { FieldCollection, FieldDetail, FieldPlans, FieldSatellite, FieldScore, FieldSoil, Health } from "./types";
 
 const configured: string | undefined = import.meta.env.VITE_API_URL;
 
@@ -95,6 +95,21 @@ export const api = {
     getJson<FieldPlans>(
       `${fieldPath(fieldId)}/plans${query ? `?${query}` : ""}`,
       (b) => isObject(b) && b.field_id === fieldId && Array.isArray(b.plans),
+      signal,
+    ),
+
+  /** The farmer's own rotation next to our picks. `query` comes from scoreQuery (lib/custom.ts). */
+  score: (fieldId: string, signal: AbortSignal | undefined, query: string) =>
+    getJson<FieldScore>(
+      `${fieldPath(fieldId)}/score?${query}`,
+      (b) =>
+        isObject(b) &&
+        b.field_id === fieldId &&
+        Array.isArray(b.understood) &&
+        isObject(b.yours) &&
+        Array.isArray(b.plans) &&
+        isObject(b.marks) &&
+        isObject(b.comparison),
       signal,
     ),
 

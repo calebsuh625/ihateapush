@@ -171,9 +171,9 @@ RULES: tuple[Rule, ...] = (
 )
 
 
-def _check(sequence: Sequence[str]) -> tuple:
+def _check(sequence: Sequence[str], any_length: bool = False) -> tuple:
     sequence = tuple(sequence)
-    if len(sequence) not in CYCLE_LENGTHS:
+    if len(sequence) not in CYCLE_LENGTHS and not (any_length and len(sequence) >= 1):
         raise ValueError(f"a plan is a cycle of {' or '.join(str(n) for n in sorted(CYCLE_LENGTHS))} years, "
                          f"got {len(sequence)}")
     unknown = [crop for crop in sequence if crop not in CROPS]
@@ -182,13 +182,15 @@ def _check(sequence: Sequence[str]) -> tuple:
     return sequence
 
 
-def rules_broken(sequence: Sequence[str], irrigated: bool, cyclic: bool = True, gentle: bool = False) -> list[str]:
+def rules_broken(sequence: Sequence[str], irrigated: bool, cyclic: bool = True, gentle: bool = False,
+                 any_length: bool = False) -> list[str]:
     """The sentences of the rules this sequence breaks on an irrigated / dryland field ([] = allowed).
 
     cyclic=True reads it as a plan (year 1 follows the last year); cyclic=False as years that happened.
     gentle=True gives the "Our plans avoid ..." wording, for a field's own pattern.
+    any_length=True takes a cycle of any length (a farmer's own rotation, custom.py), not only 3 or 4 years.
     """
-    sequence = _check(sequence)
+    sequence = _check(sequence, any_length)
     return [(rule.gentle or rule.text) if gentle else rule.text
             for rule in RULES if rule.applies_to(irrigated) and not rule.ok(sequence, cyclic)]
 

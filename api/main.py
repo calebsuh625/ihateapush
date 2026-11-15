@@ -9,6 +9,8 @@ Endpoints (the frontend is written against exactly these shapes):
     GET /field/{field_id}          one field: full outline, crop history, soil numbers, history stats
     GET /field/{field_id}/plans    the planner's top 3 rotations for that field (smart planner: optional
                                    soil, water, money, risk, scenario, horizon, irrigated; else the basic one)
+    GET /field/{field_id}/score    the farmer's own rotation (?rotation=corn,sorghum,wheat,fallow) scored like
+                                   the plans, next to our top picks (smart planner only; 503 without it)
     GET /climate                   the climate futures the smart planner uses (or {"available": false})
     GET /field/{field_id}/satellite  yearly Landsat greenness for that field (optional side file)
     GET /field/{field_id}/soil     yearly satellite organic matter and bare-soil days (optional side file)
@@ -53,7 +55,7 @@ from fastapi.responses import JSONResponse, Response
 from api.causal import router as causal_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from api.planner import config as planner_config
-from api.planner import smart
+from api.planner import custom, smart
 from api.planner.traits import FieldTraits
 from pipeline import satellite_schema
 from pipeline.soil import health_schema
@@ -730,6 +732,51 @@ async def plans(
     return JSONResponse(
         {"field_id": record.field_id, "engine": "basic", "plans": [plan_to_json(plan) for plan in ranked]}
     )
+
+
+SCORE_NEEDS_CLIMATE = (
+    "Scoring your own rotation needs the future-weather tables, which are not set up on this server."
+)
+
+
+@router.get("/field/{field_id}/score", summary="Score the farmer's own rotation next to our top plans")
+async def score(
+    request: Request,
+    field_id: str,
+    rotation: str | None = None,
+    soil: float | None = None,
+    water: float | None = None,
+    money: float | None = None,
+    risk: float | None = None,
+    scenario: str = planner_config.DEFAULT_SCENARIO,
+    horizon: int = planner_config.TODAY,
+    irrigated: bool | None = None,
+) -> JSONResponse:
+    """Phase 4, item 1 (api/planner/custom.py). Same settings as /plans plus `rotation`: 2 to 6 crops,
+    one a year, as typed ("corn, milo, wheat, fallow"). 400 with one plain sentence for a rotation we
+    cannot score, 503 when only the basic planner is available."""
+    record = _record(request, field_id)
+    if not _use_smart(request):
+        raise HTTPException(status_code=503, detail=SCORE_NEEDS_CLIMATE)
+    try:
+        cycle = custom.parse_rotation(rotation)
+    except custom.RotationError as exc:
+        raise _bad_request(str(exc)) from exc
+    weights = _plain_weights({"soil": soil, "water": water, "money": money, "risk": risk})
+    if scenario not in planner_config.SCENARIOS:
+        raise _bad_request("The scenario must be ssp245 (middle road) or ssp585 (high emissions).")
+    if not planner_config.HORIZON_MIN <= horizon <= planner_config.HORIZON_MAX:
+        raise _bad_request(f"The year must be between {planner_config.HORIZON_MIN} and {planner_config.HORIZON_MAX}.")
+    try:
+        traits = FieldTraits() if _store(request).is_fake else None      # as in /plans: fake ids are not real fields
+        body = custom.score_rotation(record.planner_input(), cycle, weights=weights, scenario=scenario,
+                                     horizon=horizon, irrigated=irrigated, traits=traits)
+    except ValueError as exc:
+        raise _bad_request(str(exc).split("\n")[0]) from exc
+    except Exception as exc:
+        log.warning("scoring a rotation failed for %s: %s: %s", field_id, type(exc).__name__, exc)
+        raise HTTPException(status_code=503, detail="The planner could not score this rotation just now.") from exc
+    return JSONResponse(body)
 
 
 @router.get("/field/{field_id}/satellite", summary="Yearly satellite greenness for one field")

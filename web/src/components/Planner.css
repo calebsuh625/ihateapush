@@ -628,3 +628,10 @@
   display: grid;
   gap: 4px;
 }
+
+/* "Edit this plan": sends the card's rotation to "Try your own rotation" (Phase 4) */
+.plan-edit {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--s2);
+}

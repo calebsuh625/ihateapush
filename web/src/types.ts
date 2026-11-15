@@ -105,6 +105,8 @@ export interface Plan {
   scores: PlanScores;
   reason: string;
   // The rest comes from the smart planner only.
+  /** the repeating unit: the same crops as `rotation`, or three for a 3-year cycle */
+  cycle?: string[];
   /** in how many climate models the plan holds up */
   futures?: { holds: number; total: number };
   spread?: { overall?: Spread; profit_per_acre?: Spread };
@@ -162,6 +164,90 @@ export interface ClimateSummary {
   models?: number;
   /** yield against today for the field's practice, whole percent, with the lowest and highest model */
   yield_change?: Record<string, YieldChange>;
+}
+
+/** The farmer's own rotation, scored like a plan (GET /field/{field_id}/score). */
+export interface OwnRotation extends Plan {
+  /** the years as typed, 2 to 6 crops */
+  cycle: string[];
+  /** "Our plans avoid ..." sentences; empty when it breaks none of our rules */
+  rules_broken: string[];
+  /** true when it is one of the rotations the planner compares */
+  is_candidate: boolean;
+  /** 1, 2 or 3 when it is that pick of ours; null otherwise */
+  same_as_pick: number | null;
+  rank: number;
+  /** what `rank` is out of: the candidates, plus one when yours is not among them */
+  rank_of: number;
+  /** the cycle the numbers were worked out for (shortest unit, fixed starting year) */
+  scored_as: string[];
+}
+
+export type ComparisonVerdict = "ours" | "yours" | "too_close" | "same";
+
+/** In how many climate models each side is ahead. */
+export interface ModelCount {
+  yours_ahead: number;
+  ours_ahead: number;
+  total: number;
+}
+
+export interface ComparisonRow {
+  key: "soil" | "water" | "money" | "risk" | "holds";
+  label: string;
+  unit: string;
+  yours: number;
+  ours: number;
+  /** yours minus ours */
+  diff: number;
+  verdict: ComparisonVerdict;
+  /** null for a figure that is one number, not one per climate model */
+  models: ModelCount | null;
+  sentence: string;
+  score_yours?: number;
+  score_ours?: number;
+  score_diff?: number;
+  /** money only: [lowest, highest] climate model */
+  yours_range?: [number, number];
+  ours_range?: [number, number];
+}
+
+export interface PriorityPlace {
+  priority: "soil" | "water" | "money" | "risk";
+  rank: number;
+  of: number;
+  first: boolean;
+  /** how many of our candidates score exactly the same */
+  tied: number;
+}
+
+export interface ScoreComparison {
+  /** the name of our first pick, which every row is measured against */
+  against: string;
+  verdict: ComparisonVerdict;
+  models: ModelCount;
+  headline: string[];
+  rows: ComparisonRow[];
+  priorities: PriorityPlace[];
+  priority_sentences: string[];
+  notes: string[];
+}
+
+/** GET /field/{field_id}/score?rotation=... (smart planner only) */
+export interface FieldScore {
+  field_id: string;
+  engine: "smart";
+  /** the crops the API read from the text, one per year */
+  understood: string[];
+  settings: PlannerSettings;
+  yours: OwnRotation;
+  /** our top picks for the same settings, as in GET /field/{id}/plans */
+  plans: Plan[];
+  candidates: number;
+  /** table row -> columns to mark (0 = yours, 1.. = our picks) */
+  marks: Record<string, number[]>;
+  marks_note: string;
+  comparison: ScoreComparison;
 }
 
 /** GET /field/{field_id}/plans */
