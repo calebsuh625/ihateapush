@@ -1,0 +1,619 @@
+{
+  "written": "2026-11-14",
+  "written_by": "python -m api.planner.calibrate",
+  "model": "yield_rel = scale x max(0, 1 - heat_loss x hot days) x water factor; water factor = max(0, 1 - ky x (1 - rain-fed ET / water need)) for dryland, 1 for irrigated; yield_rel is capped at max_yield_rel; failed = yield_rel < fail_below",
+  "sources": {
+    "yields": "USDA NASS, Finney County and Kansas Southwest district, 2000-2024 (data/nass_finney.parquet)",
+    "weather": "NASA POWER daily, county centre, 2000-2024 (data/climate_history.parquet, data/climate_monthly.parquet)",
+    "kc": "FAO-56 Table 12 (Allen et al. 1998)",
+    "ky": "FAO-33 / FAO-56 Table 24",
+    "effective_rain": "USDA-SCS monthly formula (FAO CROPWAT)",
+    "stored_soil_water": "Nielsen and Vigil 2010; K-State dryland research",
+    "water_check": "OpenET ensemble April-September ET 2016-2024 (data/logs/phase3/openet_by_crop.csv)"
+  },
+  "constants": {
+    "et0_scale": 0.85,
+    "fallow_efficiency": 0.25,
+    "awc_mm": 250.0,
+    "pivot_efficiency": 0.85
+  },
+  "fail_below": 0.5,
+  "max_yield_rel": 2.0,
+  "typical_prev": {
+    "corn": {
+      "dryland": {
+        "summer": 0.52,
+        "wheat": 0.45,
+        "fallow": 0.03
+      },
+      "irrigated": {
+        "summer": 0.74,
+        "wheat": 0.26,
+        "fallow": 0.0
+      }
+    },
+    "soybeans": {
+      "dryland": {
+        "summer": 0.72,
+        "wheat": 0.28,
+        "fallow": 0.0
+      },
+      "irrigated": {
+        "summer": 0.93,
+        "wheat": 0.07,
+        "fallow": 0.0
+      }
+    },
+    "winter wheat": {
+      "dryland": {
+        "summer": 0.07,
+        "wheat": 0.07,
+        "fallow": 0.86
+      },
+      "irrigated": {
+        "summer": 0.73,
+        "wheat": 0.23,
+        "fallow": 0.04
+      }
+    },
+    "sorghum": {
+      "dryland": {
+        "summer": 0.16,
+        "wheat": 0.8,
+        "fallow": 0.04
+      },
+      "irrigated": {
+        "summer": 0.77,
+        "wheat": 0.22,
+        "fallow": 0.01
+      }
+    },
+    "alfalfa": {
+      "dryland": {
+        "summer": 1.0,
+        "wheat": 0.0,
+        "fallow": 0.0
+      },
+      "irrigated": {
+        "summer": 1.0,
+        "wheat": 0.0,
+        "fallow": 0.0
+      }
+    }
+  },
+  "calibration_rules": {
+    "min_years": 10,
+    "ky_bounds_x_fao": [
+      0.5,
+      1.5
+    ],
+    "heat_loss_bounds": [
+      0.0,
+      0.012
+    ],
+    "wheat_heat_loss_bounds": [
+      0.0,
+      0.025
+    ],
+    "edge_share": 0.05,
+    "verdict": {
+      "good": 0.5,
+      "fair": 0.2
+    }
+  },
+  "series": {
+    "corn": {
+      "irrigated": {
+        "unit": "bu/acre",
+        "n_years": 19,
+        "years": "2000-2018",
+        "levels": {
+          "district": 11,
+          "county": 8
+        },
+        "from_all_practices": [],
+        "splice": null,
+        "textbook": {
+          "ky": 0.0,
+          "heat_loss": 0.003
+        },
+        "ky": 0.0,
+        "heat_loss": 0.0033,
+        "scale": 1.1675,
+        "normal_yield": 198.36,
+        "trend_pct_per_year": 0.43,
+        "resid_sd": 0.055,
+        "r2": 0.589,
+        "loo_skill": 0.455,
+        "loo_rmse": 10.51,
+        "free_parameters": [
+          "heat_loss"
+        ],
+        "status": "fitted",
+        "verdict": "fair",
+        "notes": [],
+        "attempts": [
+          "heat loss free: ky 0.00, heat loss 0.0033, R2 0.59, leave-one-out skill 0.45"
+        ],
+        "diagnostics": {
+          "corr_yield_water_ratio": 0.67,
+          "corr_yield_hot_days": -0.78,
+          "corr_water_ratio_hot_days": -0.88,
+          "largest_miss": {
+            "year": 2000,
+            "real": 0.98,
+            "model": 0.91
+          }
+        },
+        "nass_share_of_area": null
+      },
+      "dryland": {
+        "unit": "bu/acre",
+        "n_years": 19,
+        "years": "2000-2018",
+        "levels": {
+          "district": 11,
+          "county": 8
+        },
+        "from_all_practices": [],
+        "splice": null,
+        "textbook": {
+          "ky": 1.25,
+          "heat_loss": 0.006
+        },
+        "ky": 1.087,
+        "heat_loss": 0.008,
+        "scale": 3.0896,
+        "normal_yield": 57.53,
+        "trend_pct_per_year": 0.92,
+        "resid_sd": 0.336,
+        "r2": 0.654,
+        "loo_skill": 0.596,
+        "loo_rmse": 16.91,
+        "free_parameters": [
+          "ky",
+          "heat_loss"
+        ],
+        "status": "fitted",
+        "verdict": "good",
+        "notes": [],
+        "attempts": [
+          "both free: ky 1.09, heat loss 0.0080, R2 0.65, leave-one-out skill 0.60"
+        ],
+        "diagnostics": {
+          "corr_yield_water_ratio": 0.79,
+          "corr_yield_hot_days": -0.71,
+          "corr_water_ratio_hot_days": -0.88,
+          "largest_miss": {
+            "year": 2000,
+            "real": 1.27,
+            "model": 0.46
+          }
+        },
+        "nass_share_of_area": null
+      }
+    },
+    "soybeans": {
+      "irrigated": {
+        "unit": "bu/acre",
+        "n_years": 20,
+        "years": "2000-2019",
+        "levels": {
+          "district": 16,
+          "county": 4
+        },
+        "from_all_practices": [
+          2008,
+          2009,
+          2010,
+          2011,
+          2012,
+          2013,
+          2014,
+          2015,
+          2017,
+          2018,
+          2019
+        ],
+        "splice": "all practices x 0.99",
+        "textbook": {
+          "ky": 0.0,
+          "heat_loss": 0.0025
+        },
+        "ky": 0.0,
+        "heat_loss": 0.0046,
+        "scale": 1.2476,
+        "normal_yield": 56.42,
+        "trend_pct_per_year": 0.48,
+        "resid_sd": 0.114,
+        "r2": 0.375,
+        "loo_skill": 0.314,
+        "loo_rmse": 6.09,
+        "free_parameters": [
+          "heat_loss"
+        ],
+        "status": "fitted",
+        "verdict": "fair",
+        "notes": [],
+        "attempts": [
+          "heat loss free: ky 0.00, heat loss 0.0046, R2 0.37, leave-one-out skill 0.31"
+        ],
+        "diagnostics": {
+          "corr_yield_water_ratio": 0.75,
+          "corr_yield_hot_days": -0.62,
+          "corr_water_ratio_hot_days": -0.88,
+          "largest_miss": {
+            "year": 2008,
+            "real": 0.81,
+            "model": 1.05
+          }
+        },
+        "nass_share_of_area": 0.8921969725145982
+      },
+      "dryland": {
+        "unit": "bu/acre",
+        "n_years": 9,
+        "years": "2000-2016",
+        "levels": {
+          "district": 7,
+          "county": 2
+        },
+        "from_all_practices": [],
+        "splice": null,
+        "textbook": {
+          "ky": 0.85,
+          "heat_loss": 0.005
+        },
+        "ky": 0.85,
+        "heat_loss": 0.005,
+        "scale": 2.1286,
+        "normal_yield": 18.0,
+        "trend_pct_per_year": null,
+        "resid_sd": 0.519,
+        "r2": -0.31,
+        "loo_skill": null,
+        "loo_rmse": null,
+        "free_parameters": [],
+        "status": "textbook",
+        "verdict": "weak",
+        "notes": [
+          "only 9 usable years (fewer than 10): nothing fitted"
+        ],
+        "attempts": [],
+        "diagnostics": {
+          "corr_yield_water_ratio": -0.06,
+          "corr_yield_hot_days": 0.08,
+          "corr_water_ratio_hot_days": -0.85,
+          "largest_miss": {
+            "year": 2000,
+            "real": 1.72,
+            "model": 0.67
+          }
+        },
+        "nass_share_of_area": null
+      }
+    },
+    "winter wheat": {
+      "irrigated": {
+        "unit": "bu/acre",
+        "n_years": 20,
+        "years": "2000-2019",
+        "levels": {
+          "county": 12,
+          "district": 8
+        },
+        "from_all_practices": [],
+        "splice": null,
+        "textbook": {
+          "ky": 0.0,
+          "heat_loss": 0.005
+        },
+        "ky": 0.0,
+        "heat_loss": 0.01,
+        "scale": 1.269,
+        "normal_yield": 60.71,
+        "trend_pct_per_year": 1.45,
+        "resid_sd": 0.171,
+        "r2": 0.329,
+        "loo_skill": 0.238,
+        "loo_rmse": 8.99,
+        "free_parameters": [
+          "heat_loss"
+        ],
+        "status": "fitted",
+        "verdict": "fair",
+        "notes": [],
+        "attempts": [
+          "heat loss free: ky 0.00, heat loss 0.0100, R2 0.33, leave-one-out skill 0.24"
+        ],
+        "diagnostics": {
+          "corr_yield_water_ratio": 0.78,
+          "corr_yield_hot_days": -0.57,
+          "corr_water_ratio_hot_days": -0.78,
+          "largest_miss": {
+            "year": 2006,
+            "real": 0.59,
+            "model": 0.88
+          }
+        },
+        "nass_share_of_area": null
+      },
+      "dryland": {
+        "unit": "bu/acre",
+        "n_years": 20,
+        "years": "2000-2019",
+        "levels": {
+          "county": 12,
+          "district": 8
+        },
+        "from_all_practices": [],
+        "splice": null,
+        "textbook": {
+          "ky": 1.05,
+          "heat_loss": 0.01
+        },
+        "ky": 0.84,
+        "heat_loss": 0.01,
+        "scale": 1.6613,
+        "normal_yield": 36.67,
+        "trend_pct_per_year": 0.65,
+        "resid_sd": 0.207,
+        "r2": 0.735,
+        "loo_skill": 0.702,
+        "loo_rmse": 7.15,
+        "free_parameters": [
+          "ky"
+        ],
+        "status": "partly textbook",
+        "verdict": "good",
+        "notes": [
+          "fitted heat loss 0.0004 is on a bound (allowed 0.0000-0.0250): textbook heat loss 0.01 kept, ky refitted"
+        ],
+        "attempts": [
+          "both free: ky 1.04, heat loss 0.0004, R2 0.78, leave-one-out skill 0.73",
+          "heat loss textbook: ky 0.84, heat loss 0.0100, R2 0.74, leave-one-out skill 0.70"
+        ],
+        "diagnostics": {
+          "corr_yield_water_ratio": 0.88,
+          "corr_yield_hot_days": -0.7,
+          "corr_water_ratio_hot_days": -0.78,
+          "largest_miss": {
+            "year": 2015,
+            "real": 0.79,
+            "model": 1.15
+          }
+        },
+        "nass_share_of_area": null
+      }
+    },
+    "sorghum": {
+      "irrigated": {
+        "unit": "bu/acre",
+        "n_years": 9,
+        "years": "2000-2009",
+        "levels": {
+          "county": 8,
+          "district": 1
+        },
+        "from_all_practices": [],
+        "splice": null,
+        "textbook": {
+          "ky": 0.0,
+          "heat_loss": 0.002
+        },
+        "ky": 0.0,
+        "heat_loss": 0.002,
+        "scale": 1.0985,
+        "normal_yield": 100.0,
+        "trend_pct_per_year": null,
+        "resid_sd": 0.144,
+        "r2": 0.094,
+        "loo_skill": null,
+        "loo_rmse": null,
+        "free_parameters": [],
+        "status": "textbook",
+        "verdict": "weak",
+        "notes": [
+          "only 9 usable years (fewer than 10): nothing fitted"
+        ],
+        "attempts": [],
+        "diagnostics": {
+          "corr_yield_water_ratio": 0.69,
+          "corr_yield_hot_days": -0.63,
+          "corr_water_ratio_hot_days": -0.84,
+          "largest_miss": {
+            "year": 2004,
+            "real": 1.36,
+            "model": 1.03
+          }
+        },
+        "nass_share_of_area": null
+      },
+      "dryland": {
+        "unit": "bu/acre",
+        "n_years": 21,
+        "years": "2000-2020",
+        "levels": {
+          "county": 15,
+          "district": 6
+        },
+        "from_all_practices": [
+          2008,
+          2010,
+          2011,
+          2012,
+          2013,
+          2014,
+          2015,
+          2016,
+          2017,
+          2018,
+          2019,
+          2020
+        ],
+        "splice": "all practices x 0.92",
+        "textbook": {
+          "ky": 0.9,
+          "heat_loss": 0.004
+        },
+        "ky": 0.9,
+        "heat_loss": 0.0055,
+        "scale": 1.8176,
+        "normal_yield": 66.43,
+        "trend_pct_per_year": 0.96,
+        "resid_sd": 0.296,
+        "r2": 0.5,
+        "loo_skill": 0.402,
+        "loo_rmse": 17.36,
+        "free_parameters": [
+          "heat_loss"
+        ],
+        "status": "partly textbook",
+        "verdict": "fair",
+        "notes": [
+          "fitted ky 0.45 is on a bound (allowed 0.45-1.35): FAO ky 0.9 kept, heat loss refitted"
+        ],
+        "attempts": [
+          "both free: ky 0.45, heat loss 0.0089, R2 0.53, leave-one-out skill 0.37",
+          "ky textbook: ky 0.90, heat loss 0.0055, R2 0.50, leave-one-out skill 0.40"
+        ],
+        "diagnostics": {
+          "corr_yield_water_ratio": 0.69,
+          "corr_yield_hot_days": -0.71,
+          "corr_water_ratio_hot_days": -0.86,
+          "largest_miss": {
+            "year": 2000,
+            "real": 1.08,
+            "model": 0.63
+          }
+        },
+        "nass_share_of_area": 0.8597276212072131
+      }
+    },
+    "alfalfa": {
+      "irrigated": {
+        "unit": "tons/acre",
+        "n_years": 19,
+        "years": "2000-2018",
+        "levels": {
+          "county": 10,
+          "district": 9
+        },
+        "from_all_practices": [
+          2000,
+          2001,
+          2002,
+          2003,
+          2004,
+          2005,
+          2006,
+          2007,
+          2008,
+          2009,
+          2010,
+          2011,
+          2012,
+          2013,
+          2014,
+          2015,
+          2016,
+          2017,
+          2018
+        ],
+        "splice": "all practices x 1.00",
+        "textbook": {
+          "ky": 0.0,
+          "heat_loss": 0.001
+        },
+        "ky": 0.0,
+        "heat_loss": 0.001,
+        "scale": 1.0469,
+        "normal_yield": 5.25,
+        "trend_pct_per_year": null,
+        "resid_sd": 0.19,
+        "r2": -0.2,
+        "loo_skill": null,
+        "loo_rmse": null,
+        "free_parameters": [],
+        "status": "textbook",
+        "verdict": "weak",
+        "notes": [
+          "leave-one-out skill -0.10 is not above zero: textbook kept"
+        ],
+        "attempts": [
+          "heat loss free: ky 0.00, heat loss 0.0024, R2 0.09, leave-one-out skill -0.10"
+        ],
+        "diagnostics": {
+          "corr_yield_water_ratio": 0.12,
+          "corr_yield_hot_days": -0.08,
+          "corr_water_ratio_hot_days": -0.9,
+          "largest_miss": {
+            "year": 2001,
+            "real": 1.52,
+            "model": 0.99
+          }
+        },
+        "nass_share_of_area": null
+      },
+      "dryland": {
+        "unit": "tons/acre",
+        "n_years": 0,
+        "years": "",
+        "levels": {},
+        "from_all_practices": [],
+        "splice": null,
+        "textbook": {
+          "ky": 1.1,
+          "heat_loss": 0.002
+        },
+        "ky": 1.1,
+        "heat_loss": 0.002,
+        "scale": 2.993,
+        "normal_yield": 2.1,
+        "trend_pct_per_year": null,
+        "resid_sd": null,
+        "r2": null,
+        "loo_skill": null,
+        "loo_rmse": null,
+        "free_parameters": [],
+        "status": "textbook",
+        "verdict": "weak",
+        "notes": [
+          "no yield data: nothing fitted",
+          "normal yield 2.1 is the crops.py constant"
+        ],
+        "attempts": [],
+        "diagnostics": null,
+        "nass_share_of_area": null
+      }
+    },
+    "fallow": {
+      "irrigated": {
+        "unit": "",
+        "ky": 0.0,
+        "heat_loss": 0.0,
+        "scale": 1.0,
+        "normal_yield": 0.0,
+        "resid_sd": null,
+        "status": "textbook",
+        "verdict": "n/a",
+        "notes": [
+          "no crop"
+        ]
+      },
+      "dryland": {
+        "unit": "",
+        "ky": 0.0,
+        "heat_loss": 0.0,
+        "scale": 1.0,
+        "normal_yield": 0.0,
+        "resid_sd": null,
+        "status": "textbook",
+        "verdict": "n/a",
+        "notes": [
+          "no crop"
+        ]
+      }
+    }
+  }
+}
