@@ -67,8 +67,8 @@ has a row for every year 2016–2024.
 | `field_id`   | string | no    | A `field_id` from `data/fields.parquet` |
 | `year`       | int    | no    | Calendar year |
 | `om_pred`    | float  | yes   | Estimated topsoil organic matter %, predicted from that year's bare-soil reflectance (Sentinel-2 and Landsat 8/9) by a model trained on SSURGO |
-| `n_obs`      | float  | no    | Mean number of bare-soil satellite views per pixel that year; `0` when there were none |
-| `confidence` | float  | no    | 0–1: how much to trust `om_pred` in this row |
+| `n_obs`      | float  | no    | Mean number of bare-soil satellite views per pixel behind `om_pred` that year (Landsat plus Sentinel-2); `0` when `om_pred` is null |
+| `confidence` | float  | no    | 0–1: how repeatable `om_pred` is in this row (how often and how fully the field was seen bare, and whether the two satellites agreed), scaled by the model's overall skill |
 | `bare_days`  | float  | yes   | Estimated days in the year the soil sat bare and exposed (no crop and no residue cover) |
 
 ## Rules
@@ -78,6 +78,9 @@ has a row for every year 2016–2024.
   Otherwise `om_pred` is in `[0, 100]`.
 - `n_obs` is `>= 0`; `confidence` is in `[0, 1]`; `bare_days` is in `[0, 366]`.
 - `bare_days` is null only when the year had too few clear views to tell.
+- `confidence` is repeatability, not accuracy. It cannot exceed the model's overall skill, so it stays
+  well below 1 everywhere; do not apply fixed cut-offs such as 0.5. The formula is in
+  `pipeline/soil/confidence.py`.
 - Consumers must handle nulls and must not treat `om_pred` as a measurement: read `confidence` and the
   meta file below.
 
@@ -91,7 +94,13 @@ Written next to the table. A JSON object with at least:
 | `om_noise_sd` | number or null | Typical year-to-year jump of `om_pred` (one standard deviation, in OM %) on a field whose crop did not change |
 | `verdict`     | string         | One or two plain sentences for the app |
 
+Optional keys the build also writes: `notes` (an object with one plain sentence each for `om_pred`,
+`bare_days` and `confidence`) and `trustworthy` (an object: `om_pred` true/false, `bare_days`
+true/false/null). `recommended` names `bare_days` even when `bare_days` fails its own checks; in that
+case `trustworthy.bare_days` is false and `verdict` says not to rely on either number.
 Other keys (model accuracy, noise numbers, method version) are free-form.
+
+The API serves the table at `GET /field/{id}/soil`.
 
 ```bash
 python -m pipeline.soil.health_schema data/soil_health.parquet   # validates, then prints a summary

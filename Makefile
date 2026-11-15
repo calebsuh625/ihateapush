@@ -2,13 +2,15 @@ PY := .venv/bin/python
 API_PORT ?= 8010
 WEB_PORT ?= 5173
 
-.PHONY: help setup fake pipeline satellite validate api web dev test e2e
+.PHONY: help setup fake pipeline satellite soil-obs soil-health validate api web dev test e2e
 
 help:
 	@echo "make setup     create .venv, install Python + web dependencies"
 	@echo "make fake      write data/fields_fake.parquet (30 fake fields, instant)"
 	@echo "make pipeline  build data/fields.parquet from real USDA/USGS data"
 	@echo "make satellite build data/field_satellite.parquet (Landsat via Earth Engine; needs 'earthengine authenticate')"
+	@echo "make soil-obs  bare-soil satellite views for every field (Earth Engine, about 30 EECU-hours; see README)"
+	@echo "make soil-health  build data/soil_health.parquet from those views (local, no network)"
 	@echo "make validate  check the active data file against schema.md and summarise it"
 	@echo "make dev       start API (:$(API_PORT)) and web (:$(WEB_PORT)) together"
 	@echo "make api       start only the API"
@@ -33,6 +35,14 @@ pipeline:
 # Optional: per-field yearly greenness from Landsat. Needs a free Google Earth Engine login (see README).
 satellite:
 	$(PY) pipeline/satellite.py
+
+# Optional (Phase 2A): yearly soil table. soil-obs asks Earth Engine and is expensive on the free tier;
+# run `$(PY) -m pipeline.soil.bare_soil --estimate` first. soil-health is local.
+soil-obs:
+	$(PY) -m pipeline.soil.bare_soil
+
+soil-health:
+	$(PY) -m pipeline.soil.build
 
 validate:
 	$(PY) pipeline/schema.py

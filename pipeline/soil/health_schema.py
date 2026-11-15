@@ -11,8 +11,10 @@ Plain Parquet, long format, every field in data/fields.parquet x every year in Y
     om_pred     float    estimated topsoil organic matter %, predicted from that year's bare-soil
                          reflectance by a model trained on SSURGO. Null when the field had no usable
                          bare-soil view that year.
-    n_obs       float    mean number of bare-soil satellite views per pixel that year (>= 0, never null)
-    confidence  float    0-1, how much to trust om_pred in this row (0 when om_pred is null, never null)
+    n_obs       float    mean number of bare-soil satellite views per pixel behind om_pred that year
+                         (>= 0, never null; 0 when om_pred is null)
+    confidence  float    0-1, how repeatable om_pred is in this row, scaled by the model's overall skill
+                         (repeatability, not accuracy; 0 when om_pred is null, never null)
     bare_days   float    estimated days in the year the soil sat bare and exposed (no crop, no residue
                          cover), 0-366. Null when there were too few clear views to tell.
 
