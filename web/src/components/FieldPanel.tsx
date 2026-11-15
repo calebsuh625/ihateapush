@@ -7,6 +7,7 @@ import type { Resource } from "../hooks/useResource";
 import { formatOneDecimal, formatPercent, hectaresToAcres, plural } from "../lib/format";
 import { organicMatterClass, slopeClass } from "../thresholds";
 import type { FieldDetail, FieldPlans, FieldSatellite, FieldSoil, Streak } from "../types";
+import { Neighbors } from "./Neighbors";
 import { PlanCard } from "./PlanCard";
 import { SatelliteChart } from "./Satellite";
 import { SoilTimelineChart } from "./SoilTimeline";
@@ -83,6 +84,7 @@ export function FieldPanel({ fieldId, areaHa, onClose }: FieldPanelProps) {
       <div className="panel-body" ref={bodyRef} aria-busy={state === "loading"}>
         <DetailSections detail={detail} onRetry={retryDetail} satellite={satellite} onRetrySatellite={retrySatellite} soil={soil} onRetrySoil={retrySoil} />
         {!unknownField && <PlansSection plans={plans} onRetry={retryPlans} />}
+        {!unknownField && <Neighbors fieldId={fieldId} />}
       </div>
     </aside>
   );

@@ -46,7 +46,7 @@ async function errorDetail(res: Response): Promise<string | null> {
   return null;
 }
 
-async function getJson<T>(path: string, looksRight: (body: unknown) => boolean, signal?: AbortSignal): Promise<T> {
+export async function getJson<T>(path: string, looksRight: (body: unknown) => boolean, signal?: AbortSignal): Promise<T> {
   const url = apiUrl(path);
   let res: Response;
   try {
