@@ -95,6 +95,30 @@ function awkwardSatellite(fieldId) {
   return { field_id: fieldId, available: true, source: "test", years, summary: { ndvi_peak_mean: 0.55, cover_frac_mean: 0.38, ndvi_peak_trend_per_decade: -0.031 } };
 }
 
+/** Soil rows for the awkward field: rows only 2016-2024, no row for 2020, a null organic-matter year (2018),
+ *  a null bare-days year (2019), an off-scale value (7.2 %), a low and a high confidence. */
+function awkwardSoil(fieldId, extra = {}) {
+  const years = [];
+  for (let year = 2016; year <= 2024; year++) {
+    if (year === 2020) continue;
+    const i = year - 2016;
+    years.push({
+      year,
+      om_pred: year === 2018 ? null : year === 2019 ? 7.2 : 2 + 0.3 * i,
+      confidence: year === 2018 ? 0 : year === 2019 ? 1 : year === 2017 ? 0.2 : 0.5,
+      n_obs: year === 2018 ? 0 : year === 2019 ? 4.4 : year === 2017 ? 1.2 : 2.5,
+      bare_days: year === 2019 ? null : 100 + 10 * i,
+    });
+  }
+  return {
+    field_id: fieldId, available: true, source: "test", recommended: "om_pred", om_noise_sd: 0.6,
+    verdict: "A deliberately long verdict sentence to see how the note wraps inside a narrow panel without spilling sideways.",
+    ssurgo_om_pct: 2.4, years,
+    summary: { om_pred_mean: 2.9, om_pred_years: 7, bare_days_mean: 130, bare_days_trend_per_decade: 3 },
+    ...extra,
+  };
+}
+
 async function main() {
   await mkdir(SHOTS, { recursive: true });
   const browser = await chromium.launch();
@@ -236,6 +260,45 @@ async function main() {
     await page.unroute(isApi(`/field/${idA}/satellite`));
     log(`  ✓ satellite failed alone (rest of the panel fine), Retry works, both unavailable messages → ${satErrShot}, ${notBuiltShot}`);
 
+    // ---- 2c. soil timeline: fails on its own (own error + Retry), and the unavailable messages ---
+    let soilMode = "fail";
+    await page.route(isApi(`/field/${idA}/soil`), async (route) => {
+      await sleep(600);
+      if (soilMode === "fail") await route.fulfill({ status: 500, contentType: "application/json", body: '{"detail":"Internal Server Error"}' });
+      else if (soilMode === "not_built" || soilMode === "no_data_for_field") {
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify({ field_id: idA, available: false, reason: soilMode, source: "test", recommended: null, om_noise_sd: null, verdict: null, ssurgo_om_pct: null, years: [], summary: { om_pred_mean: null, om_pred_years: null, bare_days_mean: null, bare_days_trend_per_decade: null } }) });
+      } else await route.continue();
+    });
+    await page.keyboard.press("Escape");
+    await page.evaluate((id) => (window.location.hash = id), idA);
+    await panelState(idA, "loading").catch(() => {});
+    await page.waitForSelector('[data-testid="soil-timeline"][data-state="loading"]');
+    const soilBox = await page.locator("#section-soil-timeline").locator("xpath=ancestor::section").boundingBox();
+    check(soilBox.height > 120, `soil skeleton is only ${soilBox.height}px tall`);
+    await panelState(idA, "ready");
+    await page.waitForSelector('[data-testid="soil-timeline"][data-state="error"]');
+    equal(await page.locator('[data-testid="plan-card"]').count(), 3, "plan cards while the soil timeline failed");
+    check((await page.locator('[data-testid="timeline-cell"]').count()) > 0, "timeline while the soil timeline failed");
+    await page.waitForSelector('[data-testid="satellite"][data-state="ready"]');
+    equal(await page.locator('[data-testid="error-note"]').count(), 1, "error notes with only the soil timeline failing");
+    const soilError = page.locator('[data-testid="soil-timeline"] [data-testid="error-note"]');
+    check((await soilError.textContent()).includes("Could not load the soil timeline"), "soil error title");
+    const soilErrShot = await shot("state-soil-error.png");
+    soilMode = "not_built";
+    await soilError.locator("button").click();
+    await page.waitForSelector('[data-testid="soil-timeline"][data-state="ready"]');
+    equal((await page.textContent('[data-testid="soil-unavailable"]')).trim(), "Soil timeline has not been built yet (make soil-health).", "soil not_built message");
+    equal(await page.locator('[data-testid="error-note"]').count(), 0, "error notes after retrying the soil timeline");
+    equal(await page.locator('[data-testid="soil-om-col"]').count(), 0, "soil marks shown for an unbuilt soil file");
+    const soilNotBuiltShot = await shot("state-soil-not-built.png");
+    soilMode = "no_data_for_field";
+    await page.keyboard.press("Escape");
+    await page.evaluate((id) => (window.location.hash = id), idA);
+    await page.waitForSelector('[data-testid="soil-timeline"][data-state="ready"]');
+    equal((await page.textContent('[data-testid="soil-unavailable"]')).trim(), "No soil timeline for this field.", "soil no_data_for_field message");
+    await page.unroute(isApi(`/field/${idA}/soil`));
+    log(`  ✓ soil timeline failed alone (rest of the panel fine), Retry works, both unavailable messages → ${soilErrShot}, ${soilNotBuiltShot}`);
+
     // ---- 3. a field id in the URL that does not exist ----------------------------------------
     await page.evaluate(() => (window.location.hash = "KS-999999"));
     await panelState("KS-999999", "error");
@@ -253,6 +316,7 @@ async function main() {
     await page.route(isApi(`/field/${idB}`), (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(awkward) }));
     await page.route(isApi(`/field/${idB}/plans`), (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(awkwardPlans(idB)) }));
     await page.route(isApi(`/field/${idB}/satellite`), (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(awkwardSatellite(idB)) }));
+    await page.route(isApi(`/field/${idB}/soil`), (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(awkwardSoil(idB)) }));
     await page.evaluate((id) => (window.location.hash = id), idB);
     await panelState(idB, "ready");
     equal(await page.locator('[data-testid="timeline-cell"]').count(), 17, "awkward field: year cells");
@@ -299,6 +363,79 @@ async function main() {
     check((await page.textContent('[data-testid="sat-tip"]')).startsWith("2009 · "), "keyboard: ArrowRight on the satellite chart");
     equal(await page.locator('[data-testid="sat-table"] tbody tr').count(), 17, "awkward field: screen-reader table rows");
     log(`  ✓ awkward field satellite: 17 columns under the timeline, 4 gaps, 1 "no data" mark, tooltips inside the panel, keyboard → ${satTipShot}`);
+    // soil timeline: same 17 columns, rows only from 2016, a missing year, null year, off-scale value, tooltips, keyboard
+    await page.waitForSelector('[data-testid="soil-timeline"][data-state="ready"]');
+    const omStates = await page.locator('[data-testid="soil-om-col"]').evaluateAll((nodes) => nodes.map((n) => n.dataset.state));
+    const bareStates = await page.locator('[data-testid="soil-bare-col"]').evaluateAll((nodes) => nodes.map((n) => n.dataset.state));
+    equal(omStates.length, 17, "awkward soil: organic-matter columns");
+    equal(omStates.filter((x) => x === "gap").length, 9, "awkward soil: gaps (2008-2015 and 2020)");
+    equal(omStates.filter((x) => x === "null").length, 1, "awkward soil: organic-matter year without a value");
+    equal(omStates.filter((x) => x === "value").length, 7, "awkward soil: organic-matter marks");
+    equal(bareStates.filter((x) => x === "null").length, 1, "awkward soil: bare-days year without a value");
+    equal(bareStates.filter((x) => x === "value").length, 7, "awkward soil: bare-days bars");
+    const soilAlign = await page.evaluate(() => {
+      const a = [...document.querySelectorAll('[data-testid="soil-om-col"]')].map((n) => n.getBoundingClientRect());
+      const b = [...document.querySelectorAll('[data-testid="soil-bare-col"]')].map((n) => n.getBoundingClientRect());
+      const c = [...document.querySelectorAll('[data-testid="timeline-cell"]')].map((n) => n.getBoundingClientRect());
+      return a.flatMap((r, i) => [Math.abs(r.x - c[i].x), Math.abs(r.width - c[i].width), Math.abs(b[i].x - c[i].x)]);
+    });
+    check(Math.max(...soilAlign) <= 1, `awkward soil: columns are off the timeline by ${Math.max(...soilAlign)}px`);
+    const offScale = await page.locator('[data-testid="soil-om-col"][data-year="2019"] [data-testid="soil-dot"]').evaluate((dot) => {
+      const row = dot.parentElement.getBoundingClientRect();
+      const box = dot.getBoundingClientRect();
+      return { overshoot: row.top - (box.top + box.height / 2) };
+    });
+    check(offScale.overshoot >= -1 && offScale.overshoot <= 1, `awkward soil: the 7.2% mark should sit on the top edge (${JSON.stringify(offScale)})`);
+    const crop = (year) => awkward.crop_history[String(year)] ?? "no crop on record";
+    const soilTips = [
+      ["om", 9, "2017 · 2.3% · low confidence · 1 bare view"],
+      ["om", 12 - 1, "2019 · 7.2% · high confidence · 4 bare views"],
+      ["om", 10, "2018 · no estimate (no clear bare-soil view) · 0 bare views"],
+      ["om", 12, "2020 · no soil data"],
+      ["om", 0, "2008 · no soil data"],
+      ["om", 16, "2024 · 4.4% · medium confidence · 3 bare views"],
+      ["bare", 9, `2017 · ${crop(2017)} · 110 days bare`],
+      ["bare", 11, `2019 · ${crop(2019)} · no estimate (too few clear views)`],
+      ["bare", 12, `2020 · ${crop(2020)} · no soil data`],
+    ];
+    const soilPanel = await page.locator('[data-testid="panel"]').boundingBox();
+    for (const [row, index, expected] of soilTips) {
+      await page.locator(`[data-testid="soil-${row}-col"]`).nth(index).hover();
+      const tipText = (await page.textContent('[data-testid="soil-tip"]')).trim();
+      equal(tipText, expected, `awkward soil: ${row} tooltip for column ${index}`);
+      const tip = await page.locator('[data-testid="soil-tip"]').boundingBox();
+      check(tip.x >= soilPanel.x - 0.5 && tip.x + tip.width <= soilPanel.x + soilPanel.width + 0.5, `soil tooltip ${index} leaves the panel (${JSON.stringify(tip)})`);
+    }
+    const soilSummary = (await page.textContent('[data-testid="soil-summary"]')).replace(/\s+/g, " ");
+    check(soilSummary.includes("Average estimated organic matter 2.9% (7 years)") && soilSummary.includes("steady (+3 days per decade)"), `awkward soil: summary "${soilSummary}"`);
+    equal((await page.textContent('[data-testid="soil-legend"]')).replace(/\s+/g, " ").includes("soil survey 2.4%"), true, "awkward soil: soil survey label");
+    const soilTipShot = await shot("state-soil-tooltip.png");
+    await page.mouse.move(5, 5);
+    await page.focus('[data-testid="soil-chart"]');
+    check((await page.textContent('[data-testid="soil-tip"]')).startsWith("2024 · "), "keyboard: focus shows the latest soil year");
+    await page.keyboard.press("Home");
+    check((await page.textContent('[data-testid="soil-tip"]')).startsWith("2008 · "), "keyboard: Home on the soil chart");
+    await page.keyboard.press("ArrowRight");
+    check((await page.textContent('[data-testid="soil-tip"]')).startsWith("2009 · "), "keyboard: ArrowRight on the soil chart");
+    equal(await page.locator('[data-testid="soil-table"] tbody tr').count(), 17, "awkward soil: screen-reader table rows");
+    // no recommendation: organic matter first, no tags; no noise: no band; no static value: no reference line
+    await page.route(isApi(`/field/${idB}/soil`), (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(awkwardSoil(idB, { recommended: null, om_noise_sd: null, verdict: null, ssurgo_om_pct: null })) }));
+    await page.keyboard.press("Escape");
+    await page.evaluate((id) => (window.location.hash = id), idB);
+    await page.waitForSelector('[data-testid="soil-timeline"][data-state="ready"]');
+    equal(await page.locator('[data-testid="soil-tag"]').count(), 0, "no recommendation: no tags");
+    equal(await page.locator('[data-testid="soil-band"]').count(), 0, "no noise estimate: no band");
+    equal(await page.locator('[data-testid="soil-ref"]').count(), 0, "no static value: no reference line");
+    equal(await page.locator('[data-testid="soil-verdict"]').count(), 0, "no verdict: no note");
+    equal(await page.locator('[data-testid="soil-chart"] [data-signal]').first().getAttribute("data-signal"), "om_pred", "no recommendation: organic matter first");
+    // recommended bare_days: bare first, tags the right way round
+    await page.route(isApi(`/field/${idB}/soil`), (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(awkwardSoil(idB, { recommended: "bare_days" })) }));
+    await page.keyboard.press("Escape");
+    await page.evaluate((id) => (window.location.hash = id), idB);
+    await page.waitForSelector('[data-testid="soil-timeline"][data-state="ready"]');
+    equal((await page.locator('[data-testid="soil-tag"]').allTextContents()).join("|"), "more reliable|noisy - use with caution", "bare_days recommended: tags");
+    equal(await page.locator('[data-testid="soil-chart"] [data-signal]').first().getAttribute("data-signal"), "bare_days", "bare_days recommended: bare days first");
+    log(`  ✓ awkward soil: 17 columns under the timeline, 9 gaps, null years, off-scale mark, tooltips inside the panel, keyboard, tag/order variants → ${soilTipShot}`);
     const overflow = await page.evaluate(() => {
       const body = document.querySelector(".panel-body");
       const clipped = [...document.querySelectorAll(".chip, .legend-item, .facts dd, .tile, .plan")].filter((node) => node.scrollWidth > node.clientWidth + 1);
@@ -354,6 +491,7 @@ async function main() {
     await page.unroute(isApi(`/field/${idB}`));
     await page.unroute(isApi(`/field/${idB}/plans`));
     await page.unroute(isApi(`/field/${idB}/satellite`));
+    await page.unroute(isApi(`/field/${idB}/soil`));
 
     // ---- 5. /health down: the badge falls back to the count from /fields, no county claim ------
     await page.route(isApi("/health"), (route) => route.abort("connectionrefused"));

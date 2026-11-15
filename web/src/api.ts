@@ -1,6 +1,6 @@
 // The one place the app talks to the backend. Every call returns typed JSON or throws ApiError
 // (or the browser's AbortError when the caller cancelled the request).
-import type { FieldCollection, FieldDetail, FieldPlans, FieldSatellite, Health } from "./types";
+import type { FieldCollection, FieldDetail, FieldPlans, FieldSatellite, FieldSoil, Health } from "./types";
 
 const configured: string | undefined = import.meta.env.VITE_API_URL;
 
@@ -100,6 +100,18 @@ export const api = {
   satellite: (fieldId: string, signal?: AbortSignal) =>
     getJson<FieldSatellite>(
       `${fieldPath(fieldId)}/satellite`,
+      (b) =>
+        isObject(b) &&
+        b.field_id === fieldId &&
+        typeof b.available === "boolean" &&
+        Array.isArray(b.years) &&
+        isObject(b.summary),
+      signal,
+    ),
+
+  soil: (fieldId: string, signal?: AbortSignal) =>
+    getJson<FieldSoil>(
+      `${fieldPath(fieldId)}/soil`,
       (b) =>
         isObject(b) &&
         b.field_id === fieldId &&

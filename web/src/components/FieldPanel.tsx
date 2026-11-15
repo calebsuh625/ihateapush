@@ -6,14 +6,17 @@ import { useResource } from "../hooks/useResource";
 import type { Resource } from "../hooks/useResource";
 import { formatOneDecimal, formatPercent, hectaresToAcres, plural } from "../lib/format";
 import { organicMatterClass, slopeClass } from "../thresholds";
-import type { FieldDetail, FieldPlans, FieldSatellite, Streak } from "../types";
+import type { FieldDetail, FieldPlans, FieldSatellite, FieldSoil, Streak } from "../types";
 import { PlanCard } from "./PlanCard";
 import { SatelliteChart } from "./Satellite";
+import { SoilTimelineChart } from "./SoilTimeline";
 import { Timeline } from "./Timeline";
 
 const EN_DASH = "–";
 /** Height of the loaded satellite block at the 424 px panel (chart, summary, note). */
 const SATELLITE_SKELETON_HEIGHT = 253;
+/** Height of the loaded soil-timeline block at the 424 px panel. */
+const SOIL_SKELETON_HEIGHT = 410;
 
 interface FieldPanelProps {
   fieldId: string;
@@ -28,6 +31,8 @@ export function FieldPanel({ fieldId, areaHa, onClose }: FieldPanelProps) {
   const [plans, retryPlans] = useResource(fieldId, api.plans);
   // A third, optional one: the satellite numbers. Its failure stays inside its own section.
   const [satellite, retrySatellite] = useResource(fieldId, api.satellite);
+  // And a fourth: the yearly soil condition table. Same rule: its failure stays in its own section.
+  const [soil, retrySoil] = useResource(fieldId, api.soil);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -76,7 +81,7 @@ export function FieldPanel({ fieldId, areaHa, onClose }: FieldPanelProps) {
       </header>
 
       <div className="panel-body" ref={bodyRef} aria-busy={state === "loading"}>
-        <DetailSections detail={detail} onRetry={retryDetail} satellite={satellite} onRetrySatellite={retrySatellite} />
+        <DetailSections detail={detail} onRetry={retryDetail} satellite={satellite} onRetrySatellite={retrySatellite} soil={soil} onRetrySoil={retrySoil} />
         {!unknownField && <PlansSection plans={plans} onRetry={retryPlans} />}
       </div>
     </aside>
@@ -92,9 +97,11 @@ interface DetailSectionsProps {
   onRetry: () => void;
   satellite: Resource<FieldSatellite>;
   onRetrySatellite: () => void;
+  soil: Resource<FieldSoil>;
+  onRetrySoil: () => void;
 }
 
-function DetailSections({ detail, onRetry, satellite, onRetrySatellite }: DetailSectionsProps) {
+function DetailSections({ detail, onRetry, satellite, onRetrySatellite, soil, onRetrySoil }: DetailSectionsProps) {
   if (detail.status === "error") {
     return (
       <Section title="Crop history and soil" id="section-detail">
@@ -123,6 +130,7 @@ function DetailSections({ detail, onRetry, satellite, onRetrySatellite }: Detail
           <LoadingNote what="crop history" />
         </Section>
         <SatelliteSection history={null} satellite={satellite} onRetry={onRetrySatellite} />
+        <SoilSection history={null} soil={soil} onRetry={onRetrySoil} />
         <Section title="Soil and terrain" id="section-soil">
           <div className="tiles skeleton-block" aria-hidden="true">
             <div className="skeleton" style={{ height: 93 }} />
@@ -184,6 +192,8 @@ function DetailSections({ detail, onRetry, satellite, onRetrySatellite }: Detail
       </Section>
 
       <SatelliteSection history={field.crop_history} satellite={satellite} onRetry={onRetrySatellite} />
+
+      <SoilSection history={field.crop_history} soil={soil} onRetry={onRetrySoil} />
 
       <Section title="Soil and terrain" id="section-soil">
         <div className="tiles">
@@ -252,6 +262,52 @@ function SatelliteSection({
           </p>
         )}
         {data && data.available && history !== null && <SatelliteChart history={history} satellite={data} />}
+      </div>
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Soil over time (GET /field/{id}/soil) — optional, fails on its own
+// ---------------------------------------------------------------------------------------------
+
+const SOIL_UNAVAILABLE_TEXT = {
+  not_built: "Soil timeline has not been built yet (make soil-health).",
+  no_data_for_field: "No soil timeline for this field.",
+} as const;
+
+function SoilSection({
+  history,
+  soil,
+  onRetry,
+}: {
+  history: Record<string, string> | null;
+  soil: Resource<FieldSoil>;
+  onRetry: () => void;
+}) {
+  const waiting = soil.status === "loading" || (soil.status === "ready" && soil.data.available && history === null);
+  const state = waiting ? "loading" : soil.status === "error" ? "error" : "ready";
+  const data = soil.status === "ready" ? soil.data : null;
+  return (
+    <Section title="Soil over time" id="section-soil-timeline" meta="Satellite estimate · yearly">
+      <div data-testid="soil-timeline" data-state={state} data-available={data ? String(data.available) : undefined}>
+        {waiting && (
+          <>
+            <div className="skeleton-block" aria-hidden="true">
+              <div className="skeleton" style={{ height: SOIL_SKELETON_HEIGHT }} />
+            </div>
+            <LoadingNote what="the soil timeline" />
+          </>
+        )}
+        {soil.status === "error" && (
+          <ErrorNote title="Could not load the soil timeline" message={soil.message} onRetry={onRetry} />
+        )}
+        {data && !data.available && (
+          <p className="muted" data-testid="soil-unavailable">
+            {SOIL_UNAVAILABLE_TEXT[data.reason ?? "no_data_for_field"]}
+          </p>
+        )}
+        {data && data.available && history !== null && <SoilTimelineChart history={history} soil={data} />}
       </div>
     </Section>
   );

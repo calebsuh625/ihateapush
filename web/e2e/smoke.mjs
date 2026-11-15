@@ -355,7 +355,7 @@ async function waitForPanel(page, fieldId) {
 const text = async (page, testId) => ((await page.locator(`[data-testid="${testId}"]`).first().textContent()) ?? "").trim();
 
 /** Compare everything in the open panel with the API's answers for that field. */
-async function checkPanel(page, fieldId, detail, plans, satellite) {
+async function checkPanel(page, fieldId, detail, plans, satellite, soil) {
   const panel = page.locator('[data-testid="panel"]');
   equal(await text(page, "panel-title"), fieldId, `${fieldId}: panel title`);
   const areaText = await text(page, "panel-area");
@@ -444,6 +444,7 @@ async function checkPanel(page, fieldId, detail, plans, satellite) {
 
   // satellite section: matches the API, and its year columns sit exactly under the timeline cells
   await checkSatellite(page, fieldId, detail, satellite, cells.length);
+  await checkSoil(page, fieldId, detail, soil, cells.length);
 
   // nothing in the panel may spill sideways, and the page itself must never scroll
   const overflow = await panel.evaluate((node) => {
@@ -510,6 +511,92 @@ async function checkSatellite(page, fieldId, detail, satellite, spanCells) {
     equal(tip, `${row.year} · ${crop} · peak greenness ${row.ndvi_peak.toFixed(2)} · green ${Math.round(row.cover_frac * 100)}% of clear views · ${Math.round(row.n_obs)} ${Math.round(row.n_obs) === 1 ? "view" : "views"}`, `${fieldId}: satellite tooltip`);
     await page.mouse.move(2, 2);
   }
+}
+
+const oneDec = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const OM_SCALE_MAX = 5;
+const confWord = (c) => (c < 0.34 ? "low" : c < 0.67 ? "medium" : "high");
+
+/** The "Soil over time" section against GET /field/{id}/soil. */
+async function checkSoil(page, fieldId, detail, soil, spanCells) {
+  const panel = page.locator('[data-testid="panel"]');
+  const section = panel.locator('[data-testid="soil-timeline"]');
+  await page.waitForSelector('[data-testid="soil-timeline"]:not([data-state="loading"])', { timeout: TIMEOUT });
+  equal(await section.getAttribute("data-state"), "ready", `${fieldId}: soil section state`);
+  equal(await section.getAttribute("data-available"), String(soil.available), `${fieldId}: soil available`);
+  const order = await panel.evaluate((node) => [...node.querySelectorAll("section.section h3")].map((h) => h.textContent));
+  equal(order.slice(0, 3).join(" > "), "Crop history > Satellite > Soil over time", `${fieldId}: soil section sits directly under the satellite section`);
+  if (!soil.available) {
+    const message = { not_built: "Soil timeline has not been built yet (make soil-health).", no_data_for_field: "No soil timeline for this field." }[soil.reason];
+    equal(await text(page, "soil-unavailable"), message, `${fieldId}: soil unavailable message`);
+    equal(await section.locator('[data-testid="soil-om-col"]').count(), 0, `${fieldId}: soil marks shown although unavailable`);
+    return;
+  }
+  const first = Math.min(...Object.keys(detail.crop_history).map(Number));
+  const inRange = soil.years.filter((row) => row.year >= first && row.year < first + spanCells);
+  const timeline = await panel.locator('[data-testid="timeline-cell"]').evaluateAll((nodes) => nodes.map((n) => ({ x: n.getBoundingClientRect().x, w: n.getBoundingClientRect().width })));
+  const specs = [["soil-om-col", "om_pred"], ["soil-bare-col", "bare_days"]];
+  for (const [rowId, key] of specs) {
+    const cols = await section.locator(`[data-testid="${rowId}"]`).evaluateAll((nodes) =>
+      nodes.map((n) => {
+        const r = n.getBoundingClientRect();
+        const kid = n.firstElementChild ? n.firstElementChild.getBoundingClientRect() : null;
+        return { year: Number(n.dataset.year), state: n.dataset.state, x: r.x, w: r.width, top: r.top, bottom: r.bottom, kid: kid && { cy: kid.top + kid.height / 2, h: kid.height } };
+      }),
+    );
+    equal(cols.length, spanCells, `${fieldId}: ${key} columns (one per timeline year)`);
+    equal(cols.filter((c) => c.state === "value").length, inRange.filter((r) => r[key] !== null).length, `${fieldId}: ${key} marks vs API`);
+    equal(cols.filter((c) => c.state === "null").length, inRange.filter((r) => r[key] === null).length, `${fieldId}: ${key} empty years vs API`);
+    equal(cols.filter((c) => c.state === "gap").length, spanCells - inRange.length, `${fieldId}: ${key} gaps vs API`);
+    cols.forEach((c, i) => check(Math.abs(c.x - timeline[i].x) <= 1 && Math.abs(c.w - timeline[i].w) <= 1, `${fieldId}: ${key} column ${c.year} is not under its timeline cell`));
+    for (const c of cols.filter((c) => c.state === "value")) {
+      const row = inRange.find((r) => r.year === c.year);
+      const box = c.bottom - c.top;
+      if (key === "bare_days") check(Math.abs(c.kid.h - (row.bare_days / 366) * box) <= 1.5, `${fieldId}: bare bar height for ${c.year} is ${c.kid.h.toFixed(1)}px of ${box}px, API says ${row.bare_days}`);
+      else check(Math.abs((c.bottom - c.kid.cy) - (Math.min(OM_SCALE_MAX, row.om_pred) / OM_SCALE_MAX) * box) <= 1.5, `${fieldId}: organic-matter mark for ${c.year} is at the wrong height (API says ${row.om_pred})`);
+    }
+  }
+  // reference line, band, tags, order
+  const ref = section.locator('[data-testid="soil-ref"]');
+  equal(await ref.count(), soil.ssurgo_om_pct === null ? 0 : 1, `${fieldId}: soil-survey line present iff the field has a static value`);
+  const legend = (await text(page, "soil-legend"));
+  if (soil.ssurgo_om_pct !== null) check(legend.includes("soil survey") && legend.includes(oneDec.format(soil.ssurgo_om_pct)), `${fieldId}: legend "${legend}" lacks the soil survey value`);
+  const showBand = soil.om_noise_sd !== null && soil.om_noise_sd > 0 && soil.summary.om_pred_mean !== null;
+  equal(await section.locator('[data-testid="soil-band"]').count(), showBand ? 1 : 0, `${fieldId}: noise band present`);
+  if (showBand) check(legend.includes("year-to-year noise"), `${fieldId}: legend "${legend}" does not label the band`);
+  const blocks = await section.locator("[data-signal][data-testid$='-block']").evaluateAll((nodes) => nodes.map((n) => n.dataset.signal));
+  const firstSignal = soil.recommended === "bare_days" ? "bare_days" : "om_pred";
+  equal(blocks[0], firstSignal, `${fieldId}: which soil signal comes first`);
+  const tags = await section.locator('[data-testid="soil-tag"]').evaluateAll((nodes) => nodes.map((n) => `${n.dataset.signal}=${n.textContent.trim()}`));
+  if (soil.recommended === null) equal(tags.length, 0, `${fieldId}: tags without a recommendation`);
+  else {
+    const other = soil.recommended === "om_pred" ? "bare_days" : "om_pred";
+    equal(tags.join("|"), [`${soil.recommended}=more reliable`, `${other}=noisy - use with caution`].join("|"), `${fieldId}: reliability tags`);
+  }
+  // summary and verdict
+  const summary = await text(page, "soil-summary");
+  const sm = soil.summary;
+  if (sm.om_pred_mean !== null) check(summary.includes(`${oneDec.format(sm.om_pred_mean)}%`), `${fieldId}: soil summary "${summary}" lacks the organic-matter mean`);
+  if (sm.bare_days_mean !== null) check(summary.includes(String(Math.round(sm.bare_days_mean))), `${fieldId}: soil summary "${summary}" lacks mean bare days`);
+  if (sm.bare_days_trend_per_decade !== null) {
+    const word = Math.abs(sm.bare_days_trend_per_decade) < 5 ? "steady" : sm.bare_days_trend_per_decade > 0 ? "rising" : "falling";
+    check(summary.includes(word), `${fieldId}: soil summary "${summary}" should say ${word}`);
+  } else check(!/trend/.test(summary), `${fieldId}: soil summary shows a trend without 5 values`);
+  if (soil.verdict) equal(await text(page, "soil-verdict"), soil.verdict.trim(), `${fieldId}: verdict text`);
+  else equal(await section.locator('[data-testid="soil-verdict"]').count(), 0, `${fieldId}: verdict shown without one`);
+  // tooltips
+  const omRow = inRange.find((r) => r.om_pred !== null);
+  if (omRow) {
+    await section.locator(`[data-testid="soil-om-col"][data-year="${omRow.year}"]`).hover();
+    equal(await text(page, "soil-tip"), `${omRow.year} · ${oneDec.format(omRow.om_pred)}% · ${confWord(omRow.confidence)} confidence · ${Math.round(omRow.n_obs)} ${Math.round(omRow.n_obs) === 1 ? "bare view" : "bare views"}`, `${fieldId}: organic-matter tooltip`);
+  }
+  const bareRow = inRange.find((r) => r.bare_days !== null);
+  if (bareRow) {
+    await section.locator(`[data-testid="soil-bare-col"][data-year="${bareRow.year}"]`).hover();
+    const crop = detail.crop_history[String(bareRow.year)] ?? "no crop on record";
+    equal(await text(page, "soil-tip"), `${bareRow.year} · ${crop} · ${Math.round(bareRow.bare_days)} ${Math.round(bareRow.bare_days) === 1 ? "day" : "days"} bare`, `${fieldId}: bare-days tooltip`);
+  }
+  await page.mouse.move(2, 2);
 }
 
 /** Ids of the polygons currently drawn with the given outline colour. */
@@ -693,6 +780,7 @@ async function run(browser) {
     fetchJson(from, `/field/${id}`),
     fetchJson(from, `/field/${id}/plans`),
     fetchJson(from, `/field/${id}/satellite`),
+    fetchJson(from, `/field/${id}/soil`),
   ]);
 
   const [health, collection] = await Promise.all([fetchJson(page, "/health"), fetchJson(page, "/fields")]);
@@ -758,7 +846,7 @@ async function run(browser) {
 
   for (let i = 0; i < picks.length; i++) {
     const { point, id } = picks[i];
-    const [detail, plans, satellite] = await fieldData(page, id);
+    const [detail, plans, satellite, soil] = await fieldData(page, id);
 
     const planned = zoomPlan[i % zoomPlan.length];
     const zoom = planned === null ? null : Math.min(18, Math.max(planned, zoomForClearance(point.clearance, point.lat, 6)));
@@ -767,7 +855,7 @@ async function run(browser) {
     const elapsed = await clickField(page, id, target);
     if (elapsed !== null) clickTimes.push(elapsed);
 
-    await checkPanel(page, id, detail, plans, satellite);
+    await checkPanel(page, id, detail, plans, satellite, soil);
     equal(await page.evaluate(() => window.location.hash), `#${id}`, `${id}: URL hash after the click`);
     equal((await selectedOnMap(page)).join(","), id, `${id}: polygon highlighted as selected`);
     equal(await page.locator('[data-testid="hint"]').count(), 0, `${id}: hint still shown with a field selected`);

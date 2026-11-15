@@ -31,6 +31,8 @@ export interface Health {
   field_count: number;
   /** true when the optional satellite side file is loaded */
   satellite?: boolean;
+  /** true when the optional soil-health side file is loaded */
+  soil_health?: boolean;
 }
 
 export interface Streak {
@@ -111,4 +113,44 @@ export interface FieldSatellite {
   /** ascending; empty when unavailable */
   years: SatelliteYear[];
   summary: SatelliteSummary;
+}
+
+export interface SoilYear {
+  year: number;
+  /** estimated topsoil organic matter, %; null when no usable bare-soil view that year */
+  om_pred: number | null;
+  /** 0..1, how much to trust om_pred (0 when it is null) */
+  confidence: number;
+  /** mean bare-soil views per pixel that year */
+  n_obs: number;
+  /** estimated days the soil sat bare, 0..366; null when too few clear views */
+  bare_days: number | null;
+}
+
+export interface SoilSummary {
+  om_pred_mean: number | null;
+  /** years that have an om_pred value */
+  om_pred_years: number | null;
+  bare_days_mean: number | null;
+  /** least-squares slope of bare_days per decade; null with fewer than 5 values */
+  bare_days_trend_per_decade: number | null;
+}
+
+/** GET /field/{field_id}/soil */
+export interface FieldSoil {
+  field_id: string;
+  available: boolean;
+  /** only when available is false */
+  reason?: "not_built" | "no_data_for_field";
+  source: string;
+  /** which signal to trust; null when the meta file is missing */
+  recommended: "om_pred" | "bare_days" | null;
+  /** typical year-to-year jump of om_pred, in OM %; null when not measured */
+  om_noise_sd: number | null;
+  verdict: string | null;
+  /** the field's static soil-survey organic matter, % */
+  ssurgo_om_pct: number | null;
+  /** ascending; empty when unavailable */
+  years: SoilYear[];
+  summary: SoilSummary;
 }
