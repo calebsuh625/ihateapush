@@ -16,6 +16,38 @@ sys.path.insert(0, str(ROOT))
 # The function's file system is read-only except /tmp; the planner caches its bare-day table there.
 os.environ.setdefault("PLANNER_SOIL_CACHE_PATH", "/tmp/planner_bare_days.json")
 
+# geopandas is vendored without its file-format extras (pyogrio/GDAL), and pyarrow is left out: together
+# they push the function past Vercel's bundle size, which makes it install packages at start-up and run
+# out of disk. Parquet is read with fastparquet instead; geometry is GeoParquet WKB.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_vendor"))
+
+import json  # noqa: E402
+
+import geopandas  # noqa: E402
+import shapely  # noqa: E402
+
+
+def _read_geoparquet(path, *args, **kwargs):
+    import fastparquet
+    from pyproj import CRS
+
+    pf = fastparquet.ParquetFile(str(path))
+    df = pf.to_pandas()
+    meta = json.loads((pf.key_value_metadata or {}).get("geo") or "{}")
+    col = meta.get("primary_column", "geometry")
+    info = meta.get("columns", {}).get(col, {})
+    if "crs" not in info or info["crs"] in ("OGC:CRS84", {"id": {"authority": "OGC", "code": "CRS84"}}):
+        crs = "EPSG:4326"  # GeoParquet default, as geopandas.read_parquet does
+    elif info["crs"] is None:
+        crs = None
+    else:
+        crs = CRS.from_user_input(info["crs"])
+    df[col] = geopandas.GeoSeries(shapely.from_wkb(df[col].values), index=df.index, crs=crs)
+    return geopandas.GeoDataFrame(df, geometry=col)
+
+
+geopandas.read_parquet = _read_geoparquet
+
 from api.main import app as inner  # noqa: E402
 
 _lock = asyncio.Lock()
