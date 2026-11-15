@@ -15,3 +15,8 @@ node_modules/
 # misc
 .DS_Store
 *.log
+
+# local secrets (API keys); never commit
+.env
+.env.*
+!.env.example
