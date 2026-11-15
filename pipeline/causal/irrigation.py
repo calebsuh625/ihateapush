@@ -1,7 +1,8 @@
-"""Infer irrigated vs dryland per field, from its shape and its 2008-2015 crops only.
+"""Infer irrigated vs dryland per field, from its shape and its crops before the switch year only
+(config.history_years(), 2008-2019 by default).
 
-Only the history period is used on purpose: the 2016-2024 crops are the "treatment", and a
-stratum defined from them would bias the comparison.
+Only the history period is used on purpose: the crops from the switch year on are the
+"treatment", and a stratum defined from them would bias the comparison.
 
 Signals
 -------

@@ -1,14 +1,14 @@
-"""Load the per-field, per-year soil score table (Phase 2A's data/soil_health.parquet).
+"""Load the per-field, per-year soil table (Phase 2A's data/soil_health.parquet).
 
-Contract (from Phase 2A): one row per field per year with
-`field_id` (str), `year` (int), `om_pred` (float), `n_obs` (int), `confidence` (float, 0-1).
-Phase 2A may add more score columns (e.g. a bare-soil exposure index); any of them can be the
-outcome (see pipeline/causal/config.py). A year with no usable observation may be missing or
-have a null score; both are treated the same.
+Contract (schema.md, pipeline/soil/health_schema.py): one row per field per year, 2016-2024, with
+`field_id`, `year`, `om_pred`, `n_obs`, `confidence`, `bare_days`. Any numeric column can be the
+outcome (see pipeline/causal/config.py); the default is `bare_days`. A year with a null value is
+skipped, exactly like a missing row.
 
 Which file: data/soil_health.parquet when it exists, else data/soil_health_fake.parquet (made by
-pipeline/causal/make_fake_soil.py), mirroring how the API falls back to the fake fields. A file
-whose name contains "fake" is reported as fake everywhere downstream. $SOIL_PATH overrides.
+pipeline/causal/make_fake_soil.py to the same contract), mirroring how the API falls back to the
+fake fields. A file whose name contains "fake" is reported as fake everywhere downstream.
+$SOIL_PATH overrides.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from pipeline.causal import config
+from pipeline.soil.health_schema import check_soil_health
 
 REQUIRED = ["field_id", "year"]
 
@@ -37,10 +38,16 @@ def is_fake(path: Path | str | None) -> bool:
     return path is not None and "fake" in Path(path).stem.lower()
 
 
-def load_soil(path: Path, column: str) -> pd.DataFrame:
+def contract_problems(path: Path) -> list[str]:
+    """Every way the file breaks the Phase 2A contract (empty list = fine)."""
+    return check_soil_health(pd.read_parquet(path))
+
+
+def load_soil(path: Path, column: str, weight_column: str | None = None) -> pd.DataFrame:
     """Long table field_id, year, value, weight (rows with a null value dropped).
 
-    weight = `confidence` when the file has it (clipped to [0.05, 1]), else 1.
+    weight = 1, or `weight_column` clipped to [0.05, 1] when one is named and the file has it
+    (config.Outcome.weight_column: `confidence` for om_pred, nothing for bare_days).
     Raises ValueError with a readable message when the file does not fit.
     """
     df = pd.read_parquet(path)
@@ -50,17 +57,17 @@ def load_soil(path: Path, column: str) -> pd.DataFrame:
         raise ValueError(f"{path.name} has no column(s) {', '.join(missing)} (it has: {have})")
     if not pd.api.types.is_numeric_dtype(df[column]):
         raise ValueError(f"{path.name}: outcome column {column!r} is {df[column].dtype}, expected numeric")
+    weighted = weight_column is not None and weight_column in df
     out = pd.DataFrame(
         {
             "field_id": df["field_id"].astype(str),
             "year": pd.to_numeric(df["year"], errors="coerce"),
             "value": df[column].astype(float),
-            "weight": df["confidence"].astype(float).clip(0.05, 1.0) if "confidence" in df else 1.0,
+            "weight": df[weight_column].astype(float).clip(0.05, 1.0).fillna(0.05) if weighted else 1.0,
         }
     )
     out = out[np.isfinite(out["value"]) & out["year"].notna()]
     out["year"] = out["year"].astype(int)
-    out["weight"] = out["weight"].fillna(0.05)
     return out.drop_duplicates(["field_id", "year"], keep="last").reset_index(drop=True)
 
 

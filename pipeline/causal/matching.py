@@ -1,18 +1,23 @@
-"""Look-alike pairs: neighbouring fields that started alike but were farmed differently after 2016.
+"""Look-alike pairs: neighbouring fields that started alike but grew a different rotation type from the
+switch year on (config.SWITCH_YEAR; "history" below = config.history_years(), the crop years before it).
 
 Step 1, `candidate_pairs` (labels not used): every pair of fields that
   * are in the same irrigation group (irrigated / dryland; "uncertain" fields are left out),
   * are less than MAX_DISTANCE_KM apart (centroids),
   * differ by at most MAX_SLOPE_DIFF in slope and MAX_SSURGO_OM_DIFF in SSURGO organic matter,
-  * started with a similar soil score (2008-2015 mean, within MAX_BASELINE_DIFF_SD county SDs),
-  * had a similar 2008-2015 crop mix (total-variation distance <= MAX_HISTORY_DIST).
+  * started at a similar soil value (mean over config.baseline_years(), within MAX_BASELINE_DIFF_SD
+    county SDs),
+  * had a similar crop mix over the history years (total-variation distance <= MAX_HISTORY_DIST),
+  * share enough soil years to be compared within the same years (MIN_PAIR_PRE_YEARS before the
+    switch, MIN_PAIR_POST_YEARS after).
 Each candidate gets a match score: the sum of each difference divided by its caliper (0 = identical,
 5 = at the edge of every caliper).
 
 Step 2, `match` (labels used): for each comparison "rotation A vs rotation B" within an irrigation
-group, keep candidates whose 2016-2024 types are A and B, then greedily take the best-scoring pair
-whose fields are both still unused for that comparison (1:1 matching without replacement). A field
-can be in more than one comparison. Step 2 is cheap, so the shuffled-label placebo re-runs it.
+group, keep candidates whose rotation types after the switch are A and B, then greedily take the
+best-scoring pair whose fields are both still unused for that comparison (1:1 matching without
+replacement). A field can be in more than one comparison. Step 2 is cheap, so the shuffled-label
+placebo re-runs it.
 """
 from __future__ import annotations
 
@@ -24,8 +29,14 @@ from pipeline.causal import config
 from pipeline.causal.rotations import COMPARABLE_TYPES, comparison_key
 
 
-def candidate_pairs(f: pd.DataFrame) -> pd.DataFrame:
-    """All label-free look-alike candidates. `f` is the per-field feature table (run_causal)."""
+def _shared_years(observed: np.ndarray, years: np.ndarray, span: tuple[int, int], i, j) -> np.ndarray:
+    cols = (years >= span[0]) & (years <= span[1])
+    return (observed[i][:, cols] & observed[j][:, cols]).sum(axis=1)
+
+
+def candidate_pairs(f: pd.DataFrame, observed: np.ndarray | None = None, years: np.ndarray | None = None) -> pd.DataFrame:
+    """All label-free look-alike candidates. `f` is the per-field feature table (run_causal);
+    `observed` (fields x years, bool) says which soil years each field has."""
     sd = float(np.nanstd(f["baseline"]))
     max_base = config.MAX_BASELINE_DIFF_SD * (sd if sd > 0 else 1.0)
     out = []
@@ -50,6 +61,10 @@ def candidate_pairs(f: pd.DataFrame) -> pd.DataFrame:
             & (d_base <= max_base)
             & (d_hist <= config.MAX_HISTORY_DIST)
         )
+        if observed is not None:
+            ri, rj = g["row"].values[i], g["row"].values[j]
+            ok &= _shared_years(observed, years, config.pre_years(), ri, rj) >= config.MIN_PAIR_PRE_YEARS
+            ok &= _shared_years(observed, years, config.post_years(), ri, rj) >= config.MIN_PAIR_POST_YEARS
         score = (
             dist / config.MAX_DISTANCE_KM
             + d_slope / config.MAX_SLOPE_DIFF
@@ -78,7 +93,7 @@ def candidate_pairs(f: pd.DataFrame) -> pd.DataFrame:
 
 
 def match(cands: pd.DataFrame, labels: np.ndarray) -> pd.DataFrame:
-    """Greedy 1:1 matched pairs per (irrigation, A, B). `labels[row]` = 2016-2024 rotation type.
+    """Greedy 1:1 matched pairs per (irrigation, A, B). `labels[row]` = rotation type after the switch.
 
     Returns the chosen candidate rows plus `a_row`, `b_row`, `rotation_a`, `rotation_b`
     (a_row is the field with rotation A, the earlier type in ROTATION_TYPES).

@@ -1,15 +1,20 @@
 """Difference-in-differences on matched pairs, cluster-bootstrap CIs, and the placebo tests.
 
-Per field, from its yearly soil scores (weighted by `confidence`):
-    baseline = mean of the first half of its pre-2016 observations   (used only for matching)
-    pre      = mean of the second half of its pre-2016 observations
-    post     = mean of its 2016-2024 observations
-Splitting the history this way keeps the noise in the matched-on baseline out of `pre`, which
-avoids the regression-to-the-mean bias of matching and differencing on the same years.
+Year windows come from config (defaults: switch year 2020, soil years 2016-2024):
+    baseline = the first half of the pre-switch soil years (2016-2017)   used only for matching
+    pre      = the second half (2018-2019)                               the "before"
+    post     = the switch year onwards (2020-2024)                       the "after"
+Keeping the matched-on years out of `pre` keeps the noise in the baseline out of the "before",
+which avoids the regression-to-the-mean bias of matching and differencing on the same years.
 
-Per pair (A = field with rotation A):   did = (post_A - pre_A) - (post_B - pre_B)
-A comparison's effect is the mean `did` over its pairs: how much more the soil score moved
-under rotation A than under rotation B, on look-alike neighbours.
+Per pair (A = field with rotation A), using ONLY the years in which both fields have a value, so
+every comparison is made within the same year (a dry year lifts bare days for everyone):
+    did = (post_A - pre_A) - (post_B - pre_B)
+A comparison's effect is the mean `did` over its pairs: how much more the outcome moved under
+rotation A than under rotation B, on look-alike neighbours.
+
+Weights: 1 for every field-year unless the outcome names a weight column (om_pred: `confidence`);
+a pair-year then weighs sqrt(weight_A * weight_B).
 
 Uncertainty: pairs are resampled in spatial clusters (BOOTSTRAP_CLUSTER_KM grid cells), because
 neighbouring pairs share weather and soil and are not independent. 95% percentile interval.
@@ -36,19 +41,49 @@ def wmean(values: np.ndarray, weights: np.ndarray, mask: np.ndarray) -> tuple[np
     return mean, ok.sum(axis=1)
 
 
-def field_windows(values: np.ndarray, weights: np.ndarray, years: np.ndarray, switch: int) -> dict[str, np.ndarray]:
-    """baseline / pre / post means and counts for every field (rows of `values`)."""
-    observed = np.isfinite(values)
-    pre_mask = observed & (years[None, :] < switch)
-    n_pre = pre_mask.sum(axis=1)
-    # rank of each pre observation within its row: 0, 1, 2, ...
-    rank = np.cumsum(pre_mask, axis=1) - 1
-    first_half = pre_mask & (rank < (n_pre // 2)[:, None])
-    second_half = pre_mask & ~first_half
-    baseline, _ = wmean(values, weights, first_half)
-    pre, _ = wmean(values, weights, second_half)
-    post, n_post = wmean(values, weights, years[None, :] >= switch)
-    return {"baseline": baseline, "pre": pre, "post": post, "n_pre": n_pre, "n_post": n_post}
+def year_mask(years: np.ndarray, span: tuple[int, int]) -> np.ndarray:
+    return (years >= span[0]) & (years <= span[1])
+
+
+def field_windows(values: np.ndarray, weights: np.ndarray, years: np.ndarray) -> dict[str, np.ndarray]:
+    """baseline / pre / post means and counts for every field (rows of `values`), each over the
+    field's own observed years in config.baseline_years() / pre_years() / post_years()."""
+    baseline, n_baseline = wmean(values, weights, year_mask(years, config.baseline_years())[None, :])
+    pre, n_pre = wmean(values, weights, year_mask(years, config.pre_years())[None, :])
+    post, n_post = wmean(values, weights, year_mask(years, config.post_years())[None, :])
+    return {"baseline": baseline, "pre": pre, "post": post, "n_baseline": n_baseline, "n_pre": n_pre, "n_post": n_post}
+
+
+def pair_windows(
+    values: np.ndarray,
+    weights: np.ndarray,
+    years: np.ndarray,
+    a_rows: np.ndarray,
+    b_rows: np.ndarray,
+    before: tuple[int, int] | None = None,
+    after: tuple[int, int] | None = None,
+    min_before: int = config.MIN_PAIR_PRE_YEARS,
+    min_after: int = config.MIN_PAIR_POST_YEARS,
+) -> dict[str, np.ndarray]:
+    """Per pair, over the years BOTH fields have a value: the mean of each field `before` and
+    `after` (default: config.pre_years() and post_years()), how many shared years went into each,
+    and did = (after_A - before_A) - (after_B - before_B). `did` is NaN for a pair with fewer
+    than min_before / min_after shared years.
+    """
+    before = before or config.pre_years()
+    after = after or config.post_years()
+    va, vb = values[a_rows], values[b_rows]
+    both = np.isfinite(va) & np.isfinite(vb)
+    w = np.sqrt(weights[a_rows] * weights[b_rows])
+    out = {}
+    for name, span in (("pre", before), ("post", after)):
+        mask = both & year_mask(years, span)[None, :]
+        out[f"{name}_a"], out[f"n_{name}"] = wmean(va, w, mask)
+        out[f"{name}_b"], _ = wmean(vb, w, mask)
+    did = (out["post_a"] - out["pre_a"]) - (out["post_b"] - out["pre_b"])
+    did[(out["n_pre"] < min_before) | (out["n_post"] < min_after)] = np.nan
+    out["did"] = did
+    return out
 
 
 def cluster_ids(x: np.ndarray, y: np.ndarray, km: float = config.BOOTSTRAP_CLUSTER_KM) -> np.ndarray:
@@ -87,11 +122,13 @@ def estimate(d: np.ndarray, clusters: np.ndarray, rng: np.random.Generator, n_bo
     }
 
 
-def placebo_switch(values: np.ndarray, weights: np.ndarray, years: np.ndarray, fake_year: int, switch: int):
-    """Per field: (mean of pre-switch years >= fake_year) - (mean of years < fake_year), plus counts."""
-    observed = np.isfinite(values)
-    late, n_late = wmean(values, weights, observed & (years[None, :] >= fake_year) & (years[None, :] < switch))
-    early, n_early = wmean(values, weights, observed & (years[None, :] < fake_year))
-    change = late - early
-    change[(n_late < 1) | (n_early < 1)] = np.nan
-    return change
+def placebo_did(values, weights, years, a_rows, b_rows, fake_year: int) -> np.ndarray:
+    """Per pair, the same `did` with a fake switch at `fake_year`, from pre-switch soil years only:
+    (soil years from fake_year up to the real switch) against (soil years before fake_year).
+
+    Unlike the main estimate, the "before" here always contains the baseline years the pairs were
+    matched on (there are no earlier soil years to use). The gap is small there by selection and
+    springs back afterwards, so a non-zero placebo is partly that bounce and not only a trend."""
+    early = (config.SOIL_FIRST_YEAR, fake_year - 1)
+    late = (fake_year, config.SWITCH_YEAR - 1)
+    return pair_windows(values, weights, years, a_rows, b_rows, early, late, 1, 1)["did"]
