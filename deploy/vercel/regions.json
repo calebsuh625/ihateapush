@@ -11,12 +11,111 @@
    "has_traits": false
   },
   {
+   "fips": "20001",
+   "state": "KS",
+   "county": "Allen",
+   "label": "Allen County, KS",
+   "is_default": false,
+   "field_count": 2654,
+   "has_traits": true
+  },
+  {
+   "fips": "20005",
+   "state": "KS",
+   "county": "Atchison",
+   "label": "Atchison County, KS",
+   "is_default": false,
+   "field_count": 2783,
+   "has_traits": true
+  },
+  {
+   "fips": "20007",
+   "state": "KS",
+   "county": "Barber",
+   "label": "Barber County, KS",
+   "is_default": false,
+   "field_count": 3239,
+   "has_traits": true
+  },
+  {
+   "fips": "20009",
+   "state": "KS",
+   "county": "Barton",
+   "label": "Barton County, KS",
+   "is_default": false,
+   "field_count": 8105,
+   "has_traits": true
+  },
+  {
+   "fips": "20013",
+   "state": "KS",
+   "county": "Brown",
+   "label": "Brown County, KS",
+   "is_default": false,
+   "field_count": 3630,
+   "has_traits": true
+  },
+  {
+   "fips": "20017",
+   "state": "KS",
+   "county": "Chase",
+   "label": "Chase County, KS",
+   "is_default": false,
+   "field_count": 1086,
+   "has_traits": true
+  },
+  {
+   "fips": "20021",
+   "state": "KS",
+   "county": "Cherokee",
+   "label": "Cherokee County, KS",
+   "is_default": false,
+   "field_count": 3269,
+   "has_traits": true
+  },
+  {
    "fips": "20025",
    "state": "KS",
    "county": "Clark",
    "label": "Clark County, KS",
    "is_default": false,
    "field_count": 2452,
+   "has_traits": true
+  },
+  {
+   "fips": "20029",
+   "state": "KS",
+   "county": "Cloud",
+   "label": "Cloud County, KS",
+   "is_default": false,
+   "field_count": 5087,
+   "has_traits": true
+  },
+  {
+   "fips": "20033",
+   "state": "KS",
+   "county": "Comanche",
+   "label": "Comanche County, KS",
+   "is_default": false,
+   "field_count": 2097,
+   "has_traits": true
+  },
+  {
+   "fips": "20039",
+   "state": "KS",
+   "county": "Decatur",
+   "label": "Decatur County, KS",
+   "is_default": false,
+   "field_count": 4724,
+   "has_traits": true
+  },
+  {
+   "fips": "20045",
+   "state": "KS",
+   "county": "Douglas",
+   "label": "Douglas County, KS",
+   "is_default": false,
+   "field_count": 1924,
    "has_traits": true
   },
   {
@@ -29,6 +128,15 @@
    "has_traits": true
   },
   {
+   "fips": "20051",
+   "state": "KS",
+   "county": "Ellis",
+   "label": "Ellis County, KS",
+   "is_default": false,
+   "field_count": 4834,
+   "has_traits": true
+  },
+  {
    "fips": "20057",
    "state": "KS",
    "county": "Ford",
@@ -38,12 +146,30 @@
    "has_traits": true
   },
   {
+   "fips": "20059",
+   "state": "KS",
+   "county": "Franklin",
+   "label": "Franklin County, KS",
+   "is_default": false,
+   "field_count": 3167,
+   "has_traits": true
+  },
+  {
    "fips": "20063",
    "state": "KS",
    "county": "Gove",
    "label": "Gove County, KS",
    "is_default": false,
    "field_count": 5017,
+   "has_traits": true
+  },
+  {
+   "fips": "20065",
+   "state": "KS",
+   "county": "Graham",
+   "label": "Graham County, KS",
+   "is_default": false,
+   "field_count": 3977,
    "has_traits": true
   },
   {
@@ -110,6 +236,15 @@
    "has_traits": true
   },
   {
+   "fips": "20097",
+   "state": "KS",
+   "county": "Kiowa",
+   "label": "Kiowa County, KS",
+   "is_default": false,
+   "field_count": 3005,
+   "has_traits": true
+  },
+  {
    "fips": "20101",
    "state": "KS",
    "county": "Lane",
@@ -155,6 +290,42 @@
    "has_traits": true
   },
   {
+   "fips": "20145",
+   "state": "KS",
+   "county": "Pawnee",
+   "label": "Pawnee County, KS",
+   "is_default": false,
+   "field_count": 5946,
+   "has_traits": true
+  },
+  {
+   "fips": "20151",
+   "state": "KS",
+   "county": "Pratt",
+   "label": "Pratt County, KS",
+   "is_default": false,
+   "field_count": 5518,
+   "has_traits": true
+  },
+  {
+   "fips": "20163",
+   "state": "KS",
+   "county": "Rooks",
+   "label": "Rooks County, KS",
+   "is_default": false,
+   "field_count": 4883,
+   "has_traits": true
+  },
+  {
+   "fips": "20165",
+   "state": "KS",
+   "county": "Rush",
+   "label": "Rush County, KS",
+   "is_default": false,
+   "field_count": 5160,
+   "has_traits": true
+  },
+  {
    "fips": "20171",
    "state": "KS",
    "county": "Scott",
@@ -173,6 +344,33 @@
    "has_traits": true
   },
   {
+   "fips": "20179",
+   "state": "KS",
+   "county": "Sheridan",
+   "label": "Sheridan County, KS",
+   "is_default": false,
+   "field_count": 5388,
+   "has_traits": true
+  },
+  {
+   "fips": "20181",
+   "state": "KS",
+   "county": "Sherman",
+   "label": "Sherman County, KS",
+   "is_default": false,
+   "field_count": 6747,
+   "has_traits": true
+  },
+  {
+   "fips": "20185",
+   "state": "KS",
+   "county": "Stafford",
+   "label": "Stafford County, KS",
+   "is_default": false,
+   "field_count": 6332,
+   "has_traits": true
+  },
+  {
    "fips": "20187",
    "state": "KS",
    "county": "Stanton",
@@ -188,6 +386,33 @@
    "label": "Stevens County, KS",
    "is_default": false,
    "field_count": 4596,
+   "has_traits": true
+  },
+  {
+   "fips": "20193",
+   "state": "KS",
+   "county": "Thomas",
+   "label": "Thomas County, KS",
+   "is_default": false,
+   "field_count": 6683,
+   "has_traits": true
+  },
+  {
+   "fips": "20195",
+   "state": "KS",
+   "county": "Trego",
+   "label": "Trego County, KS",
+   "is_default": false,
+   "field_count": 4075,
+   "has_traits": true
+  },
+  {
+   "fips": "20199",
+   "state": "KS",
+   "county": "Wallace",
+   "label": "Wallace County, KS",
+   "is_default": false,
+   "field_count": 3858,
    "has_traits": true
   },
   {
