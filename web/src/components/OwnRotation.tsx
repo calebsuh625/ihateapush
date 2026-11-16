@@ -24,6 +24,7 @@ import { formatScore } from "../lib/format";
 import { RANKING_SCORE_LABEL, RANKING_SCORE_TITLE, formatDollars, formatInches, formatShare, wellQualifier } from "../lib/planner";
 import type { FieldScore, Plan } from "../types";
 import { HowToGetThere } from "./TransitionPath";
+import { WeatherReplay } from "./WeatherReplay";
 import "./OwnRotation.css";
 
 interface OwnRotationProps {
@@ -578,6 +579,7 @@ function ScoreResult({ score, fieldId, plansQuery }: { score: FieldScore; fieldI
         )}
       </div>
       {/* The way from what the field grows now to this rotation. Not for one that plants nothing. */}
+      {!unranked && <WeatherReplay fieldId={fieldId} plansQuery={plansQuery} target={{ rotation: score.understood }} name={yours.name} />}
       {!unranked && <HowToGetThere fieldId={fieldId} plansQuery={plansQuery} target={{ rotation: score.understood }} name={yours.name} />}
     </>
   );

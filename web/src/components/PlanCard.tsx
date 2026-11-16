@@ -17,6 +17,7 @@ import {
 } from "../lib/planner";
 import type { Plan, PlanNumbers, PlanScores, Spread } from "../types";
 import { HowToGetThere } from "./TransitionPath";
+import { WeatherReplay } from "./WeatherReplay";
 import "./Planner.css";
 
 type ScoreKey = "soil" | "water" | "money" | "risk";
@@ -251,6 +252,8 @@ export function PlanCard({ plan, rank, irrigated = false, profitDomain, candidat
           {waterLine}
         </p>
       )}
+
+      {howTo && <WeatherReplay key={`replay-${howTo.fieldId}`} fieldId={howTo.fieldId} plansQuery={howTo.plansQuery} target={{ plan: rank }} name={plan.name} />}
 
       {howTo ? (
         // keyed by field: an opened path belongs to the field it was opened for

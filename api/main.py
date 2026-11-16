@@ -11,6 +11,7 @@ Endpoints (the frontend is written against exactly these shapes):
                                    soil, water, money, risk, scenario, horizon, irrigated; else the basic one)
     GET /field/{field_id}/score    the farmer's own rotation (?rotation=corn,sorghum,wheat,fallow) scored like
                                    the plans, next to our top picks (smart planner only; 503 without it)
+    GET /field/{field_id}/replay      a plan or rotation run year by year through the real 2000-2024 weather
     GET /field/{field_id}/transition  the year-by-year path from what the field grows now to one of our plans
                                    (?plan=1|2|3) or to a rotation (?target=corn,soy), against carrying on as
                                    now (smart planner only; 503 without it)
@@ -69,7 +70,7 @@ from api.layers import LayerService, router as layers_router
 from api.regions import router as regions_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from api.planner import config as planner_config
-from api.planner import custom, farm, smart, transition
+from api.planner import custom, farm, replay as weather_replay, smart, transition
 from api.planner.traits import FieldTraits
 from pipeline import groundwater_schema, satellite_schema
 from pipeline.soil import health_schema
@@ -903,6 +904,60 @@ async def transition_path(
     except Exception as exc:
         log.warning("transition path failed for %s: %s: %s", field_id, type(exc).__name__, exc)
         raise HTTPException(status_code=503, detail="The planner could not work out this path just now.") from exc
+    return JSONResponse(body)
+
+
+REPLAY_NEEDS_CLIMATE = weather_replay.NEEDS_CLIMATE
+
+
+@router.get("/field/{field_id}/replay", summary="A plan or rotation replayed in the real weather of 2000-2024")
+async def replay_in_real_weather(
+    request: Request,
+    field_id: str,
+    plan: int | None = None,
+    rotation: str | None = None,
+    soil: float | None = None,
+    water: float | None = None,
+    money: float | None = None,
+    risk: float | None = None,
+    scenario: str = planner_config.DEFAULT_SCENARIO,
+    horizon: int = planner_config.TODAY,
+    irrigated: bool | None = None,
+    limit_in: float | None = None,
+) -> JSONResponse:
+    """Phase 5, item B (api/planner/replay.py). `plan`: 1, 2 or 3, that pick of /plans for the same settings (the
+    default is 1); or `rotation`: the farmer's own rotation, 2 to 6 crops as typed. The other parameters are those of
+    /plans (they choose which plan is "plan 2", and whether the field is irrigated). 400 with one plain sentence for a
+    request we cannot answer, 503 when the climate or the observed-weather tables are missing."""
+    record = _record(request, field_id)
+    if not _use_smart(request):
+        raise HTTPException(status_code=503, detail=REPLAY_NEEDS_CLIMATE)
+    if rotation is not None and plan is not None:
+        raise _bad_request("Give either a rotation or a plan number, not both.")
+    cycle = None
+    if rotation is not None:
+        try:
+            cycle = custom.parse_rotation(rotation)
+        except custom.RotationError as exc:
+            raise _bad_request(str(exc)) from exc
+    weights = _plain_weights({"soil": soil, "water": water, "money": money, "risk": risk})
+    if scenario not in planner_config.SCENARIOS:
+        raise _bad_request("The scenario must be ssp245 (middle road) or ssp585 (high emissions).")
+    if not planner_config.HORIZON_MIN <= horizon <= planner_config.HORIZON_MAX:
+        raise _bad_request(f"The year must be between {planner_config.HORIZON_MIN} and {planner_config.HORIZON_MAX}.")
+    engine = _engine_for(limit_in)
+    try:
+        traits = FieldTraits() if _store(request).is_fake else None      # as in /plans: fake ids are not real fields
+        body = weather_replay.replay(record.planner_input(), plan=plan, rotation=cycle, weights=weights,
+                                     scenario=scenario, horizon=horizon, irrigated=irrigated, traits=traits,
+                                     engine=engine)
+    except weather_replay.ReplayUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise _bad_request(str(exc).split("\n")[0]) from exc
+    except Exception as exc:
+        log.warning("weather replay failed for %s: %s: %s", field_id, type(exc).__name__, exc)
+        raise HTTPException(status_code=503, detail="The planner could not replay this plan just now.") from exc
     return JSONResponse(body)
 
 

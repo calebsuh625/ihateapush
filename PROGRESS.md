@@ -241,7 +241,7 @@ Nothing from the eight-item list.
 | Item | What | Status |
 |---|---|---|
 | A | Rotation yield effects | done, checked |
-| B | not started | |
+| B | Weather replay | done, checked |
 | C | not started | |
 | D | not started | |
 | E | not started | |
@@ -258,10 +258,19 @@ Nothing from the eight-item list.
   shows a gain over carrying on. Sanity doc regenerated (`data/planner_sanity.md`, check 7).
 - Left out, no yield figure sourced: soybean or alfalfa credit to corn/wheat (it is nitrogen, saves fertilizer).
 - Notes: data/logs/phase5/item_A.md; checks: data/logs/phase5/check_A_*.log.
+- Item B: `GET /field/{id}/replay?plan=1|2|3` or `?rotation=...` (plus the /plans settings) runs a plan year by year
+  through the observed 2000-2024 weather with the planner's own crop response, water, money and failure rule
+  (`api/planner/replay.py`); nothing is refitted. 503 when the observed weather is missing.
+- Per year: yield vs normal, failed or not, water pumped or share of need met, return over direct costs; worst,
+  median and share of years under direct costs; all cycle phases (the field's own phase draws the bars, else the
+  average); compared with carrying on as now. Dry years by rule (April-September rain in the driest fifth), no year named.
+- Web: "How it would have done in real weather" under each plan card and the build-your-own result (inline SVG,
+  checked at phone width). Note says history is not a forecast and prices and costs are today's.
+- Notes: data/logs/phase5/item_B.md; checks: data/logs/phase5/check_B_*.log (pytest 1296 passed, web, typecheck, make e2e all pass).
 
 ## What is left
 
-- Items B-F.
+- Items C-F.
 
 ## For you in the morning
 

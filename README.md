@@ -1294,3 +1294,51 @@ the yield cost of a crop after itself from sourced trials.
   western Kansas, not Finney itself; no disease, weed or insect carry-over beyond what the trials contain; nitrogen
   credits and alfalfa are not counted; dryland soybeans have too few county field-years to level (so they use the
   file's number as written); the transition's year-by-year rows and the farm totals show the middle values only.
+
+### Weather replay (item B): "How it would have done in real weather"
+
+The plan cards score a plan in six climate-model futures. The replay runs the same plan through the weather that
+really happened, year by year, 2000-2024, so a farmer can see what 2002, 2011, 2012 or 2022 would have done to it.
+
+- **Same machinery, observed weather.** `api/planner/replay.py` builds the planner's own engine on the observed rows
+  (`data/climate_history.parquet` and the `observed` rows of `data/climate_monthly.parquet`, NASA POWER) instead of
+  the model years: the same crop response, soil-water balance, irrigation limit (the 24-inch default or the
+  `limit_in` what-if), rotation effects, prices and costs. Nothing is fitted again. A year's yield, whether the crop
+  failed (the planner's rule: yield under half of normal), the water pumped (irrigated) or the share of the crop's
+  water need met, and the return over direct costs are the engine's numbers for that crop after the crop before it
+  in that year's weather. A test checks one year against `crop_response` on the observed rows with the money
+  arithmetic written out.
+- **Every phase of the cycle.** The cycle is run in all its phases (a 4-year cycle in 4 starting years). One phase
+  matches the field: the cycle in the order the card shows, lined up so its first year is the year after the last
+  year on record for the field (`phase.first_year`, 2025 for a field with CDL history to 2024). Those bars are
+  shown, with a thin line for the best and worst of the other starting years. A field with no crop history gets
+  the average of all phases and says so. The `all_starts` summary pools every phase and year.
+- **Headline numbers.** Worst year (its year and crop), middle year (median) and the share of years under the
+  direct-cost line (a return under $0), failed planted years, and the average in the dry years against the others
+  (on dryland also the yield as a share of normal, which is firmer than the dollars). Under the strong and the weak
+  end of the rotation effects' range the same numbers are given as a range (`effects_range`) when they move.
+- **Dry years come from our own rule, not a list of names.** A year is dry when its April-September rain
+  (`rain_mm` of the observed table) is among the driest fifth of the observed years (the 5 lowest of 25; ties go to the
+  earlier year). On the real table that is 2000, 2002, 2011, 2012 and 2022 (2000 is also dry by that rule).
+- **Against carrying on as now.** The field's current pattern (`transition.carry_on_pattern`) is run the same way,
+  lined up on its real years, and compared year by year in the same weather: years ahead, average difference, worst
+  year, steadier or not in the bad years. Absent when fewer than four years in a row of the six crops are on record.
+- **API**: `GET /field/{id}/replay?plan=1|2|3` or `?rotation=corn,soybeans,...`, with the `/plans` parameters
+  (`soil water money risk scenario horizon irrigated limit_in`; they pick which plan is "plan 2" and the field's
+  irrigation). `400` with one sentence for a bad plan number, both `plan` and `rotation`, or a rotation we cannot
+  read; `503` with one sentence when the climate tables or the observed weather record are missing (the plans
+  themselves still answer). Shapes: schema.md.
+- **In the app**: a "How it would have done in real weather" link under each plan card and under the build-your-own
+  result opens a bar chart of the return for every year (inline SVG, phone width ok), dry seasons shaded, the three
+  worst years numbered, a tick for carrying on as now, the worst / middle / under-direct-costs figures, a year-by-year
+  table, and the notes. Everything shown (figures, marks, sentences) comes from the API answer.
+- **What it is not.** History is not a forecast. Prices and costs are today's, not each year's (a short crop in a
+  drought year sold at that year's price). Only heat and water move a yield: no hail, wind, frost, insects or disease.
+  The weather is one county record, not the field's own rain gauge. Single years are rough: the crop model's typical
+  miss in a year is about 6% of a normal yield for irrigated corn and 20-35% for dryland wheat, sorghum and corn, so the pattern across years says
+  more than one bar (the API sends the figure per crop in `plan.model_error`). On dryland the sign of the dollars
+  depends on the price years and the cost of fallow, so the yield figures are firmer than the dollars.
+- **Real data** (`data/logs/phase5/item_B.md`): KS-014376 (irrigated), our plan 1 (alfalfa 3 years, soybeans):
+  worst year 2022 at $35 an acre, middle year $362, never under its direct costs; the five driest seasons averaged $167
+  against $369 in the other years. Dryland KS-004139, plan 1 (wheat, sorghum, fallow): middle year -$3, worst -$57
+  (2022), under its direct costs in 13 of 25 years (dryland dollars are rough, see above).
