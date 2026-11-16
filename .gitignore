@@ -32,3 +32,6 @@ node_modules/
 .env.*
 !.env.example
 .vercel
+
+# Linux packages for the hosted API, built by deploy/vercel/build_site.sh
+/deploy/vercel/_site/

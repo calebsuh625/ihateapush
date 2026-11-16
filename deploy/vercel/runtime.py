@@ -24,7 +24,8 @@ def setup() -> None:
     global _done
     if _done:
         return
-    for p in (str(HERE / "_vendor"), str(ROOT)):
+    site = HERE / "_site"  # the hosted function's own packages (build_site.sh); absent locally
+    for p in ([str(site)] if site.is_dir() and sys.platform.startswith("linux") else []) + [str(HERE / "_vendor"), str(ROOT), str(HERE)]:
         if p not in sys.path:
             sys.path.insert(0, p)
     os.environ.setdefault("PLANNER_SOIL_CACHE_PATH", str(TMP / "planner_bare_days.json"))
@@ -50,6 +51,19 @@ def setup() -> None:
             crs = CRS.from_user_input(info["crs"])
         df[col] = geopandas.GeoSeries(shapely.from_wkb(df[col].values), index=df.index, crs=crs)
         return geopandas.GeoDataFrame(df, geometry=col)
+
+    try:
+        import scipy.stats  # noqa: F401
+    except ImportError:  # the hosted function has no scipy: lend it the one function the API uses
+        import types
+
+        import scipy_shim
+
+        pkg = types.ModuleType("scipy")
+        stats = types.ModuleType("scipy.stats")
+        stats.theilslopes = scipy_shim.theilslopes
+        pkg.stats = stats
+        sys.modules["scipy"], sys.modules["scipy.stats"] = pkg, stats
 
     try:
         import pyarrow  # noqa: F401  (local runs with the full requirements keep geopandas' own reader)

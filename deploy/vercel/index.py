@@ -153,6 +153,11 @@ async def _start(c: County, origin: str) -> None:
         "LAYERS_CACHE_DIR": str(tmp / "layers_cache"),
         **(await _county_files(c.fips, origin)),
     }
+    if not OFFERED[c.fips].get("borrow_climate", False):
+        # too far from Finney County to borrow its climate futures and county yields: the planner
+        # then answers with the basic engine for this county instead of passing Finney's off as local
+        for k in ("CLIMATE_FUTURES_PATH", "CLIMATE_MONTHLY_PATH", "CLIMATE_HISTORY_PATH", "NASS_PATH"):
+            env[k] = "/nonexistent/not-borrowed-from-finney"
     c.port = _free_port()
     c.log = tmp / "api.log"
     c.proc = await asyncio.create_subprocess_exec(

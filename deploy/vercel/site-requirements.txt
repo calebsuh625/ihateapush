@@ -1,0 +1,14 @@
+# Packages the hosted API runs on, installed by deploy/vercel/build_site.sh into deploy/vercel/_site
+# (Linux wheels, tests and caches removed) so the function ships them itself instead of Vercel
+# installing them: that keeps it under Vercel's 250 MB bundle size even with OR-Tools.
+fastapi>=0.110
+numpy>=1.26
+pandas>=2.1
+shapely>=2.0
+pyproj>=3.6
+packaging
+fastparquet>=2024.2
+requests>=2.31
+httpx>=0.27            # the farm advisor's calls to Gemini (api/advisor.py)
+uvicorn>=0.29          # runs each extra county's API process (deploy/vercel/index.py)
+ortools>=9.10          # whole-farm planner (api/planner/farm.py)

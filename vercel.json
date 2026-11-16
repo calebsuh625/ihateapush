@@ -12,7 +12,8 @@
           "deploy/vercel/*.py",
           "deploy/vercel/regions.json",
           "deploy/vercel/_vendor/**",
-          "deploy/vercel/regions.geojson"
+          "deploy/vercel/regions.geojson",
+          "deploy/vercel/_site/**"
         ]
       }
     },

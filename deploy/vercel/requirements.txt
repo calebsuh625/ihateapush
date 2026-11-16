@@ -1,13 +1,3 @@
-# Runtime packages for the API on Vercel. Kept small so they fit in the function bundle: the root
-# requirements.txt also has the pipeline's rasterio, scikit-learn and Earth Engine. geopandas itself is
-# vendored in _vendor/ without pyogrio (GDAL); parquet is read with fastparquet instead of pyarrow.
-fastapi>=0.110
-numpy>=1.26
-pandas>=2.1
-shapely>=2.0
-pyproj>=3.6
-packaging
-fastparquet>=2024.2
-requests>=2.31
-httpx>=0.27            # the farm advisor's calls to Gemini (api/advisor.py)
-uvicorn>=0.29          # runs each extra county's API process (deploy/vercel/index.py)
+# Intentionally empty: the hosted API's packages ship inside the function (deploy/vercel/_site, built by
+# deploy/vercel/build_site.sh from site-requirements.txt). This file exists so Vercel does not fall back
+# to the repo's full requirements.txt.

@@ -19,6 +19,32 @@ import pandas as pd  # noqa: E402
 from pipeline.region import BASE_DATA_DIR, DEFAULT_FIPS, data_dir_for, get_region  # noqa: E402
 
 
+CLIMATE_BORROW_KM = 120  # about four cells of the 0.25-degree climate-model grid: still southwest Kansas
+
+
+def _km_from_finney(fips: str) -> int | None:
+    """Distance between county centres in km (from the cached Census outlines), or None if unknown."""
+    import math
+
+    import geopandas as gpd
+
+    from pipeline.region import RAW_DIR
+
+    def centre(f: str):
+        path = RAW_DIR / "county" / f"county_{f}.geojson"
+        if not path.is_file():
+            return None
+        c = gpd.read_file(path).to_crs(4326).geometry.union_all().centroid
+        return c.y, c.x
+
+    a, b = centre(DEFAULT_FIPS), centre(fips)
+    if a is None or b is None:
+        return None
+    dy = (b[0] - a[0]) * 111.2
+    dx = (b[1] - a[1]) * 111.2 * math.cos(math.radians((a[0] + b[0]) / 2))
+    return round(math.hypot(dx, dy))
+
+
 def main() -> None:
     require_traits = "--require-traits" in sys.argv[1:]
     out = []
@@ -32,8 +58,12 @@ def main() -> None:
             continue
         n = len(pd.read_parquet(fields, columns=["field_id"]))
         r = get_region(fips)
+        km = _km_from_finney(fips)
         out.append({**r.as_dict(), "field_count": n,
-                    "has_traits": (data_dir_for(fips) / "field_traits.parquet").is_file()})
+                    "has_traits": (data_dir_for(fips) / "field_traits.parquet").is_file(),
+                    "km_from_finney": km,
+                    # Finney's climate futures and county yields are lent only to counties near it
+                    "borrow_climate": fips == DEFAULT_FIPS or (km is not None and km <= CLIMATE_BORROW_KM)})
     (HERE / "regions.json").write_text(json.dumps({"default": DEFAULT_FIPS, "regions": out}, indent=1) + "\n")
     print(f"{len(out)} counties: " + ", ".join(f"{r['county']} ({r['field_count']:,})" for r in out))
     write_shapes(out)

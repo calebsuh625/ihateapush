@@ -8,7 +8,9 @@
    "label": "Finney County, KS",
    "is_default": true,
    "field_count": 7255,
-   "has_traits": false
+   "has_traits": true,
+   "km_from_finney": 0,
+   "borrow_climate": true
   },
   {
    "fips": "20001",
@@ -17,7 +19,9 @@
    "label": "Allen County, KS",
    "is_default": false,
    "field_count": 2654,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 477,
+   "borrow_climate": false
   },
   {
    "fips": "20003",
@@ -26,7 +30,9 @@
    "label": "Anderson County, KS",
    "is_default": false,
    "field_count": 3084,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 477,
+   "borrow_climate": false
   },
   {
    "fips": "20005",
@@ -35,7 +41,9 @@
    "label": "Atchison County, KS",
    "is_default": false,
    "field_count": 2783,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 498,
+   "borrow_climate": false
   },
   {
    "fips": "20007",
@@ -44,7 +52,9 @@
    "label": "Barber County, KS",
    "is_default": false,
    "field_count": 3239,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 202,
+   "borrow_climate": false
   },
   {
    "fips": "20009",
@@ -53,7 +63,9 @@
    "label": "Barton County, KS",
    "is_default": false,
    "field_count": 8105,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 180,
+   "borrow_climate": false
   },
   {
    "fips": "20011",
@@ -62,7 +74,9 @@
    "label": "Bourbon County, KS",
    "is_default": false,
    "field_count": 1928,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 517,
+   "borrow_climate": false
   },
   {
    "fips": "20013",
@@ -71,7 +85,9 @@
    "label": "Brown County, KS",
    "is_default": false,
    "field_count": 3630,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 489,
+   "borrow_climate": false
   },
   {
    "fips": "20017",
@@ -80,7 +96,20 @@
    "label": "Chase County, KS",
    "is_default": false,
    "field_count": 1086,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 363,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20019",
+   "state": "KS",
+   "county": "Chautauqua",
+   "label": "Chautauqua County, KS",
+   "is_default": false,
+   "field_count": 340,
+   "has_traits": true,
+   "km_from_finney": 408,
+   "borrow_climate": false
   },
   {
    "fips": "20021",
@@ -89,7 +118,9 @@
    "label": "Cherokee County, KS",
    "is_default": false,
    "field_count": 3269,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 528,
+   "borrow_climate": false
   },
   {
    "fips": "20025",
@@ -98,7 +129,9 @@
    "label": "Clark County, KS",
    "is_default": false,
    "field_count": 2452,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 121,
+   "borrow_climate": false
   },
   {
    "fips": "20027",
@@ -107,7 +140,9 @@
    "label": "Clay County, KS",
    "is_default": false,
    "field_count": 5027,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 342,
+   "borrow_climate": false
   },
   {
    "fips": "20029",
@@ -116,7 +151,20 @@
    "label": "Cloud County, KS",
    "is_default": false,
    "field_count": 5087,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 312,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20031",
+   "state": "KS",
+   "county": "Coffey",
+   "label": "Coffey County, KS",
+   "is_default": false,
+   "field_count": 2753,
+   "has_traits": true,
+   "km_from_finney": 438,
+   "borrow_climate": false
   },
   {
    "fips": "20033",
@@ -125,7 +173,9 @@
    "label": "Comanche County, KS",
    "is_default": false,
    "field_count": 2097,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 160,
+   "borrow_climate": false
   },
   {
    "fips": "20035",
@@ -134,7 +184,20 @@
    "label": "Cowley County, KS",
    "is_default": false,
    "field_count": 3750,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 355,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20037",
+   "state": "KS",
+   "county": "Crawford",
+   "label": "Crawford County, KS",
+   "is_default": false,
+   "field_count": 2877,
+   "has_traits": true,
+   "km_from_finney": 521,
+   "borrow_climate": false
   },
   {
    "fips": "20039",
@@ -143,7 +206,9 @@
    "label": "Decatur County, KS",
    "is_default": false,
    "field_count": 4724,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 195,
+   "borrow_climate": false
   },
   {
    "fips": "20041",
@@ -152,7 +217,20 @@
    "label": "Dickinson County, KS",
    "is_default": false,
    "field_count": 7239,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 325,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20043",
+   "state": "KS",
+   "county": "Doniphan",
+   "label": "Doniphan County, KS",
+   "is_default": false,
+   "field_count": 2542,
+   "has_traits": true,
+   "km_from_finney": 521,
+   "borrow_climate": false
   },
   {
    "fips": "20045",
@@ -161,7 +239,9 @@
    "label": "Douglas County, KS",
    "is_default": false,
    "field_count": 1924,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 483,
+   "borrow_climate": false
   },
   {
    "fips": "20047",
@@ -170,7 +250,9 @@
    "label": "Edwards County, KS",
    "is_default": false,
    "field_count": 4560,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 126,
+   "borrow_climate": false
   },
   {
    "fips": "20049",
@@ -179,7 +261,9 @@
    "label": "Elk County, KS",
    "is_default": false,
    "field_count": 595,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 400,
+   "borrow_climate": false
   },
   {
    "fips": "20051",
@@ -188,7 +272,9 @@
    "label": "Ellis County, KS",
    "is_default": false,
    "field_count": 4834,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 157,
+   "borrow_climate": false
   },
   {
    "fips": "20057",
@@ -197,7 +283,9 @@
    "label": "Ford County, KS",
    "is_default": false,
    "field_count": 6902,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 84,
+   "borrow_climate": true
   },
   {
    "fips": "20059",
@@ -206,7 +294,9 @@
    "label": "Franklin County, KS",
    "is_default": false,
    "field_count": 3167,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 479,
+   "borrow_climate": false
   },
   {
    "fips": "20061",
@@ -215,7 +305,9 @@
    "label": "Geary County, KS",
    "is_default": false,
    "field_count": 1027,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 363,
+   "borrow_climate": false
   },
   {
    "fips": "20063",
@@ -224,7 +316,9 @@
    "label": "Gove County, KS",
    "is_default": false,
    "field_count": 5017,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 99,
+   "borrow_climate": true
   },
   {
    "fips": "20065",
@@ -233,7 +327,9 @@
    "label": "Graham County, KS",
    "is_default": false,
    "field_count": 3977,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 163,
+   "borrow_climate": false
   },
   {
    "fips": "20067",
@@ -242,7 +338,9 @@
    "label": "Grant County, KS",
    "is_default": false,
    "field_count": 4157,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 73,
+   "borrow_climate": true
   },
   {
    "fips": "20069",
@@ -251,7 +349,9 @@
    "label": "Gray County, KS",
    "is_default": false,
    "field_count": 6001,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 43,
+   "borrow_climate": true
   },
   {
    "fips": "20071",
@@ -260,7 +360,9 @@
    "label": "Greeley County, KS",
    "is_default": false,
    "field_count": 4825,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 105,
+   "borrow_climate": true
   },
   {
    "fips": "20075",
@@ -269,7 +371,9 @@
    "label": "Hamilton County, KS",
    "is_default": false,
    "field_count": 3881,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 92,
+   "borrow_climate": true
   },
   {
    "fips": "20081",
@@ -278,7 +382,9 @@
    "label": "Haskell County, KS",
    "is_default": false,
    "field_count": 4715,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 55,
+   "borrow_climate": true
   },
   {
    "fips": "20083",
@@ -287,7 +393,20 @@
    "label": "Hodgeman County, KS",
    "is_default": false,
    "field_count": 3814,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 74,
+   "borrow_climate": true
+  },
+  {
+   "fips": "20091",
+   "state": "KS",
+   "county": "Johnson",
+   "label": "Johnson County, KS",
+   "is_default": false,
+   "field_count": 1151,
+   "has_traits": true,
+   "km_from_finney": 523,
+   "borrow_climate": false
   },
   {
    "fips": "20093",
@@ -296,7 +415,9 @@
    "label": "Kearny County, KS",
    "is_default": false,
    "field_count": 3968,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 51,
+   "borrow_climate": true
   },
   {
    "fips": "20097",
@@ -305,7 +426,9 @@
    "label": "Kiowa County, KS",
    "is_default": false,
    "field_count": 3005,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 138,
+   "borrow_climate": false
   },
   {
    "fips": "20101",
@@ -314,7 +437,9 @@
    "label": "Lane County, KS",
    "is_default": false,
    "field_count": 3347,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 54,
+   "borrow_climate": true
   },
   {
    "fips": "20109",
@@ -323,7 +448,9 @@
    "label": "Logan County, KS",
    "is_default": false,
    "field_count": 3776,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 103,
+   "borrow_climate": true
   },
   {
    "fips": "20119",
@@ -332,7 +459,9 @@
    "label": "Meade County, KS",
    "is_default": false,
    "field_count": 3971,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 95,
+   "borrow_climate": true
   },
   {
    "fips": "20129",
@@ -341,7 +470,9 @@
    "label": "Morton County, KS",
    "is_default": false,
    "field_count": 3503,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 133,
+   "borrow_climate": false
   },
   {
    "fips": "20135",
@@ -350,7 +481,20 @@
    "label": "Ness County, KS",
    "is_default": false,
    "field_count": 5053,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 86,
+   "borrow_climate": true
+  },
+  {
+   "fips": "20141",
+   "state": "KS",
+   "county": "Osborne",
+   "label": "Osborne County, KS",
+   "is_default": false,
+   "field_count": 5633,
+   "has_traits": true,
+   "km_from_finney": 224,
+   "borrow_climate": false
   },
   {
    "fips": "20145",
@@ -359,7 +503,9 @@
    "label": "Pawnee County, KS",
    "is_default": false,
    "field_count": 5946,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 132,
+   "borrow_climate": false
   },
   {
    "fips": "20151",
@@ -368,7 +514,9 @@
    "label": "Pratt County, KS",
    "is_default": false,
    "field_count": 5518,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 181,
+   "borrow_climate": false
   },
   {
    "fips": "20153",
@@ -377,7 +525,9 @@
    "label": "Rawlins County, KS",
    "is_default": false,
    "field_count": 5118,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 196,
+   "borrow_climate": false
   },
   {
    "fips": "20163",
@@ -386,7 +536,9 @@
    "label": "Rooks County, KS",
    "is_default": false,
    "field_count": 4883,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 190,
+   "borrow_climate": false
   },
   {
    "fips": "20165",
@@ -395,7 +547,20 @@
    "label": "Rush County, KS",
    "is_default": false,
    "field_count": 5160,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 136,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20167",
+   "state": "KS",
+   "county": "Russell",
+   "label": "Russell County, KS",
+   "is_default": false,
+   "field_count": 4160,
+   "has_traits": true,
+   "km_from_finney": 197,
+   "borrow_climate": false
   },
   {
    "fips": "20171",
@@ -404,7 +569,9 @@
    "label": "Scott County, KS",
    "is_default": false,
    "field_count": 4442,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 51,
+   "borrow_climate": true
   },
   {
    "fips": "20175",
@@ -413,7 +580,9 @@
    "label": "Seward County, KS",
    "is_default": false,
    "field_count": 3128,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 95,
+   "borrow_climate": true
   },
   {
    "fips": "20179",
@@ -422,7 +591,9 @@
    "label": "Sheridan County, KS",
    "is_default": false,
    "field_count": 5388,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 147,
+   "borrow_climate": false
   },
   {
    "fips": "20181",
@@ -431,7 +602,9 @@
    "label": "Sherman County, KS",
    "is_default": false,
    "field_count": 6747,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 169,
+   "borrow_climate": false
   },
   {
    "fips": "20185",
@@ -440,7 +613,9 @@
    "label": "Stafford County, KS",
    "is_default": false,
    "field_count": 6332,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 177,
+   "borrow_climate": false
   },
   {
    "fips": "20187",
@@ -449,7 +624,9 @@
    "label": "Stanton County, KS",
    "is_default": false,
    "field_count": 3777,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 106,
+   "borrow_climate": true
   },
   {
    "fips": "20189",
@@ -458,7 +635,9 @@
    "label": "Stevens County, KS",
    "is_default": false,
    "field_count": 4596,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 107,
+   "borrow_climate": true
   },
   {
    "fips": "20193",
@@ -467,7 +646,9 @@
    "label": "Thomas County, KS",
    "is_default": false,
    "field_count": 6683,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 148,
+   "borrow_climate": false
   },
   {
    "fips": "20195",
@@ -476,7 +657,9 @@
    "label": "Trego County, KS",
    "is_default": false,
    "field_count": 4075,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 123,
+   "borrow_climate": false
   },
   {
    "fips": "20199",
@@ -485,7 +668,9 @@
    "label": "Wallace County, KS",
    "is_default": false,
    "field_count": 3858,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 132,
+   "borrow_climate": false
   },
   {
    "fips": "20203",
@@ -494,7 +679,9 @@
    "label": "Wichita County, KS",
    "is_default": false,
    "field_count": 4221,
-   "has_traits": true
+   "has_traits": true,
+   "km_from_finney": 72,
+   "borrow_climate": true
   }
  ]
 }
