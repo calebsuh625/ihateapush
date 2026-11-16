@@ -37,7 +37,7 @@ from starlette.responses import JSONResponse, Response  # noqa: E402
 from api.main import app as finney  # noqa: E402
 from pipeline.region import data_dir_for  # noqa: E402
 
-MAX_COUNTIES = int(os.environ.get("MAX_COUNTY_PROCESSES", "3"))
+MAX_COUNTIES = int(os.environ.get("MAX_COUNTY_PROCESSES", "10"))
 START_TIMEOUT_S = 90
 REGIONS = json.loads((runtime.HERE / "regions.json").read_text())
 OFFERED = {r["fips"]: r for r in REGIONS["regions"]}
