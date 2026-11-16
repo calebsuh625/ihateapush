@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, ZoomControl, useMap } from "react-leaflet";
 import { REGION_CENTER, REGION_ZOOM } from "../config";
+import { CountyOutlines } from "./CountyOutlines";
 import type { Selection } from "../hooks/useSelection";
 import { boxLoop, fieldsInside, loopArea } from "../lib/farm";
 import { collectionBounds, pointInRings, ringBounds } from "../lib/geo";
@@ -678,6 +679,7 @@ export function FieldMap({ fields, selection, onSelect, onRendered, farm = null,
       <ZoomControl position="topright" />
       <KeepSized />
       <ExposeMap />
+      <CountyOutlines />
       {fields && (
         <Fields
           fields={fields}

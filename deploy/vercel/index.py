@@ -4,6 +4,7 @@
     /api/r/<fips>/<path>     another county, served by its own API process (REGION=<fips>), started on
                              first use and kept while there is room (MAX_COUNTIES at a time)
     /api/regions             the counties on offer (deploy/vercel/regions.json, from make_regions.py)
+    /api/regions/shapes      their outlines (regions.geojson), drawn on the map so a county can be clicked
 
 The app's routes have no /api prefix (local dev: Vite strips it), so it is stripped here too; the
 same file runs locally behind Vite (`cd deploy/vercel && ../../.venv/bin/python -m uvicorn index:app
@@ -243,6 +244,11 @@ async def app(scope, receive, send):
         scope = dict(scope, path=path, raw_path=path.encode())
     if path.startswith("/r/"):
         await proxy(scope, receive, send)
+        return
+    if path.rstrip("/") == "/regions/shapes":
+        body = (runtime.HERE / "regions.geojson").read_bytes() if (runtime.HERE / "regions.geojson").is_file() else b'{"type":"FeatureCollection","features":[]}'
+        await GZipMiddleware(Response(body, media_type="application/geo+json",
+                                      headers={"Cache-Control": "public, max-age=300"}), minimum_size=1024)(scope, receive, send)
         return
     if path.rstrip("/") == "/regions":
         await JSONResponse({"current": REGIONS["default"], "regions": REGIONS["regions"]})(scope, receive, send)

@@ -41,7 +41,7 @@ async function offeredRegions(signal: AbortSignal): Promise<Offered[]> {
     typeof r === "object" && r !== null && typeof (r as Offered).fips === "string" && typeof (r as Offered).label === "string");
 }
 
-function goTo(fips: string, defaultFips: string) {
+export function goTo(fips: string, defaultFips: string) {
   const url = new URL(window.location.href);
   if (fips === defaultFips) url.searchParams.delete("region");
   else url.searchParams.set("region", fips);

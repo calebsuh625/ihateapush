@@ -56,6 +56,15 @@
    "has_traits": true
   },
   {
+   "fips": "20011",
+   "state": "KS",
+   "county": "Bourbon",
+   "label": "Bourbon County, KS",
+   "is_default": false,
+   "field_count": 1928,
+   "has_traits": true
+  },
+  {
    "fips": "20013",
    "state": "KS",
    "county": "Brown",
@@ -197,6 +206,15 @@
    "label": "Franklin County, KS",
    "is_default": false,
    "field_count": 3167,
+   "has_traits": true
+  },
+  {
+   "fips": "20061",
+   "state": "KS",
+   "county": "Geary",
+   "label": "Geary County, KS",
+   "is_default": false,
+   "field_count": 1027,
    "has_traits": true
   },
   {

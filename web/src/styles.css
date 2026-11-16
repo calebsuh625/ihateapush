@@ -1207,3 +1207,20 @@ button {
 .region-picker:focus-visible {
   opacity: 1;
 }
+
+/* County outlines on the map (CountyOutlines.tsx): names of the other counties, and their hover tip. */
+.county-name {
+  width: auto !important;
+  height: auto !important;
+  transform-origin: center;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: #444441;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff;
+  pointer-events: none;
+  translate: -50% -50%;
+}
+.county-tip {
+  font-size: 12px;
+}

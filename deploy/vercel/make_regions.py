@@ -36,6 +36,30 @@ def main() -> None:
                     "has_traits": (data_dir_for(fips) / "field_traits.parquet").is_file()})
     (HERE / "regions.json").write_text(json.dumps({"default": DEFAULT_FIPS, "regions": out}, indent=1) + "\n")
     print(f"{len(out)} counties: " + ", ".join(f"{r['county']} ({r['field_count']:,})" for r in out))
+    write_shapes(out)
+
+
+def write_shapes(regions: list[dict]) -> None:
+    """deploy/vercel/regions.geojson: a simplified outline of each listed county, for the map's county layer."""
+    import geopandas as gpd
+
+    from pipeline.region import RAW_DIR
+
+    rows = []
+    for r in regions:
+        cached = RAW_DIR / "county" / f"county_{r['fips']}.geojson"
+        if not cached.is_file():
+            continue
+        g = gpd.read_file(cached).to_crs(4326).geometry.union_all()
+        rows.append({"fips": r["fips"], "label": r["label"], "field_count": r["field_count"],
+                     "geometry": g.simplify(0.003, preserve_topology=True)})
+    gdf = gpd.GeoDataFrame(rows, geometry="geometry", crs=4326)
+    text = gdf.to_json(drop_id=True)
+    shapes = json.loads(text)
+    for f in shapes["features"]:  # 4 decimals is about 10 m: plenty for a county line
+        f["geometry"] = json.loads(json.dumps(f["geometry"]), parse_float=lambda x: round(float(x), 4))
+    (HERE / "regions.geojson").write_text(json.dumps(shapes, separators=(",", ":")))
+    print(f"outlines for {len(rows)} counties")
 
 
 if __name__ == "__main__":
