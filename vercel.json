@@ -13,7 +13,8 @@
           "deploy/vercel/regions.json",
           "deploy/vercel/_vendor/**",
           "deploy/vercel/regions.geojson",
-          "deploy/vercel/_site/**"
+          "deploy/vercel/_site/**",
+          "deploy/vercel/regions_preview.json"
         ],
         "excludeFiles": "{data/regions/**,web/**,tests/**,data/backup*/**,data/logs/**,deploy/vercel/regions_tmp/**,**/__pycache__/**}"
       }

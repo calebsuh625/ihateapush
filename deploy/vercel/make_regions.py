@@ -67,6 +67,7 @@ def main() -> None:
     (HERE / "regions.json").write_text(json.dumps({"default": DEFAULT_FIPS, "regions": out}, indent=1) + "\n")
     print(f"{len(out)} counties: " + ", ".join(f"{r['county']} ({r['field_count']:,})" for r in out))
     write_shapes(out)
+    write_preview(out)
 
 
 def write_shapes(regions: list[dict]) -> None:
@@ -90,6 +91,38 @@ def write_shapes(regions: list[dict]) -> None:
         f["geometry"] = json.loads(json.dumps(f["geometry"]), parse_float=lambda x: round(float(x), 4))
     (HERE / "regions.geojson").write_text(json.dumps(shapes, separators=(",", ":")))
     print(f"outlines for {len(rows)} counties")
+
+
+PREVIEW_EVERY = 20  # one sketch shape per this many fields
+
+
+def write_preview(regions: list[dict]) -> None:
+    """deploy/vercel/regions_preview.json: a light sketch of each county's fields for the map before it is
+    opened. About one field in PREVIEW_EVERY, drawn at its real centre and size, as a circle when the field
+    is round (centre pivots) and a square otherwise. Rows are [lon, lat, side in metres, 1 if round]."""
+    import math
+
+    import geopandas as gpd
+
+    counties = {}
+    for r in regions:
+        gdf = gpd.read_parquet(data_dir_for(r["fips"]) / "fields.parquet")[["geometry"]]
+        n = min(len(gdf), max(20, len(gdf) // PREVIEW_EVERY))
+        g = gdf.sample(n=n, random_state=int(r["fips"])).geometry.to_crs(5070)  # equal-area metres
+        # field outlines follow 30 m pixels, so judge roundness on the convex hull: a pivot's hull is
+        # nearly a circle (roundness > 0.88) and the field fills most of it
+        hull = g.convex_hull
+        area, h_area, h_perim = g.area.to_numpy(), hull.area.to_numpy(), hull.length.to_numpy()
+        centres = gpd.GeoSeries(g.centroid, crs=5070).to_crs(4326)
+        rows = []
+        for c, a, ha, hp in zip(centres, area, h_area, h_perim):
+            round_field = hp > 0 and ha > 0 and 4 * math.pi * ha / (hp * hp) > 0.88 and a / ha > 0.8
+            rows.append([round(c.x, 4), round(c.y, 4), round(math.sqrt(a)), 1 if round_field else 0])
+        counties[r["fips"]] = rows
+    (HERE / "regions_preview.json").write_text(
+        json.dumps({"every": PREVIEW_EVERY, "counties": counties}, separators=(",", ":")))
+    total = sum(len(v) for v in counties.values())
+    print(f"preview: {total:,} sketch shapes for {len(counties)} counties")
 
 
 if __name__ == "__main__":
