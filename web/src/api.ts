@@ -7,7 +7,21 @@ import type { FarmPlan, FieldCollection, FieldDetail, FieldPlans, FieldSatellite
 const configured: string | undefined = import.meta.env.VITE_API_URL;
 
 /** "/api" in local dev (Vite proxies it to the FastAPI server), or an absolute URL from VITE_API_URL. */
-export const API_BASE = (configured ?? "/api").replace(/\/+$/, "");
+export const API_ROOT = (configured ?? "/api").replace(/\/+$/, "");
+
+/** The county picked in the app (?region=20069), or null for the default county (Finney). */
+export const SELECTED_REGION: string | null = (() => {
+  try {
+    const picked = new URLSearchParams(window.location.search).get("region");
+    return picked && /^\d{5}$/.test(picked) ? picked : null;
+  } catch {
+    return null; // no window (unit tests)
+  }
+})();
+
+/** Where this page's county is served: the default county at the root, another at /r/<fips>
+ * (the multi-county gateway, deploy/vercel/index.py). */
+export const API_BASE = SELECTED_REGION ? `${API_ROOT}/r/${SELECTED_REGION}` : API_ROOT;
 
 /** Absolute form of a path under the API base, for messages a person has to act on. */
 export function apiUrl(path = ""): string {

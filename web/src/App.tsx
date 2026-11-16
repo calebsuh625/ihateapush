@@ -11,7 +11,7 @@ import type { FieldFacts } from "./components/FieldPanel";
 import { LayerControl } from "./components/LayerControl";
 import { APP_NAME } from "./config";
 import { useAdvisor } from "./hooks/useAdvisor";
-import { RegionLabel } from "./components/RegionLabel";
+import { RegionLabel, RegionPicker } from "./components/RegionLabel";
 import { useResource } from "./hooks/useResource";
 import type { Resource } from "./hooks/useResource";
 import { useMapLayers } from "./hooks/useMapLayers";
@@ -217,6 +217,7 @@ export default function App() {
         <div className="masthead">
           <h1>{APP_NAME}</h1>
           {fields.status !== "error" && <DataBadge health={health} fieldCount={fieldCount} />}
+          <RegionPicker />
           {fields.status === "loading" && (
             <p className="masthead-note" role="status">
               <span className="spinner" aria-hidden="true" />

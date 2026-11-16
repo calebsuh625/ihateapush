@@ -6,7 +6,9 @@ node_modules
 web/node_modules
 web/dist
 data/raw
-data/regions
+data/regions/*/logs
+data/regions/*/*.csv
+data/regions/*/*.json
 data/logs
 data/*.log
 data/*.csv

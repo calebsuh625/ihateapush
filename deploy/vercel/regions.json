@@ -1,0 +1,86 @@
+{
+ "default": "20055",
+ "regions": [
+  {
+   "fips": "20055",
+   "state": "KS",
+   "county": "Finney",
+   "label": "Finney County, KS",
+   "is_default": true,
+   "field_count": 7255,
+   "has_traits": false
+  },
+  {
+   "fips": "20057",
+   "state": "KS",
+   "county": "Ford",
+   "label": "Ford County, KS",
+   "is_default": false,
+   "field_count": 6902,
+   "has_traits": true
+  },
+  {
+   "fips": "20067",
+   "state": "KS",
+   "county": "Grant",
+   "label": "Grant County, KS",
+   "is_default": false,
+   "field_count": 4157,
+   "has_traits": true
+  },
+  {
+   "fips": "20069",
+   "state": "KS",
+   "county": "Gray",
+   "label": "Gray County, KS",
+   "is_default": false,
+   "field_count": 6001,
+   "has_traits": true
+  },
+  {
+   "fips": "20081",
+   "state": "KS",
+   "county": "Haskell",
+   "label": "Haskell County, KS",
+   "is_default": false,
+   "field_count": 4715,
+   "has_traits": true
+  },
+  {
+   "fips": "20093",
+   "state": "KS",
+   "county": "Kearny",
+   "label": "Kearny County, KS",
+   "is_default": false,
+   "field_count": 3968,
+   "has_traits": true
+  },
+  {
+   "fips": "20101",
+   "state": "KS",
+   "county": "Lane",
+   "label": "Lane County, KS",
+   "is_default": false,
+   "field_count": 3347,
+   "has_traits": true
+  },
+  {
+   "fips": "20119",
+   "state": "KS",
+   "county": "Meade",
+   "label": "Meade County, KS",
+   "is_default": false,
+   "field_count": 3971,
+   "has_traits": true
+  },
+  {
+   "fips": "20175",
+   "state": "KS",
+   "county": "Seward",
+   "label": "Seward County, KS",
+   "is_default": false,
+   "field_count": 3128,
+   "has_traits": true
+  }
+ ]
+}

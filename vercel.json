@@ -9,9 +9,19 @@
           "pipeline/**",
           "data/*.parquet",
           "data/*.json",
+          "deploy/vercel/*.py",
+          "deploy/vercel/regions.json",
           "deploy/vercel/_vendor/**"
         ]
       }
+    },
+    {
+      "src": "data/regions/*/fields.parquet",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "data/regions/*/field_traits.parquet",
+      "use": "@vercel/static"
     },
     {
       "src": "web/package.json",
