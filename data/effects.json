@@ -1,0 +1,2240 @@
+{
+  "generated_at": "2026-11-15T05:29:40+00:00",
+  "is_fake": false,
+  "warning": null,
+  "sources": {
+    "fields": "fields.parquet",
+    "soil": "soil_health.parquet"
+  },
+  "outcome": {
+    "column": "bare_days",
+    "label": "Days the soil sits bare each year",
+    "units": "days per year",
+    "higher_is_better": false,
+    "weight_column": null,
+    "note": "Bare days mostly follow which crop is grown that year (a fallow year is bare by definition). A gap here is a difference in soil cover, not a measured change in the soil itself."
+  },
+  "design": {
+    "switch_year": 2020,
+    "history_years": [
+      2008,
+      2019
+    ],
+    "rotation_years": [
+      2020,
+      2024
+    ],
+    "soil_years": [
+      2016,
+      2024
+    ],
+    "baseline_years": [
+      2016,
+      2017
+    ],
+    "pre_years": [
+      2018,
+      2019
+    ],
+    "post_years": [
+      2020,
+      2024
+    ],
+    "placebo_switch_years": [
+      2017,
+      2018,
+      2019
+    ],
+    "estimator": "did = (post_A - pre_A) - (post_B - pre_B) over the years both fields have a value; effect = mean over matched pairs",
+    "calipers": {
+      "max_distance_km": 5.0,
+      "max_slope_diff": 0.5,
+      "max_ssurgo_om_diff": 0.3,
+      "max_baseline_diff_sd": 0.5,
+      "max_history_distance": 0.25
+    },
+    "n_bootstrap": 2000,
+    "bootstrap_cluster_km": 10.0,
+    "min_pairs": 10
+  },
+  "counts": {
+    "fields": 7255,
+    "eligible": 6250,
+    "irrigation": {
+      "dryland": 3647,
+      "irrigated": 2604,
+      "uncertain": 1004
+    },
+    "rotation_post": {
+      "wheat-sorghum-fallow": 2985,
+      "diverse": 1398,
+      "other": 1210,
+      "alfalfa/perennial": 1037,
+      "continuous corn": 571,
+      "corn-soy": 54
+    },
+    "candidates": 37575,
+    "pairs": 1098,
+    "pairs_by_comparison": {
+      "diverse vs wheat-sorghum-fallow": 480,
+      "diverse vs continuous corn": 182,
+      "alfalfa/perennial vs diverse": 168,
+      "alfalfa/perennial vs continuous corn": 85,
+      "wheat-sorghum-fallow vs continuous corn": 63,
+      "alfalfa/perennial vs wheat-sorghum-fallow": 54,
+      "corn-soy vs continuous corn": 30,
+      "diverse vs corn-soy": 25,
+      "alfalfa/perennial vs corn-soy": 6,
+      "corn-soy vs wheat-sorghum-fallow": 5
+    },
+    "fields_in_a_pair": 1782
+  },
+  "effects": [
+    {
+      "a": "alfalfa/perennial",
+      "b": "continuous corn",
+      "comparison": "alfalfa/perennial vs continuous corn",
+      "group_kind": "irrigation",
+      "group": "all",
+      "effect": -18.9507,
+      "ci_low": -31.265,
+      "ci_high": -6.7542,
+      "se": 6.2721,
+      "p_value": 0.008,
+      "n_pairs": 85,
+      "n_clusters": 18,
+      "ci_excludes_zero": true,
+      "favours": "a",
+      "gap_pre": -6.8218,
+      "gap_post": -25.7725,
+      "from_crops": {
+        "effect": -19.5371,
+        "ci_low": -27.2333,
+        "ci_high": -10.5726,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 0.5864,
+        "ci_low": -12.1444,
+        "ci_high": 14.7915,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0141,
+      "fallow_share_b": 0.0047
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "continuous corn",
+      "comparison": "alfalfa/perennial vs continuous corn",
+      "group_kind": "irrigation",
+      "group": "irrigated",
+      "effect": -19.7999,
+      "ci_low": -31.0239,
+      "ci_high": -8.8369,
+      "se": 5.5963,
+      "p_value": 0.005,
+      "n_pairs": 83,
+      "n_clusters": 18,
+      "ci_excludes_zero": true,
+      "favours": "a",
+      "gap_pre": -3.1861,
+      "gap_post": -22.986,
+      "from_crops": {
+        "effect": -20.0141,
+        "ci_low": -27.8923,
+        "ci_high": -11.2912,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 0.2142,
+        "ci_low": -11.7005,
+        "ci_high": 13.361,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0145,
+      "fallow_share_b": 0.0048
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "continuous corn",
+      "comparison": "alfalfa/perennial vs continuous corn",
+      "group_kind": "soil",
+      "group": "low OM (<1.5%)",
+      "effect": -7.456,
+      "ci_low": -16.3253,
+      "ci_high": 4.1058,
+      "se": 5.065,
+      "p_value": 0.2949,
+      "n_pairs": 35,
+      "n_clusters": 10,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -5.5914,
+      "gap_post": -13.0474,
+      "from_crops": {
+        "effect": -11.5978,
+        "ci_low": -28.31,
+        "ci_high": 2.8953,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": 4.1418,
+        "ci_low": -12.2274,
+        "ci_high": 26.9148,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0343,
+      "fallow_share_b": 0.0
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "continuous corn",
+      "comparison": "alfalfa/perennial vs continuous corn",
+      "group_kind": "soil",
+      "group": "mid OM (1.5-2%)",
+      "effect": -27.8242,
+      "ci_low": -50.4279,
+      "ci_high": -10.2764,
+      "se": 10.3148,
+      "p_value": 0.005,
+      "n_pairs": 48,
+      "n_clusters": 13,
+      "ci_excludes_zero": true,
+      "favours": "a",
+      "gap_pre": -6.6167,
+      "gap_post": -34.4408,
+      "from_crops": {
+        "effect": -24.5135,
+        "ci_low": -31.325,
+        "ci_high": -19.3933,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": -3.3107,
+        "ci_low": -23.0871,
+        "ci_high": 10.6933,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0,
+      "fallow_share_b": 0.0083
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "diverse",
+      "comparison": "alfalfa/perennial vs diverse",
+      "group_kind": "irrigation",
+      "group": "all",
+      "effect": -15.2539,
+      "ci_low": -24.8893,
+      "ci_high": -7.6787,
+      "se": 4.4298,
+      "p_value": 0.0005,
+      "n_pairs": 168,
+      "n_clusters": 26,
+      "ci_excludes_zero": true,
+      "favours": "a",
+      "gap_pre": -11.3679,
+      "gap_post": -26.6218,
+      "from_crops": {
+        "effect": -20.7705,
+        "ci_low": -27.4013,
+        "ci_high": -14.147,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 5.5166,
+        "ci_low": -3.6305,
+        "ci_high": 13.4671,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.056,
+      "fallow_share_b": 0.0976
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "diverse",
+      "comparison": "alfalfa/perennial vs diverse",
+      "group_kind": "irrigation",
+      "group": "irrigated",
+      "effect": -14.9274,
+      "ci_low": -23.8348,
+      "ci_high": -7.5816,
+      "se": 4.2047,
+      "p_value": 0.0015,
+      "n_pairs": 149,
+      "n_clusters": 20,
+      "ci_excludes_zero": true,
+      "favours": "a",
+      "gap_pre": -10.6708,
+      "gap_post": -25.5983,
+      "from_crops": {
+        "effect": -20.1931,
+        "ci_low": -27.6113,
+        "ci_high": -13.1674,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 5.2657,
+        "ci_low": -3.407,
+        "ci_high": 13.6599,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0483,
+      "fallow_share_b": 0.0872
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "diverse",
+      "comparison": "alfalfa/perennial vs diverse",
+      "group_kind": "irrigation",
+      "group": "dryland",
+      "effect": -17.8142,
+      "ci_low": -49.575,
+      "ci_high": 9.0437,
+      "se": 15.3024,
+      "p_value": 0.3578,
+      "n_pairs": 19,
+      "n_clusters": 12,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -16.8342,
+      "gap_post": -34.6484,
+      "from_crops": {
+        "effect": -25.2986,
+        "ci_low": -40.798,
+        "ci_high": -11.5441,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 7.4844,
+        "ci_low": -13.2295,
+        "ci_high": 27.8577,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.1158,
+      "fallow_share_b": 0.1789
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "diverse",
+      "comparison": "alfalfa/perennial vs diverse",
+      "group_kind": "soil",
+      "group": "low OM (<1.5%)",
+      "effect": 0.4497,
+      "ci_low": -2.8131,
+      "ci_high": 4.057,
+      "se": 1.741,
+      "p_value": 0.8161,
+      "n_pairs": 89,
+      "n_clusters": 13,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -11.3966,
+      "gap_post": -10.947,
+      "from_crops": {
+        "effect": -14.4737,
+        "ci_low": -22.6478,
+        "ci_high": -5.9461,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 14.9233,
+        "ci_low": 5.0541,
+        "ci_high": 24.582,
+        "ci_excludes_zero": true
+      },
+      "fallow_share_a": 0.0697,
+      "fallow_share_b": 0.0944
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "diverse",
+      "comparison": "alfalfa/perennial vs diverse",
+      "group_kind": "soil",
+      "group": "mid OM (1.5-2%)",
+      "effect": -33.3416,
+      "ci_low": -48.572,
+      "ci_high": -21.0285,
+      "se": 7.0838,
+      "p_value": 0.0025,
+      "n_pairs": 76,
+      "n_clusters": 19,
+      "ci_excludes_zero": true,
+      "favours": "a",
+      "gap_pre": -10.8803,
+      "gap_post": -44.2218,
+      "from_crops": {
+        "effect": -27.3133,
+        "ci_low": -35.2735,
+        "ci_high": -19.7527,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": -6.0283,
+        "ci_low": -20.6424,
+        "ci_high": 6.9476,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0395,
+      "fallow_share_b": 0.1
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "alfalfa/perennial vs wheat-sorghum-fallow",
+      "group_kind": "irrigation",
+      "group": "all",
+      "effect": -24.0813,
+      "ci_low": -41.5531,
+      "ci_high": -4.9084,
+      "se": 9.3741,
+      "p_value": 0.023,
+      "n_pairs": 54,
+      "n_clusters": 22,
+      "ci_excludes_zero": true,
+      "favours": "a",
+      "gap_pre": -14.7731,
+      "gap_post": -38.8544,
+      "from_crops": {
+        "effect": -33.7083,
+        "ci_low": -43.6036,
+        "ci_high": -22.5869,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 9.627,
+        "ci_low": -7.2571,
+        "ci_high": 24.8953,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0593,
+      "fallow_share_b": 0.2926
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "alfalfa/perennial vs wheat-sorghum-fallow",
+      "group_kind": "irrigation",
+      "group": "irrigated",
+      "effect": -17.6024,
+      "ci_low": -43.9439,
+      "ci_high": 6.8815,
+      "se": 13.2525,
+      "p_value": 0.3048,
+      "n_pairs": 25,
+      "n_clusters": 11,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -20.732,
+      "gap_post": -38.3344,
+      "from_crops": {
+        "effect": -33.5363,
+        "ci_low": -44.4428,
+        "ci_high": -24.5571,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 15.9339,
+        "ci_low": -2.7961,
+        "ci_high": 38.4029,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.032,
+      "fallow_share_b": 0.224
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "alfalfa/perennial vs wheat-sorghum-fallow",
+      "group_kind": "irrigation",
+      "group": "dryland",
+      "effect": -29.6666,
+      "ci_low": -55.5983,
+      "ci_high": -5.7484,
+      "se": 12.2356,
+      "p_value": 0.0315,
+      "n_pairs": 29,
+      "n_clusters": 15,
+      "ci_excludes_zero": true,
+      "favours": "a",
+      "gap_pre": -9.6362,
+      "gap_post": -39.3028,
+      "from_crops": {
+        "effect": -33.8566,
+        "ci_low": -50.3246,
+        "ci_high": -12.8929,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 4.1901,
+        "ci_low": -23.7143,
+        "ci_high": 24.673,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0828,
+      "fallow_share_b": 0.3517
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "alfalfa/perennial vs wheat-sorghum-fallow",
+      "group_kind": "soil",
+      "group": "low OM (<1.5%)",
+      "effect": -10.215,
+      "ci_low": -52.02,
+      "ci_high": 11.7388,
+      "se": 16.0691,
+      "p_value": 0.5167,
+      "n_pairs": 12,
+      "n_clusters": 7,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -15.0,
+      "gap_post": -25.215,
+      "from_crops": {
+        "effect": -32.8159,
+        "ci_low": -46.1608,
+        "ci_high": -24.5642,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 22.6009,
+        "ci_low": -8.6047,
+        "ci_high": 41.345,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.05,
+      "fallow_share_b": 0.2333
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "alfalfa/perennial vs wheat-sorghum-fallow",
+      "group_kind": "soil",
+      "group": "mid OM (1.5-2%)",
+      "effect": -33.075,
+      "ci_low": -54.9825,
+      "ci_high": -10.3347,
+      "se": 11.523,
+      "p_value": 0.0285,
+      "n_pairs": 32,
+      "n_clusters": 15,
+      "ci_excludes_zero": true,
+      "favours": "a",
+      "gap_pre": -14.1656,
+      "gap_post": -47.2406,
+      "from_crops": {
+        "effect": -30.6131,
+        "ci_low": -42.5841,
+        "ci_high": -15.3365,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": -2.4619,
+        "ci_low": -23.2786,
+        "ci_high": 16.8237,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0625,
+      "fallow_share_b": 0.2938
+    },
+    {
+      "a": "alfalfa/perennial",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "alfalfa/perennial vs wheat-sorghum-fallow",
+      "group_kind": "soil",
+      "group": "high OM (>=2%)",
+      "effect": -11.941,
+      "ci_low": -35.092,
+      "ci_high": 24.734,
+      "se": 13.3542,
+      "p_value": 0.3803,
+      "n_pairs": 10,
+      "n_clusters": 5,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -16.445,
+      "gap_post": -28.386,
+      "from_crops": {
+        "effect": -44.6839,
+        "ci_low": -68.5199,
+        "ci_high": 1.3506,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": 32.7429,
+        "ci_low": -15.9554,
+        "ci_high": 55.1575,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.06,
+      "fallow_share_b": 0.36
+    },
+    {
+      "a": "corn-soy",
+      "b": "continuous corn",
+      "comparison": "corn-soy vs continuous corn",
+      "group_kind": "irrigation",
+      "group": "all",
+      "effect": 3.6257,
+      "ci_low": -4.6755,
+      "ci_high": 16.3577,
+      "se": 5.5042,
+      "p_value": 0.6932,
+      "n_pairs": 30,
+      "n_clusters": 11,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 0.1017,
+      "gap_post": 3.7273,
+      "from_crops": {
+        "effect": -6.0214,
+        "ci_low": -11.8799,
+        "ci_high": 0.3758,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": 9.647,
+        "ci_low": 3.3028,
+        "ci_high": 17.2802,
+        "ci_excludes_zero": true
+      },
+      "fallow_share_a": 0.0,
+      "fallow_share_b": 0.0
+    },
+    {
+      "a": "corn-soy",
+      "b": "continuous corn",
+      "comparison": "corn-soy vs continuous corn",
+      "group_kind": "irrigation",
+      "group": "irrigated",
+      "effect": 3.6257,
+      "ci_low": -4.9017,
+      "ci_high": 15.7801,
+      "se": 5.3983,
+      "p_value": 0.6872,
+      "n_pairs": 30,
+      "n_clusters": 11,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 0.1017,
+      "gap_post": 3.7273,
+      "from_crops": {
+        "effect": -6.0214,
+        "ci_low": -11.9095,
+        "ci_high": 0.3675,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": 9.647,
+        "ci_low": 3.1557,
+        "ci_high": 17.2335,
+        "ci_excludes_zero": true
+      },
+      "fallow_share_a": 0.0,
+      "fallow_share_b": 0.0
+    },
+    {
+      "a": "corn-soy",
+      "b": "continuous corn",
+      "comparison": "corn-soy vs continuous corn",
+      "group_kind": "soil",
+      "group": "low OM (<1.5%)",
+      "effect": 5.382,
+      "ci_low": -4.37,
+      "ci_high": 11.8833,
+      "se": 4.0196,
+      "p_value": 0.3413,
+      "n_pairs": 10,
+      "n_clusters": 6,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -5.12,
+      "gap_post": 0.262,
+      "from_crops": {
+        "effect": -10.4924,
+        "ci_low": -13.495,
+        "ci_high": -6.6206,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 15.8744,
+        "ci_low": 4.5037,
+        "ci_high": 23.8986,
+        "ci_excludes_zero": true
+      },
+      "fallow_share_a": 0.0,
+      "fallow_share_b": 0.0
+    },
+    {
+      "a": "corn-soy",
+      "b": "continuous corn",
+      "comparison": "corn-soy vs continuous corn",
+      "group_kind": "soil",
+      "group": "mid OM (1.5-2%)",
+      "effect": 3.6268,
+      "ci_low": -11.0445,
+      "ci_high": 22.3254,
+      "se": 8.7813,
+      "p_value": 0.7856,
+      "n_pairs": 19,
+      "n_clusters": 8,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 3.3342,
+      "gap_post": 6.9611,
+      "from_crops": {
+        "effect": -3.0719,
+        "ci_low": -11.1507,
+        "ci_high": 3.7496,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": 6.6988,
+        "ci_low": -3.8988,
+        "ci_high": 20.18,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0,
+      "fallow_share_b": 0.0
+    },
+    {
+      "a": "diverse",
+      "b": "continuous corn",
+      "comparison": "diverse vs continuous corn",
+      "group_kind": "irrigation",
+      "group": "all",
+      "effect": 2.1007,
+      "ci_low": -9.2416,
+      "ci_high": 15.7125,
+      "se": 6.4042,
+      "p_value": 0.7476,
+      "n_pairs": 182,
+      "n_clusters": 26,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 9.728,
+      "gap_post": 11.8287,
+      "from_crops": {
+        "effect": 3.0457,
+        "ci_low": -0.8554,
+        "ci_high": 7.4361,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": -0.945,
+        "ci_low": -11.9743,
+        "ci_high": 10.79,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0747,
+      "fallow_share_b": 0.0044
+    },
+    {
+      "a": "diverse",
+      "b": "continuous corn",
+      "comparison": "diverse vs continuous corn",
+      "group_kind": "irrigation",
+      "group": "irrigated",
+      "effect": -2.3519,
+      "ci_low": -16.6229,
+      "ci_high": 12.9721,
+      "se": 7.5309,
+      "p_value": 0.7421,
+      "n_pairs": 157,
+      "n_clusters": 23,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 14.9621,
+      "gap_post": 12.6102,
+      "from_crops": {
+        "effect": 0.1997,
+        "ci_low": -3.2797,
+        "ci_high": 3.894,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": -2.5516,
+        "ci_low": -16.3238,
+        "ci_high": 10.7394,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.051,
+      "fallow_share_b": 0.0051
+    },
+    {
+      "a": "diverse",
+      "b": "continuous corn",
+      "comparison": "diverse vs continuous corn",
+      "group_kind": "irrigation",
+      "group": "dryland",
+      "effect": 30.0628,
+      "ci_low": 14.0901,
+      "ci_high": 49.7099,
+      "se": 9.2528,
+      "p_value": 0.011,
+      "n_pairs": 25,
+      "n_clusters": 11,
+      "ci_excludes_zero": true,
+      "favours": "b",
+      "gap_pre": -23.142,
+      "gap_post": 6.9208,
+      "from_crops": {
+        "effect": 20.9182,
+        "ci_low": 10.6708,
+        "ci_high": 28.741,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 9.1446,
+        "ci_low": -5.703,
+        "ci_high": 29.987,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.224,
+      "fallow_share_b": 0.0
+    },
+    {
+      "a": "diverse",
+      "b": "continuous corn",
+      "comparison": "diverse vs continuous corn",
+      "group_kind": "soil",
+      "group": "low OM (<1.5%)",
+      "effect": -1.9239,
+      "ci_low": -12.7236,
+      "ci_high": 6.0964,
+      "se": 4.7976,
+      "p_value": 0.6722,
+      "n_pairs": 28,
+      "n_clusters": 9,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 7.7589,
+      "gap_post": 5.835,
+      "from_crops": {
+        "effect": -0.3685,
+        "ci_low": -13.7025,
+        "ci_high": 11.8517,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": -1.5554,
+        "ci_low": -12.4987,
+        "ci_high": 6.0555,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0643,
+      "fallow_share_b": 0.0071
+    },
+    {
+      "a": "diverse",
+      "b": "continuous corn",
+      "comparison": "diverse vs continuous corn",
+      "group_kind": "soil",
+      "group": "mid OM (1.5-2%)",
+      "effect": 2.0263,
+      "ci_low": -10.9073,
+      "ci_high": 19.0374,
+      "se": 7.5695,
+      "p_value": 0.7791,
+      "n_pairs": 147,
+      "n_clusters": 20,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 10.8378,
+      "gap_post": 12.8641,
+      "from_crops": {
+        "effect": 3.5101,
+        "ci_low": 0.1068,
+        "ci_high": 7.4369,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": -1.4837,
+        "ci_low": -14.4597,
+        "ci_high": 14.6099,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0776,
+      "fallow_share_b": 0.0041
+    },
+    {
+      "a": "diverse",
+      "b": "corn-soy",
+      "comparison": "diverse vs corn-soy",
+      "group_kind": "irrigation",
+      "group": "all",
+      "effect": -4.0896,
+      "ci_low": -20.0397,
+      "ci_high": 13.3195,
+      "se": 8.6485,
+      "p_value": 0.6627,
+      "n_pairs": 25,
+      "n_clusters": 10,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 11.924,
+      "gap_post": 7.8344,
+      "from_crops": {
+        "effect": 2.5292,
+        "ci_low": -5.0198,
+        "ci_high": 8.9457,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": -6.6188,
+        "ci_low": -18.4087,
+        "ci_high": 7.5225,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.064,
+      "fallow_share_b": 0.0
+    },
+    {
+      "a": "diverse",
+      "b": "corn-soy",
+      "comparison": "diverse vs corn-soy",
+      "group_kind": "irrigation",
+      "group": "irrigated",
+      "effect": -4.0896,
+      "ci_low": -19.7467,
+      "ci_high": 12.7183,
+      "se": 8.4539,
+      "p_value": 0.6577,
+      "n_pairs": 25,
+      "n_clusters": 10,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 11.924,
+      "gap_post": 7.8344,
+      "from_crops": {
+        "effect": 2.5292,
+        "ci_low": -4.8172,
+        "ci_high": 8.5253,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": -6.6188,
+        "ci_low": -18.6611,
+        "ci_high": 7.4598,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.064,
+      "fallow_share_b": 0.0
+    },
+    {
+      "a": "diverse",
+      "b": "corn-soy",
+      "comparison": "diverse vs corn-soy",
+      "group_kind": "soil",
+      "group": "mid OM (1.5-2%)",
+      "effect": 4.0629,
+      "ci_low": -11.4706,
+      "ci_high": 20.947,
+      "se": 8.2263,
+      "p_value": 0.6012,
+      "n_pairs": 14,
+      "n_clusters": 7,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 12.1643,
+      "gap_post": 16.2271,
+      "from_crops": {
+        "effect": 2.8557,
+        "ci_low": -2.2173,
+        "ci_high": 8.0191,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": 1.2072,
+        "ci_low": -10.6889,
+        "ci_high": 12.2836,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.0571,
+      "fallow_share_b": 0.0
+    },
+    {
+      "a": "diverse",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "diverse vs wheat-sorghum-fallow",
+      "group_kind": "irrigation",
+      "group": "all",
+      "effect": 5.7237,
+      "ci_low": -1.7275,
+      "ci_high": 11.9684,
+      "se": 3.4807,
+      "p_value": 0.1354,
+      "n_pairs": 480,
+      "n_clusters": 43,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -4.2915,
+      "gap_post": 1.4323,
+      "from_crops": {
+        "effect": -0.4674,
+        "ci_low": -2.9669,
+        "ci_high": 1.8683,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": 6.1911,
+        "ci_low": 0.4731,
+        "ci_high": 11.3594,
+        "ci_excludes_zero": true
+      },
+      "fallow_share_a": 0.2067,
+      "fallow_share_b": 0.3329
+    },
+    {
+      "a": "diverse",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "diverse vs wheat-sorghum-fallow",
+      "group_kind": "irrigation",
+      "group": "irrigated",
+      "effect": 4.7156,
+      "ci_low": -15.4249,
+      "ci_high": 24.5051,
+      "se": 10.4378,
+      "p_value": 0.6917,
+      "n_pairs": 52,
+      "n_clusters": 21,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -7.3587,
+      "gap_post": -2.6431,
+      "from_crops": {
+        "effect": -5.8437,
+        "ci_low": -10.339,
+        "ci_high": -1.1351,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": 10.5592,
+        "ci_low": -8.5109,
+        "ci_high": 27.8297,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.1077,
+      "fallow_share_b": 0.2769
+    },
+    {
+      "a": "diverse",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "diverse vs wheat-sorghum-fallow",
+      "group_kind": "irrigation",
+      "group": "dryland",
+      "effect": 5.8462,
+      "ci_low": -1.9101,
+      "ci_high": 13.4948,
+      "se": 4.018,
+      "p_value": 0.1694,
+      "n_pairs": 428,
+      "n_clusters": 40,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -3.9188,
+      "gap_post": 1.9274,
+      "from_crops": {
+        "effect": 0.1858,
+        "ci_low": -2.583,
+        "ci_high": 3.0959,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": 5.6604,
+        "ci_low": -0.5405,
+        "ci_high": 11.4609,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.2187,
+      "fallow_share_b": 0.3397
+    },
+    {
+      "a": "diverse",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "diverse vs wheat-sorghum-fallow",
+      "group_kind": "soil",
+      "group": "low OM (<1.5%)",
+      "effect": 14.433,
+      "ci_low": -7.3489,
+      "ci_high": 32.2303,
+      "se": 9.936,
+      "p_value": 0.2119,
+      "n_pairs": 30,
+      "n_clusters": 15,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -1.805,
+      "gap_post": 12.628,
+      "from_crops": {
+        "effect": -6.6531,
+        "ci_low": -13.6862,
+        "ci_high": 1.4633,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": 21.0861,
+        "ci_low": -0.1596,
+        "ci_high": 38.41,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.1667,
+      "fallow_share_b": 0.3133
+    },
+    {
+      "a": "diverse",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "diverse vs wheat-sorghum-fallow",
+      "group_kind": "soil",
+      "group": "mid OM (1.5-2%)",
+      "effect": 4.6227,
+      "ci_low": -3.2398,
+      "ci_high": 11.7748,
+      "se": 3.7589,
+      "p_value": 0.2589,
+      "n_pairs": 428,
+      "n_clusters": 38,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -4.1299,
+      "gap_post": 0.4928,
+      "from_crops": {
+        "effect": -0.4341,
+        "ci_low": -3.243,
+        "ci_high": 2.0729,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": 5.0568,
+        "ci_low": -1.4319,
+        "ci_high": 10.9267,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.2079,
+      "fallow_share_b": 0.3346
+    },
+    {
+      "a": "diverse",
+      "b": "wheat-sorghum-fallow",
+      "comparison": "diverse vs wheat-sorghum-fallow",
+      "group_kind": "soil",
+      "group": "high OM (>=2%)",
+      "effect": 15.2668,
+      "ci_low": -11.2194,
+      "ci_high": 41.198,
+      "se": 13.003,
+      "p_value": 0.3018,
+      "n_pairs": 22,
+      "n_clusters": 14,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": -10.825,
+      "gap_post": 4.4418,
+      "from_crops": {
+        "effect": 7.3193,
+        "ci_low": -1.0101,
+        "ci_high": 15.3372,
+        "ci_excludes_zero": false
+      },
+      "beyond_crops": {
+        "effect": 7.9476,
+        "ci_low": -13.6332,
+        "ci_high": 32.0922,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.2364,
+      "fallow_share_b": 0.3273
+    },
+    {
+      "a": "wheat-sorghum-fallow",
+      "b": "continuous corn",
+      "comparison": "wheat-sorghum-fallow vs continuous corn",
+      "group_kind": "irrigation",
+      "group": "all",
+      "effect": 11.6737,
+      "ci_low": -4.9157,
+      "ci_high": 29.6519,
+      "se": 8.6244,
+      "p_value": 0.1974,
+      "n_pairs": 63,
+      "n_clusters": 19,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 12.9603,
+      "gap_post": 24.634,
+      "from_crops": {
+        "effect": 12.6187,
+        "ci_low": 4.8592,
+        "ci_high": 19.0938,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": -0.9451,
+        "ci_low": -15.0706,
+        "ci_high": 13.824,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.327,
+      "fallow_share_b": 0.0032
+    },
+    {
+      "a": "wheat-sorghum-fallow",
+      "b": "continuous corn",
+      "comparison": "wheat-sorghum-fallow vs continuous corn",
+      "group_kind": "irrigation",
+      "group": "irrigated",
+      "effect": 12.1038,
+      "ci_low": -14.3544,
+      "ci_high": 29.2972,
+      "se": 11.1814,
+      "p_value": 0.4098,
+      "n_pairs": 29,
+      "n_clusters": 12,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 23.0879,
+      "gap_post": 35.1917,
+      "from_crops": {
+        "effect": 13.5364,
+        "ci_low": 9.0625,
+        "ci_high": 18.1085,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": -1.4326,
+        "ci_low": -25.951,
+        "ci_high": 15.8813,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.2897,
+      "fallow_share_b": 0.0
+    },
+    {
+      "a": "wheat-sorghum-fallow",
+      "b": "continuous corn",
+      "comparison": "wheat-sorghum-fallow vs continuous corn",
+      "group_kind": "irrigation",
+      "group": "dryland",
+      "effect": 11.3068,
+      "ci_low": -9.6533,
+      "ci_high": 34.5156,
+      "se": 11.0239,
+      "p_value": 0.2889,
+      "n_pairs": 34,
+      "n_clusters": 15,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 4.3221,
+      "gap_post": 15.6288,
+      "from_crops": {
+        "effect": 11.836,
+        "ci_low": 0.7188,
+        "ci_high": 24.2873,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": -0.5293,
+        "ci_low": -18.7321,
+        "ci_high": 19.731,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.3588,
+      "fallow_share_b": 0.0059
+    },
+    {
+      "a": "wheat-sorghum-fallow",
+      "b": "continuous corn",
+      "comparison": "wheat-sorghum-fallow vs continuous corn",
+      "group_kind": "soil",
+      "group": "mid OM (1.5-2%)",
+      "effect": 14.371,
+      "ci_low": -3.9398,
+      "ci_high": 34.3831,
+      "se": 9.7434,
+      "p_value": 0.1674,
+      "n_pairs": 50,
+      "n_clusters": 16,
+      "ci_excludes_zero": false,
+      "favours": null,
+      "gap_pre": 7.105,
+      "gap_post": 21.476,
+      "from_crops": {
+        "effect": 16.3804,
+        "ci_low": 9.4875,
+        "ci_high": 21.6439,
+        "ci_excludes_zero": true
+      },
+      "beyond_crops": {
+        "effect": -2.0094,
+        "ci_low": -16.4468,
+        "ci_high": 15.6374,
+        "ci_excludes_zero": false
+      },
+      "fallow_share_a": 0.328,
+      "fallow_share_b": 0.0
+    }
+  ],
+  "by_year": {
+    "alfalfa/perennial vs continuous corn": [
+      {
+        "year": 2016,
+        "gap": 5.7253,
+        "n_pairs": 85
+      },
+      {
+        "year": 2017,
+        "gap": 1.6124,
+        "n_pairs": 85
+      },
+      {
+        "year": 2018,
+        "gap": 8.3829,
+        "n_pairs": 85
+      },
+      {
+        "year": 2019,
+        "gap": -8.3829,
+        "n_pairs": 85
+      },
+      {
+        "year": 2020,
+        "gap": -16.5594,
+        "n_pairs": 85
+      },
+      {
+        "year": 2021,
+        "gap": -16.6829,
+        "n_pairs": 85
+      },
+      {
+        "year": 2022,
+        "gap": -23.7006,
+        "n_pairs": 85
+      },
+      {
+        "year": 2023,
+        "gap": -15.0853,
+        "n_pairs": 85
+      },
+      {
+        "year": 2024,
+        "gap": -22.7253,
+        "n_pairs": 85
+      }
+    ],
+    "alfalfa/perennial vs diverse": [
+      {
+        "year": 2016,
+        "gap": 13.4661,
+        "n_pairs": 168
+      },
+      {
+        "year": 2017,
+        "gap": 8.2226,
+        "n_pairs": 168
+      },
+      {
+        "year": 2018,
+        "gap": 3.6631,
+        "n_pairs": 168
+      },
+      {
+        "year": 2019,
+        "gap": -3.6631,
+        "n_pairs": 168
+      },
+      {
+        "year": 2020,
+        "gap": -7.4256,
+        "n_pairs": 168
+      },
+      {
+        "year": 2021,
+        "gap": -22.0446,
+        "n_pairs": 168
+      },
+      {
+        "year": 2022,
+        "gap": -23.4173,
+        "n_pairs": 168
+      },
+      {
+        "year": 2023,
+        "gap": -15.0202,
+        "n_pairs": 168
+      },
+      {
+        "year": 2024,
+        "gap": -8.3619,
+        "n_pairs": 168
+      }
+    ],
+    "alfalfa/perennial vs wheat-sorghum-fallow": [
+      {
+        "year": 2016,
+        "gap": 10.3418,
+        "n_pairs": 49
+      },
+      {
+        "year": 2017,
+        "gap": 16.5769,
+        "n_pairs": 54
+      },
+      {
+        "year": 2018,
+        "gap": 0.8824,
+        "n_pairs": 54
+      },
+      {
+        "year": 2019,
+        "gap": -0.8824,
+        "n_pairs": 54
+      },
+      {
+        "year": 2020,
+        "gap": -7.3546,
+        "n_pairs": 54
+      },
+      {
+        "year": 2021,
+        "gap": -26.475,
+        "n_pairs": 54
+      },
+      {
+        "year": 2022,
+        "gap": -35.1157,
+        "n_pairs": 54
+      },
+      {
+        "year": 2023,
+        "gap": -36.3565,
+        "n_pairs": 54
+      },
+      {
+        "year": 2024,
+        "gap": -15.1046,
+        "n_pairs": 54
+      }
+    ],
+    "corn-soy vs continuous corn": [
+      {
+        "year": 2016,
+        "gap": -2.0917,
+        "n_pairs": 30
+      },
+      {
+        "year": 2017,
+        "gap": 1.665,
+        "n_pairs": 30
+      },
+      {
+        "year": 2018,
+        "gap": -0.145,
+        "n_pairs": 30
+      },
+      {
+        "year": 2019,
+        "gap": 0.145,
+        "n_pairs": 30
+      },
+      {
+        "year": 2020,
+        "gap": -10.9217,
+        "n_pairs": 30
+      },
+      {
+        "year": 2021,
+        "gap": 21.2917,
+        "n_pairs": 30
+      },
+      {
+        "year": 2022,
+        "gap": 15.7683,
+        "n_pairs": 30
+      },
+      {
+        "year": 2023,
+        "gap": -2.685,
+        "n_pairs": 30
+      },
+      {
+        "year": 2024,
+        "gap": -5.325,
+        "n_pairs": 30
+      }
+    ],
+    "diverse vs continuous corn": [
+      {
+        "year": 2016,
+        "gap": -11.6403,
+        "n_pairs": 181
+      },
+      {
+        "year": 2017,
+        "gap": -8.0527,
+        "n_pairs": 182
+      },
+      {
+        "year": 2018,
+        "gap": 0.2495,
+        "n_pairs": 182
+      },
+      {
+        "year": 2019,
+        "gap": -0.2495,
+        "n_pairs": 182
+      },
+      {
+        "year": 2020,
+        "gap": -5.9286,
+        "n_pairs": 182
+      },
+      {
+        "year": 2021,
+        "gap": 7.0654,
+        "n_pairs": 182
+      },
+      {
+        "year": 2022,
+        "gap": 10.9214,
+        "n_pairs": 182
+      },
+      {
+        "year": 2023,
+        "gap": 8.7522,
+        "n_pairs": 182
+      },
+      {
+        "year": 2024,
+        "gap": -10.3071,
+        "n_pairs": 182
+      }
+    ],
+    "diverse vs corn-soy": [
+      {
+        "year": 2016,
+        "gap": -12.064,
+        "n_pairs": 25
+      },
+      {
+        "year": 2017,
+        "gap": -11.636,
+        "n_pairs": 25
+      },
+      {
+        "year": 2018,
+        "gap": -1.048,
+        "n_pairs": 25
+      },
+      {
+        "year": 2019,
+        "gap": 1.048,
+        "n_pairs": 25
+      },
+      {
+        "year": 2020,
+        "gap": -1.344,
+        "n_pairs": 25
+      },
+      {
+        "year": 2021,
+        "gap": -9.416,
+        "n_pairs": 25
+      },
+      {
+        "year": 2022,
+        "gap": 2.428,
+        "n_pairs": 25
+      },
+      {
+        "year": 2023,
+        "gap": 7.296,
+        "n_pairs": 25
+      },
+      {
+        "year": 2024,
+        "gap": -19.412,
+        "n_pairs": 25
+      }
+    ],
+    "diverse vs wheat-sorghum-fallow": [
+      {
+        "year": 2016,
+        "gap": 7.3318,
+        "n_pairs": 462
+      },
+      {
+        "year": 2017,
+        "gap": 1.1888,
+        "n_pairs": 480
+      },
+      {
+        "year": 2018,
+        "gap": 1.4271,
+        "n_pairs": 480
+      },
+      {
+        "year": 2019,
+        "gap": -1.4301,
+        "n_pairs": 479
+      },
+      {
+        "year": 2020,
+        "gap": -22.7798,
+        "n_pairs": 480
+      },
+      {
+        "year": 2021,
+        "gap": 21.0444,
+        "n_pairs": 480
+      },
+      {
+        "year": 2022,
+        "gap": 27.5217,
+        "n_pairs": 480
+      },
+      {
+        "year": 2023,
+        "gap": -14.5783,
+        "n_pairs": 480
+      },
+      {
+        "year": 2024,
+        "gap": 17.4106,
+        "n_pairs": 480
+      }
+    ],
+    "wheat-sorghum-fallow vs continuous corn": [
+      {
+        "year": 2016,
+        "gap": -15.919,
+        "n_pairs": 63
+      },
+      {
+        "year": 2017,
+        "gap": -8.8175,
+        "n_pairs": 63
+      },
+      {
+        "year": 2018,
+        "gap": -1.6492,
+        "n_pairs": 63
+      },
+      {
+        "year": 2019,
+        "gap": 1.6492,
+        "n_pairs": 63
+      },
+      {
+        "year": 2020,
+        "gap": 5.2349,
+        "n_pairs": 63
+      },
+      {
+        "year": 2021,
+        "gap": -3.3048,
+        "n_pairs": 63
+      },
+      {
+        "year": 2022,
+        "gap": 36.7651,
+        "n_pairs": 63
+      },
+      {
+        "year": 2023,
+        "gap": 47.1937,
+        "n_pairs": 63
+      },
+      {
+        "year": 2024,
+        "gap": -27.5206,
+        "n_pairs": 63
+      }
+    ]
+  },
+  "placebos": {
+    "fake_switch_years": [
+      {
+        "fake_switch_year": 2017,
+        "before_years": [
+          2016,
+          2016
+        ],
+        "after_years": [
+          2017,
+          2019
+        ],
+        "comparison": "alfalfa/perennial vs continuous corn",
+        "effect": -5.1878,
+        "ci_low": -15.2891,
+        "ci_high": 7.361,
+        "p_value": 0.4923,
+        "n_pairs": 85,
+        "ci_excludes_zero": false,
+        "from_crops": -15.9146
+      },
+      {
+        "fake_switch_year": 2017,
+        "before_years": [
+          2016,
+          2016
+        ],
+        "after_years": [
+          2017,
+          2019
+        ],
+        "comparison": "alfalfa/perennial vs diverse",
+        "effect": -10.7252,
+        "ci_low": -18.4354,
+        "ci_high": -3.7031,
+        "p_value": 0.005,
+        "n_pairs": 168,
+        "ci_excludes_zero": true,
+        "from_crops": -13.0355
+      },
+      {
+        "fake_switch_year": 2017,
+        "before_years": [
+          2016,
+          2016
+        ],
+        "after_years": [
+          2017,
+          2019
+        ],
+        "comparison": "alfalfa/perennial vs wheat-sorghum-fallow",
+        "effect": -4.6483,
+        "ci_low": -11.9625,
+        "ci_high": 3.7362,
+        "p_value": 0.2759,
+        "n_pairs": 49,
+        "ci_excludes_zero": false,
+        "from_crops": -8.2881
+      },
+      {
+        "fake_switch_year": 2017,
+        "before_years": [
+          2016,
+          2016
+        ],
+        "after_years": [
+          2017,
+          2019
+        ],
+        "comparison": "corn-soy vs continuous corn",
+        "effect": 2.6467,
+        "ci_low": -10.3863,
+        "ci_high": 17.564,
+        "p_value": 0.7031,
+        "n_pairs": 30,
+        "ci_excludes_zero": false,
+        "from_crops": -3.1902
+      },
+      {
+        "fake_switch_year": 2017,
+        "before_years": [
+          2016,
+          2016
+        ],
+        "after_years": [
+          2017,
+          2019
+        ],
+        "comparison": "diverse vs continuous corn",
+        "effect": 8.9418,
+        "ci_low": -3.6448,
+        "ci_high": 22.1717,
+        "p_value": 0.1829,
+        "n_pairs": 181,
+        "ci_excludes_zero": false,
+        "from_crops": 1.868
+      },
+      {
+        "fake_switch_year": 2017,
+        "before_years": [
+          2016,
+          2016
+        ],
+        "after_years": [
+          2017,
+          2019
+        ],
+        "comparison": "diverse vs corn-soy",
+        "effect": 8.1853,
+        "ci_low": -10.1364,
+        "ci_high": 25.8346,
+        "p_value": 0.4078,
+        "n_pairs": 25,
+        "ci_excludes_zero": false,
+        "from_crops": 4.7103
+      },
+      {
+        "fake_switch_year": 2017,
+        "before_years": [
+          2016,
+          2016
+        ],
+        "after_years": [
+          2017,
+          2019
+        ],
+        "comparison": "diverse vs wheat-sorghum-fallow",
+        "effect": -6.8737,
+        "ci_low": -15.3678,
+        "ci_high": -0.1531,
+        "p_value": 0.064,
+        "n_pairs": 462,
+        "ci_excludes_zero": true,
+        "from_crops": -7.1915
+      },
+      {
+        "fake_switch_year": 2017,
+        "before_years": [
+          2016,
+          2016
+        ],
+        "after_years": [
+          2017,
+          2019
+        ],
+        "comparison": "wheat-sorghum-fallow vs continuous corn",
+        "effect": 12.9799,
+        "ci_low": -12.3181,
+        "ci_high": 45.7603,
+        "p_value": 0.4198,
+        "n_pairs": 63,
+        "ci_excludes_zero": false,
+        "from_crops": 13.3779
+      },
+      {
+        "fake_switch_year": 2018,
+        "before_years": [
+          2016,
+          2017
+        ],
+        "after_years": [
+          2018,
+          2019
+        ],
+        "comparison": "alfalfa/perennial vs continuous corn",
+        "effect": -3.6688,
+        "ci_low": -13.8946,
+        "ci_high": 7.2281,
+        "p_value": 0.6167,
+        "n_pairs": 85,
+        "ci_excludes_zero": false,
+        "from_crops": -19.6761
+      },
+      {
+        "fake_switch_year": 2018,
+        "before_years": [
+          2016,
+          2017
+        ],
+        "after_years": [
+          2018,
+          2019
+        ],
+        "comparison": "alfalfa/perennial vs diverse",
+        "effect": -10.8443,
+        "ci_low": -18.2986,
+        "ci_high": -4.3615,
+        "p_value": 0.005,
+        "n_pairs": 168,
+        "ci_excludes_zero": true,
+        "from_crops": -16.1757
+      },
+      {
+        "fake_switch_year": 2018,
+        "before_years": [
+          2016,
+          2017
+        ],
+        "after_years": [
+          2018,
+          2019
+        ],
+        "comparison": "alfalfa/perennial vs wheat-sorghum-fallow",
+        "effect": -13.5194,
+        "ci_low": -22.6537,
+        "ci_high": -5.7946,
+        "p_value": 0.0075,
+        "n_pairs": 54,
+        "ci_excludes_zero": true,
+        "from_crops": -10.931
+      },
+      {
+        "fake_switch_year": 2018,
+        "before_years": [
+          2016,
+          2017
+        ],
+        "after_years": [
+          2018,
+          2019
+        ],
+        "comparison": "corn-soy vs continuous corn",
+        "effect": 0.2133,
+        "ci_low": -7.2258,
+        "ci_high": 6.9117,
+        "p_value": 0.9575,
+        "n_pairs": 30,
+        "ci_excludes_zero": false,
+        "from_crops": -0.7437
+      },
+      {
+        "fake_switch_year": 2018,
+        "before_years": [
+          2016,
+          2017
+        ],
+        "after_years": [
+          2018,
+          2019
+        ],
+        "comparison": "diverse vs continuous corn",
+        "effect": 9.8154,
+        "ci_low": 2.8034,
+        "ci_high": 15.6697,
+        "p_value": 0.0185,
+        "n_pairs": 182,
+        "ci_excludes_zero": true,
+        "from_crops": 0.0373
+      },
+      {
+        "fake_switch_year": 2018,
+        "before_years": [
+          2016,
+          2017
+        ],
+        "after_years": [
+          2018,
+          2019
+        ],
+        "comparison": "diverse vs corn-soy",
+        "effect": 11.85,
+        "ci_low": 2.4207,
+        "ci_high": 22.0937,
+        "p_value": 0.0555,
+        "n_pairs": 25,
+        "ci_excludes_zero": true,
+        "from_crops": 4.6103
+      },
+      {
+        "fake_switch_year": 2018,
+        "before_years": [
+          2016,
+          2017
+        ],
+        "after_years": [
+          2018,
+          2019
+        ],
+        "comparison": "diverse vs wheat-sorghum-fallow",
+        "effect": -4.0558,
+        "ci_low": -10.3982,
+        "ci_high": 1.3922,
+        "p_value": 0.1549,
+        "n_pairs": 480,
+        "ci_excludes_zero": false,
+        "from_crops": -1.6222
+      },
+      {
+        "fake_switch_year": 2018,
+        "before_years": [
+          2016,
+          2017
+        ],
+        "after_years": [
+          2018,
+          2019
+        ],
+        "comparison": "wheat-sorghum-fallow vs continuous corn",
+        "effect": 12.3683,
+        "ci_low": -3.5127,
+        "ci_high": 30.185,
+        "p_value": 0.1594,
+        "n_pairs": 63,
+        "ci_excludes_zero": false,
+        "from_crops": 9.445
+      },
+      {
+        "fake_switch_year": 2019,
+        "before_years": [
+          2016,
+          2018
+        ],
+        "after_years": [
+          2019,
+          2019
+        ],
+        "comparison": "alfalfa/perennial vs continuous corn",
+        "effect": -13.6231,
+        "ci_low": -27.4102,
+        "ci_high": 1.2705,
+        "p_value": 0.1249,
+        "n_pairs": 85,
+        "ci_excludes_zero": false,
+        "from_crops": -31.4897
+      },
+      {
+        "fake_switch_year": 2019,
+        "before_years": [
+          2016,
+          2018
+        ],
+        "after_years": [
+          2019,
+          2019
+        ],
+        "comparison": "alfalfa/perennial vs diverse",
+        "effect": -12.1137,
+        "ci_low": -23.9198,
+        "ci_high": -0.6399,
+        "p_value": 0.0665,
+        "n_pairs": 168,
+        "ci_excludes_zero": true,
+        "from_crops": -13.9088
+      },
+      {
+        "fake_switch_year": 2019,
+        "before_years": [
+          2016,
+          2018
+        ],
+        "after_years": [
+          2019,
+          2019
+        ],
+        "comparison": "alfalfa/perennial vs wheat-sorghum-fallow",
+        "effect": -9.8645,
+        "ci_low": -30.6094,
+        "ci_high": 5.7509,
+        "p_value": 0.3353,
+        "n_pairs": 54,
+        "ci_excludes_zero": false,
+        "from_crops": -13.3029
+      },
+      {
+        "fake_switch_year": 2019,
+        "before_years": [
+          2016,
+          2018
+        ],
+        "after_years": [
+          2019,
+          2019
+        ],
+        "comparison": "corn-soy vs continuous corn",
+        "effect": 0.3356,
+        "ci_low": -8.9123,
+        "ci_high": 5.8131,
+        "p_value": 0.9405,
+        "n_pairs": 30,
+        "ci_excludes_zero": false,
+        "from_crops": 0.7647
+      },
+      {
+        "fake_switch_year": 2019,
+        "before_years": [
+          2016,
+          2018
+        ],
+        "after_years": [
+          2019,
+          2019
+        ],
+        "comparison": "diverse vs continuous corn",
+        "effect": 6.2034,
+        "ci_low": -2.7227,
+        "ci_high": 14.144,
+        "p_value": 0.2339,
+        "n_pairs": 182,
+        "ci_excludes_zero": false,
+        "from_crops": -4.7851
+      },
+      {
+        "fake_switch_year": 2019,
+        "before_years": [
+          2016,
+          2018
+        ],
+        "after_years": [
+          2019,
+          2019
+        ],
+        "comparison": "diverse vs corn-soy",
+        "effect": 9.2973,
+        "ci_low": -0.3954,
+        "ci_high": 21.7126,
+        "p_value": 0.1184,
+        "n_pairs": 25,
+        "ci_excludes_zero": false,
+        "from_crops": 0.9232
+      },
+      {
+        "fake_switch_year": 2019,
+        "before_years": [
+          2016,
+          2018
+        ],
+        "after_years": [
+          2019,
+          2019
+        ],
+        "comparison": "diverse vs wheat-sorghum-fallow",
+        "effect": -4.5538,
+        "ci_low": -12.8064,
+        "ci_high": 3.4021,
+        "p_value": 0.2919,
+        "n_pairs": 479,
+        "ci_excludes_zero": false,
+        "from_crops": -4.1251
+      },
+      {
+        "fake_switch_year": 2019,
+        "before_years": [
+          2016,
+          2018
+        ],
+        "after_years": [
+          2019,
+          2019
+        ],
+        "comparison": "wheat-sorghum-fallow vs continuous corn",
+        "effect": 10.4444,
+        "ci_low": -9.9001,
+        "ci_high": 33.9087,
+        "p_value": 0.3553,
+        "n_pairs": 63,
+        "ci_excludes_zero": false,
+        "from_crops": 4.2006
+      }
+    ],
+    "shuffled_labels": [
+      {
+        "comparison": "alfalfa/perennial vs continuous corn",
+        "real_effect": -18.9507,
+        "null_mean": 0.0215,
+        "null_sd": 2.3441,
+        "null_p95_abs": 4.5532,
+        "p_value": 0.005,
+        "n_shuffles": 200
+      },
+      {
+        "comparison": "alfalfa/perennial vs diverse",
+        "real_effect": -15.2539,
+        "null_mean": -0.033,
+        "null_sd": 2.3228,
+        "null_p95_abs": 4.2278,
+        "p_value": 0.005,
+        "n_shuffles": 200
+      },
+      {
+        "comparison": "alfalfa/perennial vs wheat-sorghum-fallow",
+        "real_effect": -24.0813,
+        "null_mean": 0.2242,
+        "null_sd": 4.1356,
+        "null_p95_abs": 8.173,
+        "p_value": 0.005,
+        "n_shuffles": 200
+      },
+      {
+        "comparison": "corn-soy vs continuous corn",
+        "real_effect": 3.6257,
+        "null_mean": 0.1184,
+        "null_sd": 7.6075,
+        "null_p95_abs": 13.5057,
+        "p_value": 0.6567,
+        "n_shuffles": 200
+      },
+      {
+        "comparison": "diverse vs continuous corn",
+        "real_effect": 2.1007,
+        "null_mean": 0.1498,
+        "null_sd": 2.8463,
+        "null_p95_abs": 5.3004,
+        "p_value": 0.4577,
+        "n_shuffles": 200
+      },
+      {
+        "comparison": "diverse vs corn-soy",
+        "real_effect": -4.0896,
+        "null_mean": -0.3395,
+        "null_sd": 7.7126,
+        "null_p95_abs": 14.4994,
+        "p_value": 0.6318,
+        "n_shuffles": 200
+      },
+      {
+        "comparison": "diverse vs wheat-sorghum-fallow",
+        "real_effect": 5.7237,
+        "null_mean": -0.1857,
+        "null_sd": 2.2348,
+        "null_p95_abs": 4.0967,
+        "p_value": 0.0249,
+        "n_shuffles": 200
+      },
+      {
+        "comparison": "wheat-sorghum-fallow vs continuous corn",
+        "real_effect": 11.6737,
+        "null_mean": -0.2115,
+        "null_sd": 5.0775,
+        "null_p95_abs": 10.3885,
+        "p_value": 0.0348,
+        "n_shuffles": 200
+      }
+    ]
+  },
+  "demo_pairs": [
+    {
+      "pair_id": "P00101",
+      "comparison": "alfalfa/perennial vs diverse",
+      "rotation_a": "alfalfa/perennial",
+      "rotation_b": "diverse",
+      "field_a": "KS-001131",
+      "field_b": "KS-001215",
+      "distance_km": 0.73,
+      "match_score": 0.479,
+      "pre_a": 80.85,
+      "post_a": 11.1,
+      "pre_b": 61.75,
+      "post_b": 167.7,
+      "did": -175.7,
+      "better": "a"
+    },
+    {
+      "pair_id": "P00003",
+      "comparison": "alfalfa/perennial vs continuous corn",
+      "rotation_a": "alfalfa/perennial",
+      "rotation_b": "continuous corn",
+      "field_a": "KS-005410",
+      "field_b": "KS-005375",
+      "distance_km": 0.43,
+      "match_score": 0.709,
+      "pre_a": 28.75,
+      "post_a": 41.98,
+      "pre_b": 9.65,
+      "post_b": 47.28,
+      "did": -24.4,
+      "better": "a"
+    },
+    {
+      "pair_id": "P00267",
+      "comparison": "alfalfa/perennial vs wheat-sorghum-fallow",
+      "rotation_a": "alfalfa/perennial",
+      "rotation_b": "wheat-sorghum-fallow",
+      "field_a": "KS-008413",
+      "field_b": "KS-008970",
+      "distance_km": 3.21,
+      "match_score": 1.135,
+      "pre_a": 101.5,
+      "post_a": 26.8,
+      "pre_b": 80.9,
+      "post_b": 82.66,
+      "did": -76.46,
+      "better": "a"
+    }
+  ]
+}

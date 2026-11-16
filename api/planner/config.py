@@ -18,6 +18,8 @@ Two kinds of things live here:
       NASS_PATH               data/nass_finney.parquet
       PLANNER_SOIL_CACHE_PATH data/planner_bare_days.json
       ECONOMICS_PATH          api/planner/economics.json
+      ROTATION_EFFECTS        on (default) | off: the yield drag of a crop after itself, rotation.py
+      ROTATION_EFFECTS_PATH   api/planner/rotation_effects.json
       IRRIGATION_LIMIT_MM     the most water that can be pumped per acre per year, mm. Unset = the value in
                               economics.json (24 inches = 610 mm); 0 or "none" = no limit.
 
@@ -52,6 +54,7 @@ _PATHS = {
     "nass_path": ("NASS_PATH", nass_path()),
     "soil_cache_path": ("PLANNER_SOIL_CACHE_PATH", DATA_DIR / "planner_bare_days.json"),
     "economics_path": ("ECONOMICS_PATH", PLANNER_DIR / "economics.json"),
+    "rotation_effects_path": ("ROTATION_EFFECTS_PATH", PLANNER_DIR / "rotation_effects.json"),
 }
 
 # Settings a non-Finney region may borrow from Finney County when it has no file of its own.
@@ -74,7 +77,9 @@ class Settings:
     nass_path: Path
     soil_cache_path: Path
     economics_path: Path
+    rotation_effects_path: Path
     irrigation_limit_mm: float | None = None    # None = not set (use economics.json); 0 = no limit
+    rotation_effects: bool = True               # ROTATION_EFFECTS=on|off
     borrowed: tuple = ()                        # kinds lent by Finney County to another region (pipeline/region.py)
 
 
@@ -84,6 +89,7 @@ def settings(env: Mapping[str, str] | None = None) -> Settings:
     source = (env.get("SOIL_EFFECT_SOURCE") or DEFAULT_SOIL_SOURCE).strip().lower()
     if source not in SOIL_SOURCES:
         raise ValueError(f"SOIL_EFFECT_SOURCE={source!r}: expected one of {', '.join(SOIL_SOURCES)}")
+    effects = rotation_effects_switch(env.get("ROTATION_EFFECTS"))
     paths = {name: Path(env.get(var) or default) for name, (var, default) in _PATHS.items()}
     # Outside Finney County, a file the region does not have yet may be Finney's (see pipeline/region.py).
     # Only when no environment variable chose the path; `borrowed` says which kinds were lent.
@@ -97,7 +103,17 @@ def settings(env: Mapping[str, str] | None = None) -> Settings:
             if kind not in borrowed:
                 borrowed.append(kind)
     return Settings(soil_effect_source=source, irrigation_limit_mm=irrigation_limit(env.get("IRRIGATION_LIMIT_MM")),
-                    borrowed=tuple(borrowed), **paths)
+                    rotation_effects=effects, borrowed=tuple(borrowed), **paths)
+
+
+def rotation_effects_switch(text: str | None) -> bool:
+    """ROTATION_EFFECTS as a switch: unset or on = True, off = False. Anything else is an error, not a guess."""
+    value = (text or "").strip().lower()
+    if value in ("", "on", "1", "true", "yes"):
+        return True
+    if value in ("off", "0", "false", "no"):
+        return False
+    raise ValueError(f"ROTATION_EFFECTS={value!r}: expected on or off")
 
 
 def irrigation_limit(text: str | None) -> float | None:

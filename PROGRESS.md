@@ -177,6 +177,12 @@ which limit binds, and the rotation and start year chosen for each field with wh
 - Decisions: no vector tiles, zoom-dependent geometry or library swap (numbers showed no need); `API_WARMUP=0` turns the warm-up off; `/fields` gzip level 9 (wire size 1,000 to 965 kB, small).
 - Checker: reran all suites and checked four real fields plus a missing id through the live API (plain 404 sentence).
 - Limits: the gzip gain is small; the first-run frame spikes in the early "before" numbers came from the test harness, not the map; the real-browser perf numbers are from headless Chromium, not a phone.
+- Item F: `price_pct` and `cost_pct` (-50..+100) plus `price_<crop>_pct` on /plans, /score, /transition, /replay; the
+  farm planner takes them in the body. 0 changes nothing; echoed in `settings.what_if` only while on. Adjusted engines cached.
+- /plans gains `sensitivity`: the price change at which the top plan's return over direct costs reaches zero, with the
+  range across the six climate models, solved exactly (return is linear in price) rather than searched.
+- Web: "What if prices or costs change?" card (two sliders, Reset, break-even line) under the planner controls, persisted.
+- Notes: data/logs/phase5/item_F.md; checks: data/logs/phase5/check_F_*.log (pytest 1328 passed, web, typecheck, make e2e pass).
 
 ## What is left
 
@@ -233,3 +239,55 @@ Nothing from the eight-item list.
   `make groundwater` (7 small requests) or the section says the levels are not built.
 - Item 7: the free Gemini quota runs out quickly (each `make e2e` and pytest run with a key makes one live call; set ADVISOR_LIVE_TESTS off if you want to save it). Decide whether to keep the model fallback chain. Never commit .env.
 - Item 8: unreadable query values answer 422 with a sentence (an older test asserts 422, so it was not changed to 400). Say if you want 400.
+
+# Phase 5 progress
+
+## Status
+
+| Item | What | Status |
+|---|---|---|
+| A | Rotation yield effects | done, checked |
+| B | Weather replay | done, checked |
+| C | Export and share | done, checked |
+| D | not started | |
+| E | not started | |
+| F | Price and cost what-ifs | done, checked |
+
+## Done
+
+- Item A: a crop grown after itself now yields less (corn 0.91, sorghum 0.93, soybeans 0.93, wheat 0.83),
+  from sourced Kansas trials in `api/planner/rotation_effects.json` (source, URL, status, range each).
+  Multipliers are levelled against the county's mix of previous crops; the range widens the spread.
+- Setting `ROTATION_EFFECTS=on|off` (default on), echoed in `settings.rotation_effects`; `GET /rotation-effects`.
+  Off keeps the old behaviour. The "limits" sentence follows the switch.
+- Real-data effect: continuous irrigated corn went from rank 2 to rank 29 of 106; KS-014376 plan 3 now
+  shows a gain over carrying on. Sanity doc regenerated (`data/planner_sanity.md`, check 7).
+- Left out, no yield figure sourced: soybean or alfalfa credit to corn/wheat (it is nitrogen, saves fertilizer).
+- Notes: data/logs/phase5/item_A.md; checks: data/logs/phase5/check_A_*.log.
+- Item B: `GET /field/{id}/replay?plan=1|2|3` or `?rotation=...` (plus the /plans settings) runs a plan year by year
+  through the observed 2000-2024 weather with the planner's own crop response, water, money and failure rule
+  (`api/planner/replay.py`); nothing is refitted. 503 when the observed weather is missing.
+- Per year: yield vs normal, failed or not, water pumped or share of need met, return over direct costs; worst,
+  median and share of years under direct costs; all cycle phases (the field's own phase draws the bars, else the
+  average); compared with carrying on as now. Dry years by rule (April-September rain in the driest fifth), no year named.
+- Web: "How it would have done in real weather" under each plan card and the build-your-own result (inline SVG,
+  checked at phone width). Note says history is not a forecast and prices and costs are today's.
+- Notes: data/logs/phase5/item_B.md; checks: data/logs/phase5/check_B_*.log (pytest 1296 passed, web, typecheck, make e2e all pass).
+
+- Item C: the app state (open field, priorities, year, emissions path, pumping limit, price and cost what-ifs,
+  irrigated/dryland switch, own rotation, map layer, farm picks and limits) lives in the URL hash
+  (`web/src/lib/share.ts`); only non-default values are written, old `#KS-...` links still work. "Copy link" button.
+- "Print this plan" sheet (`PrintSheet.tsx`, print stylesheet, no dependency) for a field and for a farm: settings line,
+  our top 3, build-your-own, caveats (soil protection, returns over direct costs).
+- CSV downloads built in the browser (`web/src/lib/exportplan.ts`): top plans and farm plan, with '#' settings rows.
+- Fixed a Leaflet 'clearRect' error when opening straight into farm mode. Formats in schema.md; notes data/logs/phase5/item_C.md.
+- Checks: pytest 1328 passed, web 134 passed, typecheck clean, make e2e all five suites pass (phase5 947).
+
+## What is left
+
+- Items D-E.
+
+## For you in the morning
+
+- Item A: the 0.91 corn drag is the weaker of two sourced values; the soybeans range has no weaker end
+  (one Kansas source). Say if you want a different choice.

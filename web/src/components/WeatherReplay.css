@@ -1,0 +1,293 @@
+/* "How it would have done in real weather" (Phase 5, item B): a year-by-year bar chart of the return
+   over direct costs. It sits inside a plan card and under the build-your-own result, so it is laid out
+   for the 424px panel and for a phone alike (the chart is one SVG that scales with its container). */
+
+.replay {
+  margin-top: var(--s2);
+}
+
+.replay-region {
+  display: grid;
+  gap: var(--s3);
+  min-width: 0;
+  padding-top: var(--s3);
+  margin-top: var(--s2);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  border-top: 1px solid var(--line);
+  transition: opacity 120ms ease;
+}
+
+.replay-region.is-updating {
+  opacity: 0.55;
+}
+
+.replay-lead {
+  margin: 0;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.replay-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--s2) var(--s3);
+  margin: 0;
+}
+
+.replay-figures > div {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  min-width: 0;
+}
+
+.replay-figures dd {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.replay-figures dt {
+  font-size: var(--text-sm);
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+.replay-figures--small dd {
+  font-size: 14px;
+}
+
+.replay-range {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ the chart */
+
+.replay-chart {
+  display: grid;
+  gap: var(--s2);
+  min-width: 0;
+  margin: 0;
+}
+
+.replay-chart-title {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.replay-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.replay-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.replay-zero {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+}
+
+.replay-axis {
+  font-size: 9px;
+  fill: var(--muted);
+}
+
+.replay-bar {
+  fill: var(--accent);
+}
+
+.replay-bar--under {
+  fill: var(--danger);
+}
+
+.replay-whisker {
+  stroke: var(--ink);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+
+.replay-carry {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.replay-dry-band {
+  fill: var(--demo-bg);
+}
+
+.replay-dry-tick {
+  fill: var(--demo-ink);
+}
+
+.replay-rank circle {
+  fill: var(--surface);
+  stroke: var(--ink);
+  stroke-width: 1;
+}
+
+.replay-rank text {
+  font-size: 8px;
+  font-weight: 700;
+  fill: var(--ink);
+}
+
+.replay-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--s3);
+  padding: 0;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  list-style: none;
+}
+
+.replay-key li {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.replay-swatch {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.replay-swatch--bar {
+  background: var(--accent);
+}
+
+.replay-swatch--under {
+  background: var(--danger);
+}
+
+.replay-swatch--dry {
+  background: var(--demo-bg);
+  border-bottom: 3px solid var(--demo-ink);
+  border-radius: 0;
+}
+
+.replay-swatch--rank {
+  width: 11px;
+  height: 11px;
+  background: var(--surface);
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+}
+
+.replay-swatch--whisker {
+  width: 1px;
+  height: 12px;
+  background: var(--ink);
+  border-radius: 0;
+  opacity: 0.55;
+}
+
+.replay-swatch--carry {
+  height: 2px;
+  background: var(--ink);
+  border-radius: 0;
+}
+
+/* ------------------------------------------------------------------ words and table */
+
+.replay-sentences,
+.replay-notes,
+.replay-more ul {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
+  margin: 0;
+}
+
+.replay-versus {
+  display: grid;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.replay-versus h5 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.replay-error-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.replay-notes {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.replay-more summary {
+  cursor: pointer;
+  color: var(--accent-ink);
+}
+
+.replay-table-wrap {
+  max-height: 320px;
+  margin-top: var(--s2);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.replay-table {
+  width: 100%;
+  font-size: var(--text-sm);
+  border-collapse: collapse;
+}
+
+.replay-table th,
+.replay-table td {
+  padding: 3px 6px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+
+.replay-table th:first-child,
+.replay-table td:nth-child(2) {
+  text-align: left;
+}
+
+.replay-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+}
+
+.replay-table .is-worst th,
+.replay-table .is-worst td {
+  font-weight: 650;
+  background: var(--danger-bg);
+}
+
+/* grid items may shrink below their content, so a wide table scrolls inside its own box */
+.replay-region > *,
+.replay-versus > *,
+.replay-more > * {
+  min-width: 0;
+}
+
+.replay-table-wrap {
+  max-width: 100%;
+}

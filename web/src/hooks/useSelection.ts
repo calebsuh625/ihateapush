@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { splitHash } from "../lib/share";
 
 /**
  * The selected field. `via` records where the selection came from, because the map reacts
@@ -9,14 +10,9 @@ export interface Selection {
   via: "map" | "url";
 }
 
+/** The field in the hash. `#KS-1` and `#KS-1?w=...` (a share link) both name KS-1. */
 function readHash(): string | null {
-  const raw = window.location.hash.replace(/^#/, "");
-  if (!raw) return null;
-  try {
-    return decodeURIComponent(raw).trim() || null;
-  } catch {
-    return raw.trim() || null; // malformed escape sequence: use it as typed
-  }
+  return splitHash(window.location.hash).field;
 }
 
 /** Selection state mirrored in the URL hash, so a field can be linked to and Back works. */

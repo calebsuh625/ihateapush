@@ -395,8 +395,10 @@ def _long_run_side(engine: Engine, cycle: Sequence[str], irrigated: bool, scenar
     ev = engine.evaluate(irrigated, scenario, horizon, rotations=[form], max_years=custom.MAX_YEARS, **field_numbers)
     planted = not custom.nothing_planted(form)
     irrigation = float(ev.irrigation[0].mean())
+    ret = _spread(ev.profit[0])
+    ret["low"], ret["high"] = smart.profit_extremes(ev, 0)       # the climate models and the rotation effects' range
     figures = {
-        "return": _spread(ev.profit[0]),
+        "return": ret,
         "bare_days": round(float(ev.bare[0]), 1),
         "irrigation_mm": round(irrigation, 0), "irrigation_in": round(irrigation / MM_PER_INCH, 1),
         "water_met_share": round(float(ev.water_met[0].mean()), 3) if planted else None,

@@ -113,6 +113,8 @@ export interface Plan {
   numbers?: PlanNumbers;
   /** place among all the patterns compared (`candidates`), sorted on scores.robust */
   rank?: number | null;
+  /** the rotation effects this plan's years run into (smart planner, when the effects are on) */
+  rotation_effects?: RotationEffect[];
 }
 
 /** The field's own last four years, scored like a plan (smart planner). */
@@ -154,6 +156,31 @@ export interface PlannerSettings {
   /** plain sentences on what the scores leave out */
   limits?: string[];
   models?: string[];
+  /** ROTATION_EFFECTS: the yield cost of a crop after itself, and whether it was applied */
+  rotation_effects?: RotationEffects;
+  /** the price / cost what-if the answer was scored under */
+  what_if?: { active: boolean; price_pct: number; cost_pct: number; crop_price_pct: Record<string, number>; note: string | null };
+}
+
+export interface RotationEffect {
+  id: string;
+  crop: string;
+  after: string;
+  /** relative yield of the crop after that crop; 1 = the same as after another crop */
+  multiplier: number;
+  /** the stronger and the weaker end of the range the trials gave */
+  low: number;
+  high: number;
+  /** "verified" or "rough, unverified" */
+  status: string;
+  sentence?: string;
+}
+
+export interface RotationEffects {
+  setting: "on" | "off";
+  applied: boolean;
+  effects: RotationEffect[];
+  problem?: string;
 }
 
 export interface ClimateSummary {
@@ -402,6 +429,8 @@ export interface FieldPlans {
   candidates?: number;
   /** irrigated fields on the smart engine only: the measured wells near the field and the pumping what-if */
   water_outlook?: WaterOutlook;
+  /** smart engine: the price change at which the top plan's return over direct costs reaches zero */
+  sensitivity?: import("./lib/planner").Sensitivity | null;
 }
 
 /** low, middle and high across the wells used (feet, or feet a year) */

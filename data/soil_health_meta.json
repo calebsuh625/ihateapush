@@ -1,0 +1,3259 @@
+{
+ "recommended": "bare_days",
+ "om_noise_sd": 0.13936440000000003,
+ "verdict": "On fields where nothing changed, the satellite organic-matter estimate still jumps by about 0.14 points from one year to the next, while a good rotation is expected to add only 0.1 to 0.3 points in ten years, so on a single field real change is buried in noise. Averaging many fields does not fix this, because within one kind of soil the estimate cannot be shown to follow organic matter (it mostly tells sand from loam) and it shifts with whatever crop residue lies on the surface; compare rotations by bare days (how long the soil sits uncovered each year) instead, which measures how exposed the soil is, not what the soil has become.",
+ "trustworthy": {
+  "om_pred": false,
+  "bare_days": true
+ },
+ "notes": {
+  "om_pred": "om_pred is a rough picture of the kind of soil (sand against loam). Its year-to-year movement and its trend on a field are noise and crop residue, not soil change.",
+  "bare_days": "bare_days measures how long the soil sat uncovered, which is exposure, not what the soil has become. One field-year only tells a fallow year from a cropped year; compare rotations on multi-year means over many fields, within the same years.",
+  "confidence": "confidence says how repeatable om_pred is in that row (how often and how fully the field was seen bare, and whether the two satellites agreed), scaled by the model's overall skill. It is not accuracy: it does not tell a good year from a bad year of the same field, and on sandy soils higher confidence goes with a larger error."
+ },
+ "method_version": "2",
+ "generated_utc": "2026-11-15T03:09:36Z",
+ "inputs": {
+  "obs": "data/soil_bare_obs.parquet",
+  "fields": "data/fields.parquet",
+  "n_fields": 7255,
+  "n_fields_in_fields_file": 7255,
+  "years": [
+   2016,
+   2024
+  ],
+  "obs_method": {
+   "bare_days": {
+    "min_clear_per_month": 0.5,
+    "min_months": 8
+   },
+   "request": {
+    "landsat": {
+     "bands": {
+      "blue": "SR_B2",
+      "green": "SR_B3",
+      "nir": "SR_B5",
+      "red": "SR_B4",
+      "swir1": "SR_B6",
+      "swir2": "SR_B7"
+     },
+     "buffer_m": 30.0,
+     "collections": [
+      [
+       "LANDSAT/LC08/C02/T1_L2",
+       2013
+      ],
+      [
+       "LANDSAT/LC09/C02/T1_L2",
+       2021
+      ]
+     ],
+     "columns": [
+      "n_px",
+      "bare_px",
+      "sum_blue",
+      "sum_green",
+      "sum_red",
+      "sum_nir",
+      "sum_swir1",
+      "sum_swir2",
+      "clear_01",
+      "clear_02",
+      "clear_03",
+      "clear_04",
+      "clear_05",
+      "clear_06",
+      "clear_07",
+      "clear_08",
+      "clear_09",
+      "clear_10",
+      "clear_11",
+      "clear_12",
+      "bare_01",
+      "bare_02",
+      "bare_03",
+      "bare_04",
+      "bare_05",
+      "bare_06",
+      "bare_07",
+      "bare_08",
+      "bare_09",
+      "bare_10",
+      "bare_11",
+      "bare_12"
+     ],
+     "grid": [
+      "EPSG:32614",
+      [
+       30,
+       0,
+       15,
+       0,
+       -30,
+       15
+      ]
+     ],
+     "nbr2_max": 0.1,
+     "ndsi_max": -0.25,
+     "ndvi_max": 0.25,
+     "qa_pixel_reject": 191,
+     "qa_radsat_reject": 2174,
+     "scale_offset": [
+      2.75e-05,
+      -0.2
+     ],
+     "scene_max_cloud": [
+      "CLOUD_COVER",
+      80
+     ],
+     "sensor": "landsat",
+     "valid": [
+      0.0,
+      1.0
+     ],
+     "version": "1"
+    },
+    "s2": {
+     "bands": {
+      "blue": "B2",
+      "green": "B3",
+      "nir": "B8",
+      "nir8a": "B8A",
+      "re1": "B5",
+      "re2": "B6",
+      "re3": "B7",
+      "red": "B4",
+      "swir1": "B11",
+      "swir2": "B12"
+     },
+     "buffer_m": 30.0,
+     "cloud_score": [
+      "GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED",
+      "cs",
+      0.6
+     ],
+     "collection": "COPERNICUS/S2_SR_HARMONIZED",
+     "columns": [
+      "n_px",
+      "bare_px",
+      "sum_blue",
+      "sum_green",
+      "sum_red",
+      "sum_re1",
+      "sum_re2",
+      "sum_re3",
+      "sum_nir",
+      "sum_nir8a",
+      "sum_swir1",
+      "sum_swir2",
+      "clear_01",
+      "clear_02",
+      "clear_03",
+      "clear_04",
+      "clear_05",
+      "clear_06",
+      "clear_07",
+      "clear_08",
+      "clear_09",
+      "clear_10",
+      "clear_11",
+      "clear_12",
+      "bare_01",
+      "bare_02",
+      "bare_03",
+      "bare_04",
+      "bare_05",
+      "bare_06",
+      "bare_07",
+      "bare_08",
+      "bare_09",
+      "bare_10",
+      "bare_11",
+      "bare_12"
+     ],
+     "grid": [
+      "EPSG:32614",
+      [
+       40,
+       0,
+       0,
+       0,
+       -40,
+       10
+      ]
+     ],
+     "nbr2_max": 0.08,
+     "ndsi_max": -0.25,
+     "ndvi_max": 0.2,
+     "scale_offset": [
+      0.0001,
+      0.0
+     ],
+     "scene_max_cloud": [
+      "CLOUDY_PIXEL_PERCENTAGE",
+      80
+     ],
+     "scl_reject": [
+      0,
+      1,
+      6,
+      11
+     ],
+     "sensor": "s2",
+     "valid": [
+      0.0,
+      1.0
+     ],
+     "version": "1"
+    }
+   },
+   "snow_screen": true
+  },
+  "snow_screened_input": true,
+  "composites": {
+   "landsat": 65295,
+   "s2": 58040
+  },
+  "usable_composites": {
+   "landsat": 55542,
+   "s2": 51449
+  },
+  "composites_dropped_as_snow": {
+   "landsat": 0,
+   "s2": 0
+  }
+ },
+ "warnings": [],
+ "model": {
+  "label": "organic_matter_pct of data/fields.parquet: SSURGO om_r, surface horizon, area-weighted over the field's map units",
+  "what_accuracy_means": "SSURGO om_r is the soil survey's representative value for a mapped soil, not a measurement of the field. Accuracy here = how well bare-soil reflectance tells which mapped soil a field lies on, for a soil map unit the model has never seen. It says nothing about following organic matter that changes over time.",
+  "method_version": "2",
+  "features": [
+   "blue",
+   "green",
+   "red",
+   "nir",
+   "swir1",
+   "swir2",
+   "nbr2",
+   "ndvi",
+   "bsi",
+   "brightness",
+   "vis",
+   "swir_ratio",
+   "swir_nir",
+   "redness",
+   "saturation",
+   "ri"
+  ],
+  "hgb_configs": {
+   "small": {
+    "learning_rate": 0.05,
+    "max_iter": 100,
+    "max_leaf_nodes": 6,
+    "min_samples_leaf": 40,
+    "l2_regularization": 1.0
+   },
+   "medium": {
+    "learning_rate": 0.05,
+    "max_iter": 200,
+    "max_leaf_nodes": 15,
+    "min_samples_leaf": 20,
+    "l2_regularization": 1.0
+   },
+   "large": {
+    "learning_rate": 0.05,
+    "max_iter": 300,
+    "max_leaf_nodes": 31,
+    "min_samples_leaf": 20,
+    "l2_regularization": 0.1
+   }
+  },
+  "default_config": "medium",
+  "n_splits": 10,
+  "block_km": 7.5,
+  "schemes_explained": {
+   "map_unit": "grouped by dominant soil map unit, model size chosen inside each training fold (HEADLINE)",
+   "map_unit_fixed": "grouped by dominant soil map unit, fixed model size (like-for-like with the rows below)",
+   "series": "grouped by soil series: map units of one series share a fold (stricter than the headline)",
+   "block": "grouped by 7.5 km spatial blocks",
+   "field": "grouped by field (leaks through the map unit)",
+   "random": "plain random K-fold over rows (leaks; the number that lies)"
+  },
+  "labels": {
+   "n_fields": 7255,
+   "n_map_units": 53,
+   "n_label_values": 1294,
+   "largest_map_unit_share": 0.26505858028945556,
+   "largest_map_units": [
+    [
+     "1152338",
+     1923
+    ],
+    [
+     "2668829",
+     614
+    ],
+    [
+     "1152366",
+     530
+    ],
+    [
+     "2509172",
+     497
+    ],
+    [
+     "1152362",
+     456
+    ]
+   ],
+   "map_units_with_one_field": 5,
+   "map_units_with_under_5_fields": 10,
+   "effective_map_units": 9.679970773435459,
+   "label_mean": 1.5810452101998622,
+   "label_sd": 0.4642445227109671,
+   "label_min": 0.51,
+   "label_max": 3.6,
+   "label_variance_between_map_units": 0.9498389241455065,
+   "median_dominant_share": 0.8601913450327097,
+   "n_series": 23
+  },
+  "headline": {
+   "scheme": "map_unit",
+   "what": "om_pred of the table (both families combined), out-of-fold by dominant map unit",
+   "row": {
+    "n": 58477,
+    "r2": 0.24545504943286,
+    "rmse": 0.386386348997196,
+    "mae": 0.2752524924329224,
+    "spearman": 0.3154500513781276,
+    "calibration_slope": 1.016924473161609,
+    "sensitivity": 0.2421027819955416,
+    "bias": 0.011573746943242638,
+    "r2_interval90": [
+     -0.12036163680798213,
+     0.325899954169045
+    ]
+   },
+   "field": {
+    "n": 7247,
+    "r2": 0.34852493868260037,
+    "rmse": 0.3745264245434434,
+    "mae": 0.2757798352246469,
+    "spearman": 0.4185427694552854,
+    "calibration_slope": 1.5945739681231006,
+    "sensitivity": 0.2561942227629161,
+    "bias": 0.026237485023907003,
+    "r2_interval90": [
+     0.033973842668389896,
+     0.4147868858941919
+    ],
+    "sensitivity_interval90": [
+     0.12569607579032469,
+     0.3110729585243098
+    ]
+   }
+  },
+  "combined": {
+   "map_unit": {
+    "hgb": {
+     "row": {
+      "n": 58477,
+      "r2": 0.2454573944416366,
+      "rmse": 0.38638574858228175,
+      "mae": 0.27525337091182944,
+      "spearman": 0.3154724596404145,
+      "calibration_slope": 1.0169237265825994,
+      "sensitivity": 0.24210516623314707,
+      "bias": 0.011572927391916035,
+      "r2_interval90": [
+       -0.12034826865443747,
+       0.32590926569196765
+      ]
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.348525439490352,
+      "rmse": 0.3745262805887598,
+      "mae": 0.27578009033978185,
+      "spearman": 0.418561137295903,
+      "calibration_slope": 1.5945508223662748,
+      "sensitivity": 0.2561961124508081,
+      "bias": 0.026236505673533795,
+      "r2_interval90": [
+       0.03395625403505378,
+       0.4147886290673948
+      ],
+      "sensitivity_interval90": [
+       0.12569735651771038,
+       0.3110756252535674
+      ]
+     }
+    },
+    "ridge": {
+     "row": {
+      "n": 58477,
+      "r2": 0.13055473978750365,
+      "rmse": 0.4147633160103841,
+      "mae": 0.31516201039328523,
+      "spearman": 0.28122739256560425,
+      "calibration_slope": 0.8654469168568676,
+      "sensitivity": 0.15537906638442672,
+      "bias": 0.01148944557655468
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.2223279925619871,
+      "rmse": 0.4091963961691802,
+      "mae": 0.31037203626745064,
+      "spearman": 0.3974235946991056,
+      "calibration_slope": 1.6939642203100926,
+      "sensitivity": 0.16113015584592041,
+      "bias": 0.03218869273258775
+     }
+    },
+    "mean": {
+     "row": {
+      "n": 58477,
+      "r2": -0.10451487068014464,
+      "rmse": 0.4674821142677039,
+      "mae": 0.35899293980466307,
+      "spearman": -0.4535428029805931,
+      "calibration_slope": -7.1367332073009075,
+      "sensitivity": -0.04880041983104951,
+      "bias": -0.003880604153431788
+     },
+     "field": {
+      "n": 7247,
+      "r2": -0.11035266841675107,
+      "rmse": 0.4889495346790343,
+      "mae": 0.3775505973393328,
+      "spearman": -0.4914380223308716,
+      "calibration_slope": -7.698504757944045,
+      "sensitivity": -0.05051714994125589,
+      "bias": 0.024361649669250342
+     }
+    }
+   },
+   "map_unit_fixed": {
+    "hgb": {
+     "row": {
+      "n": 58477,
+      "r2": 0.26566701827363837,
+      "rmse": 0.3811761621677904,
+      "mae": 0.27074648719704886,
+      "spearman": 0.3227097445875605,
+      "calibration_slope": 0.9956576177599439,
+      "sensitivity": 0.2672602344506879,
+      "bias": 0.009198190821332011,
+      "r2_interval90": [
+       -0.11200456743096407,
+       0.35294191561148597
+      ]
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.37972003385485786,
+      "rmse": 0.3654495606548733,
+      "mae": 0.2682828788569285,
+      "spearman": 0.42717046947455417,
+      "calibration_slope": 1.5236586322916807,
+      "sensitivity": 0.2843308424219083,
+      "bias": 0.02240319776405633,
+      "r2_interval90": [
+       0.0465612852610175,
+       0.4544757532067495
+      ],
+      "sensitivity_interval90": [
+       0.13596287519816228,
+       0.34521458475915734
+      ]
+     }
+    },
+    "ridge": {
+     "row": {
+      "n": 58477,
+      "r2": 0.13055473978750365,
+      "rmse": 0.4147633160103841,
+      "mae": 0.31516201039328523,
+      "spearman": 0.28122739256560425,
+      "calibration_slope": 0.8654469168568676,
+      "sensitivity": 0.15537906638442672,
+      "bias": 0.01148944557655468
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.2223279925619871,
+      "rmse": 0.4091963961691802,
+      "mae": 0.31037203626745064,
+      "spearman": 0.3974235946991056,
+      "calibration_slope": 1.6939642203100926,
+      "sensitivity": 0.16113015584592041,
+      "bias": 0.03218869273258775
+     }
+    },
+    "mean": {
+     "row": {
+      "n": 58477,
+      "r2": -0.10451487068014464,
+      "rmse": 0.4674821142677039,
+      "mae": 0.35899293980466307,
+      "spearman": -0.4535428029805931,
+      "calibration_slope": -7.1367332073009075,
+      "sensitivity": -0.04880041983104951,
+      "bias": -0.003880604153431788
+     },
+     "field": {
+      "n": 7247,
+      "r2": -0.11035266841675107,
+      "rmse": 0.4889495346790343,
+      "mae": 0.3775505973393328,
+      "spearman": -0.4914380223308716,
+      "calibration_slope": -7.698504757944045,
+      "sensitivity": -0.05051714994125589,
+      "bias": 0.024361649669250342
+     }
+    }
+   },
+   "series": {
+    "hgb": {
+     "row": {
+      "n": 58477,
+      "r2": 0.062099360294710304,
+      "rmse": 0.43078208297251697,
+      "mae": 0.30830172150470203,
+      "spearman": 0.23436116832316534,
+      "calibration_slope": 0.7038339328137321,
+      "sensitivity": 0.12578404196199727,
+      "bias": 0.046132360625023384,
+      "r2_interval90": [
+       -0.2132183146512913,
+       0.12186293292586882
+      ]
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.14347085591450293,
+      "rmse": 0.42944212111271945,
+      "mae": 0.3072582717831132,
+      "spearman": 0.33229052274120235,
+      "calibration_slope": 1.346553673842386,
+      "sensitivity": 0.13037473599903707,
+      "bias": 0.0663682833226355,
+      "r2_interval90": [
+       -0.11362120528564221,
+       0.20434031308667133
+      ],
+      "sensitivity_interval90": [
+       0.07081916365831253,
+       0.1746549266385857
+      ]
+     }
+    },
+    "ridge": {
+     "row": {
+      "n": 58477,
+      "r2": -0.05647103254094743,
+      "rmse": 0.45720188538611206,
+      "mae": 0.33986705381582066,
+      "spearman": 0.11812674438103123,
+      "calibration_slope": 0.3422594158283561,
+      "sensitivity": 0.05491223992050118,
+      "bias": 0.034036632050586234
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.02096100312654836,
+      "rmse": 0.4591277707958222,
+      "mae": 0.33574292254888666,
+      "spearman": 0.1817611607487652,
+      "calibration_slope": 0.7710430259307546,
+      "sensitivity": 0.05316444027789637,
+      "bias": 0.059453100945998705
+     }
+    },
+    "mean": {
+     "row": {
+      "n": 58477,
+      "r2": -0.20880566871742,
+      "rmse": 0.48905472571711156,
+      "mae": 0.3731290570564451,
+      "spearman": -0.2291074491676511,
+      "calibration_slope": -5.328886843588192,
+      "sensitivity": -0.09507590150155955,
+      "bias": -0.01267729427284255
+     },
+     "field": {
+      "n": 7247,
+      "r2": -0.2195446058650652,
+      "rmse": 0.5124274800176972,
+      "mae": 0.39295484938551983,
+      "spearman": -0.2954128808771428,
+      "calibration_slope": -5.491915864008592,
+      "sensitivity": -0.09993561822390591,
+      "bias": 0.017830020195434493
+     }
+    }
+   },
+   "block": {
+    "hgb": {
+     "row": {
+      "n": 58477,
+      "r2": 0.34807012799838066,
+      "rmse": 0.3591531306921664,
+      "mae": 0.249106352123607,
+      "spearman": 0.39372375933241405,
+      "calibration_slope": 1.0969282517682157,
+      "sensitivity": 0.32008074019654,
+      "bias": 0.007627214632805289,
+      "r2_interval90": [
+       -0.014311001614443573,
+       0.43649617137061997
+      ]
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.4563338481361634,
+      "rmse": 0.34213674113618886,
+      "mae": 0.2466020396820339,
+      "spearman": 0.49349335043430703,
+      "calibration_slope": 1.5465824369666399,
+      "sensitivity": 0.3384384984571723,
+      "bias": 0.01920623646410084,
+      "r2_interval90": [
+       0.12814385336712592,
+       0.5324832531486636
+      ],
+      "sensitivity_interval90": [
+       0.16765270735079568,
+       0.40372384259620503
+      ]
+     }
+    },
+    "ridge": {
+     "row": {
+      "n": 58477,
+      "r2": 0.23762523539345226,
+      "rmse": 0.3883859153216755,
+      "mae": 0.2912559149580779,
+      "spearman": 0.35203801025347753,
+      "calibration_slope": 1.085143905421506,
+      "sensitivity": 0.22071483112918466,
+      "bias": 0.008980371503052614
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.331591213204678,
+      "rmse": 0.3793627126315606,
+      "mae": 0.2846251637453917,
+      "spearman": 0.4678522337998115,
+      "calibration_slope": 1.8539857130242174,
+      "sensitivity": 0.22936223271263462,
+      "bias": 0.027136839803156863
+     }
+    },
+    "mean": {
+     "row": {
+      "n": 58477,
+      "r2": -0.02042387725912076,
+      "rmse": 0.44933424846627507,
+      "mae": 0.3337020572012528,
+      "spearman": -0.32307597306570307,
+      "calibration_slope": -13.35907008886136,
+      "sensitivity": -0.009669086071347133,
+      "bias": 0.008462252071863352
+     },
+     "field": {
+      "n": 7247,
+      "r2": -0.025869563334860235,
+      "rmse": 0.4699802839175942,
+      "mae": 0.35196584983901985,
+      "spearman": -0.35659036689934753,
+      "calibration_slope": -16.018399355158355,
+      "sensitivity": -0.009757391387679715,
+      "bias": 0.03517247476265987
+     }
+    }
+   },
+   "field": {
+    "hgb": {
+     "row": {
+      "n": 58477,
+      "r2": 0.38324841485218597,
+      "rmse": 0.34932876864967677,
+      "mae": 0.24121375926655436,
+      "spearman": 0.42082672500681945,
+      "calibration_slope": 1.1259120175699187,
+      "sensitivity": 0.344844272386686,
+      "bias": 0.005629737442356406,
+      "r2_interval90": [
+       0.02686408434661535,
+       0.4733026040549784
+      ]
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.4885572338947972,
+      "rmse": 0.33184256145885416,
+      "mae": 0.23828333327472898,
+      "spearman": 0.5187333102756727,
+      "calibration_slope": 1.5318192380671112,
+      "sensitivity": 0.36359278468280926,
+      "bias": 0.016524624417931944,
+      "r2_interval90": [
+       0.15696952979250858,
+       0.5681589560861704
+      ],
+      "sensitivity_interval90": [
+       0.17882265509205353,
+       0.43207325435078026
+      ]
+     }
+    },
+    "ridge": {
+     "row": {
+      "n": 58477,
+      "r2": 0.25827491394721425,
+      "rmse": 0.38308989781105596,
+      "mae": 0.2872576223448822,
+      "spearman": 0.3660370462536734,
+      "calibration_slope": 1.1116028356905914,
+      "sensitivity": 0.23494424780083445,
+      "bias": 0.00713501230070213
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.3532473273628348,
+      "rmse": 0.37316652892283214,
+      "mae": 0.2802384721428368,
+      "spearman": 0.48113333133302444,
+      "calibration_slope": 1.852531284240351,
+      "sensitivity": 0.24387992755957824,
+      "bias": 0.024839705760254963
+     }
+    },
+    "mean": {
+     "row": {
+      "n": 58477,
+      "r2": -0.00014515292675554292,
+      "rmse": 0.44484706866942986,
+      "mae": 0.3303517767526109,
+      "spearman": 0.020610471167148273,
+      "calibration_slope": 11.049013877852516,
+      "sensitivity": 0.00010825395698577523,
+      "bias": 0.008343843644962767
+     },
+     "field": {
+      "n": 7247,
+      "r2": -0.005340361535812521,
+      "rmse": 0.4652540112486346,
+      "mae": 0.3484401491881471,
+      "spearman": 0.04994190499877886,
+      "calibration_slope": 33.44710719402161,
+      "sensitivity": 0.00013446712569607484,
+      "bias": 0.03474017871116702
+     }
+    }
+   },
+   "random": {
+    "hgb": {
+     "row": {
+      "n": 58477,
+      "r2": 0.3836505442678546,
+      "rmse": 0.3492148668110996,
+      "mae": 0.24113195109506874,
+      "spearman": 0.42204506038592954,
+      "calibration_slope": 1.125924819717099,
+      "sensitivity": 0.34519541317923746,
+      "bias": 0.005483132645436143,
+      "r2_interval90": [
+       0.027599478593562873,
+       0.473568561518666
+      ]
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.48918471331505076,
+      "rmse": 0.3316389333134134,
+      "mae": 0.2382105928258091,
+      "spearman": 0.5199908324891318,
+      "calibration_slope": 1.5353630337413802,
+      "sensitivity": 0.36364660922383607,
+      "bias": 0.016478746414620462,
+      "r2_interval90": [
+       0.15952325400965842,
+       0.568418625984155
+      ],
+      "sensitivity_interval90": [
+       0.18006583419679723,
+       0.43171661513290494
+      ]
+     }
+    },
+    "ridge": {
+     "row": {
+      "n": 58477,
+      "r2": 0.25844232639174325,
+      "rmse": 0.38304666236118823,
+      "mae": 0.2872314099519213,
+      "spearman": 0.36628297487919925,
+      "calibration_slope": 1.1118422683146443,
+      "sensitivity": 0.23505546003002653,
+      "bias": 0.007141968097730408
+     },
+     "field": {
+      "n": 7247,
+      "r2": 0.3534347606234678,
+      "rmse": 0.37311245192360526,
+      "mae": 0.2801980704450266,
+      "spearman": 0.4813191256166041,
+      "calibration_slope": 1.8528374298427022,
+      "sensitivity": 0.24399461467842964,
+      "bias": 0.024847484005034674
+     }
+    },
+    "mean": {
+     "row": {
+      "n": 58477,
+      "r2": -9.252978648155441e-05,
+      "rmse": 0.44483536558935344,
+      "mae": 0.33034198073835813,
+      "spearman": 0.04102141009010129,
+      "calibration_slope": 16.901945105360316,
+      "sensitivity": 0.00013363570743960535,
+      "bias": 0.00834421646770324
+     },
+     "field": {
+      "n": 7247,
+      "r2": -0.005303974270804979,
+      "rmse": 0.4652455914761683,
+      "mae": 0.348432900518508,
+      "spearman": 0.08884192432720706,
+      "calibration_slope": 87.13258210091145,
+      "sensitivity": 0.00015177511295959444,
+      "bias": 0.034741750162740455
+     }
+    }
+   }
+  },
+  "honest_r2_range": [
+   0.062099360294710304,
+   0.24545504943286
+  ],
+  "families": {
+   "landsat": {
+    "n_composites": 55542,
+    "n_fields": 7231,
+    "configs_chosen_in_headline_folds": {
+     "small": 7,
+     "medium": 3
+    },
+    "schemes": {
+     "map_unit": {
+      "hgb": {
+       "row": {
+        "n": 55542,
+        "r2": 0.2282509471471741,
+        "rmse": 0.38320658928615897,
+        "mae": 0.2685962487237856,
+        "spearman": 0.2683736996890553,
+        "calibration_slope": 0.9079643483128075,
+        "sensitivity": 0.2541058071248703,
+        "bias": 0.004306516371135128,
+        "r2_interval90": [
+         -0.19297966180069107,
+         0.3383720689268486
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.3472314307101583,
+        "rmse": 0.3742941444165,
+        "mae": 0.27291572062372865,
+        "spearman": 0.37659478967776333,
+        "calibration_slope": 1.3912772790758323,
+        "sensitivity": 0.2729813015858797,
+        "bias": 0.0232653608994062,
+        "r2_interval90": [
+         -0.00170489852857302,
+         0.42703939272768265
+        ],
+        "sensitivity_interval90": [
+         0.13025741898073914,
+         0.33278562363726194
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 55542,
+        "r2": 0.10474196645571032,
+        "rmse": 0.4127328430393139,
+        "mae": 0.31320621681031735,
+        "spearman": 0.2564837726413743,
+        "calibration_slope": 0.752716231281469,
+        "sensitivity": 0.15614298823907966,
+        "bias": 0.004461935970019482
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.21629182485064014,
+        "rmse": 0.41011967442936575,
+        "mae": 0.3103732776785509,
+        "spearman": 0.37128567432974646,
+        "calibration_slope": 1.5405123881676477,
+        "sensitivity": 0.16355995499234596,
+        "bias": 0.03160992567861388
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 55542,
+        "r2": -0.10479312565768861,
+        "rmse": 0.458495837541956,
+        "mae": 0.35119640676137204,
+        "spearman": -0.4477160957634929,
+        "calibration_slope": -6.818382179644329,
+        "sensitivity": -0.048411643902588584,
+        "bias": -0.01286390057746248
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.11063863777642413,
+        "rmse": 0.48822476426129086,
+        "mae": 0.37655696184622717,
+        "spearman": -0.49386318947888347,
+        "calibration_slope": -7.562377358692193,
+        "sensitivity": -0.05048002597595765,
+        "bias": 0.025388811795508365
+       }
+      }
+     },
+     "map_unit_fixed": {
+      "hgb": {
+       "row": {
+        "n": 55542,
+        "r2": 0.24076864820010868,
+        "rmse": 0.38008609561188383,
+        "mae": 0.26595448601979227,
+        "spearman": 0.27825108663852355,
+        "calibration_slope": 0.8810441049361881,
+        "sensitivity": 0.2784617925348031,
+        "bias": 0.004275744327210117,
+        "r2_interval90": [
+         -0.1910904512351349,
+         0.35700426821811126
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.3744884670482006,
+        "rmse": 0.3663962972802387,
+        "mae": 0.26589022905503623,
+        "spearman": 0.38838907126344696,
+        "calibration_slope": 1.3381939365796818,
+        "sensitivity": 0.3006521995065332,
+        "bias": 0.021459949854576284,
+        "r2_interval90": [
+         0.013236363457234465,
+         0.4620499830841596
+        ],
+        "sensitivity_interval90": [
+         0.14332961208517503,
+         0.36708820120704583
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 55542,
+        "r2": 0.10474196645571032,
+        "rmse": 0.4127328430393139,
+        "mae": 0.31320621681031735,
+        "spearman": 0.2564837726413743,
+        "calibration_slope": 0.752716231281469,
+        "sensitivity": 0.15614298823907966,
+        "bias": 0.004461935970019482
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.21629182485064014,
+        "rmse": 0.41011967442936575,
+        "mae": 0.3103732776785509,
+        "spearman": 0.37128567432974646,
+        "calibration_slope": 1.5405123881676477,
+        "sensitivity": 0.16355995499234596,
+        "bias": 0.03160992567861388
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 55542,
+        "r2": -0.10479312565768861,
+        "rmse": 0.458495837541956,
+        "mae": 0.35119640676137204,
+        "spearman": -0.4477160957634929,
+        "calibration_slope": -6.818382179644329,
+        "sensitivity": -0.048411643902588584,
+        "bias": -0.01286390057746248
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.11063863777642413,
+        "rmse": 0.48822476426129086,
+        "mae": 0.37655696184622717,
+        "spearman": -0.49386318947888347,
+        "calibration_slope": -7.562377358692193,
+        "sensitivity": -0.05048002597595765,
+        "bias": 0.025388811795508365
+       }
+      }
+     },
+     "series": {
+      "hgb": {
+       "row": {
+        "n": 55542,
+        "r2": 0.05005530461544094,
+        "rmse": 0.4251518533362638,
+        "mae": 0.30209389236770606,
+        "spearman": 0.21615678059848661,
+        "calibration_slope": 0.6266653551173077,
+        "sensitivity": 0.1445127499553337,
+        "bias": 0.03989410197433224,
+        "r2_interval90": [
+         -0.27800929583186373,
+         0.13553102773696
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.1532680821239486,
+        "rmse": 0.4262912131152402,
+        "mae": 0.3044193410485264,
+        "spearman": 0.3108641708563481,
+        "calibration_slope": 1.1495498018745385,
+        "sensitivity": 0.1533019224068877,
+        "bias": 0.065479353472687,
+        "r2_interval90": [
+         -0.12387826983086518,
+         0.22721327681459944
+        ],
+        "sensitivity_interval90": [
+         0.0802134788699761,
+         0.20842713800785787
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 55542,
+        "r2": -0.07769828481064489,
+        "rmse": 0.4528386755102849,
+        "mae": 0.3362459631041099,
+        "spearman": 0.11181924914632879,
+        "calibration_slope": 0.3075670773049075,
+        "sensitivity": 0.05917576431825384,
+        "bias": 0.02635467051084248
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.017648919635363414,
+        "rmse": 0.4591628881595942,
+        "mae": 0.33491167363431207,
+        "spearman": 0.18728687840149383,
+        "calibration_slope": 0.7146494423391894,
+        "sensitivity": 0.05696918541908359,
+        "bias": 0.05963983046990535
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 55542,
+        "r2": -0.20366246468224136,
+        "rmse": 0.4785719877162929,
+        "mae": 0.3636364397420185,
+        "spearman": -0.20838935409733123,
+        "calibration_slope": -5.3555074651856645,
+        "sensitivity": -0.09192088710954081,
+        "bias": -0.022484400479431343
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.21596508608605558,
+        "rmse": 0.5108506708421957,
+        "mae": 0.3906012832049903,
+        "spearman": -0.30384184575761625,
+        "calibration_slope": -5.576263037660453,
+        "sensitivity": -0.0983446852425065,
+        "bias": 0.018757590828979702
+       }
+      }
+     },
+     "block": {
+      "hgb": {
+       "row": {
+        "n": 55542,
+        "r2": 0.32805271104901035,
+        "rmse": 0.3575711890464347,
+        "mae": 0.24285049685044002,
+        "spearman": 0.3594503081803626,
+        "calibration_slope": 0.977943637658517,
+        "sensitivity": 0.3356282741003911,
+        "bias": 0.0010563297113094009,
+        "r2_interval90": [
+         -0.08339003819124031,
+         0.4444306653998971
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.4552718151006312,
+        "rmse": 0.3419190819870243,
+        "mae": 0.24256534140183172,
+        "spearman": 0.46634948943284354,
+        "calibration_slope": 1.3715027556157628,
+        "sensitivity": 0.35916231383613106,
+        "bias": 0.01589891598718347,
+        "r2_interval90": [
+         0.09786661375339632,
+         0.5452946377499401
+        ],
+        "sensitivity_interval90": [
+         0.17860449464908987,
+         0.4316683525300233
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 55542,
+        "r2": 0.21740932032057003,
+        "rmse": 0.385888868840692,
+        "mae": 0.28864683352505954,
+        "spearman": 0.3264087296814732,
+        "calibration_slope": 0.9714307064874516,
+        "sensitivity": 0.22400567110311312,
+        "bias": 0.0012684245092598936
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.32973250075674954,
+        "rmse": 0.37927786362702065,
+        "mae": 0.28351101477912594,
+        "spearman": 0.4455584592595957,
+        "calibration_slope": 1.7181552466394583,
+        "sensitivity": 0.234607472585661,
+        "bias": 0.025103467126175973
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 55542,
+        "r2": -0.022824153397078772,
+        "rmse": 0.44115926367645325,
+        "mae": 0.3258750777703942,
+        "spearman": -0.25946437627150704,
+        "calibration_slope": -9.000215551084219,
+        "sensitivity": -0.010811454537854282,
+        "bias": 8.332393922636817e-06
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.02882755739927223,
+        "rmse": 0.4698992042970422,
+        "mae": 0.3509460876041258,
+        "spearman": -0.2871688409602299,
+        "calibration_slope": -10.235294382117385,
+        "sensitivity": -0.010830143255609931,
+        "bias": 0.036209617159634395
+       }
+      }
+     },
+     "field": {
+      "hgb": {
+       "row": {
+        "n": 55542,
+        "r2": 0.36435170143021,
+        "rmse": 0.34777900455795124,
+        "mae": 0.2349645327493322,
+        "spearman": 0.3934663489509526,
+        "calibration_slope": 1.014632021134225,
+        "sensitivity": 0.35917209790708676,
+        "bias": 6.443039524898456e-05,
+        "r2_interval90": [
+         -0.042463053041898055,
+         0.47889761359067073
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.4882072881104813,
+        "rmse": 0.3314213362058725,
+        "mae": 0.23416790287762076,
+        "spearman": 0.5018889211221916,
+        "calibration_slope": 1.3827424928207739,
+        "sensitivity": 0.383097944719794,
+        "bias": 0.014142944286681667,
+        "r2_interval90": [
+         0.13726947055705094,
+         0.5775624979773655
+        ],
+        "sensitivity_interval90": [
+         0.19287133051349276,
+         0.45673770491776666
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 55542,
+        "r2": 0.23733702398863055,
+        "rmse": 0.38094409636273285,
+        "mae": 0.284842705530212,
+        "spearman": 0.3396129077079261,
+        "calibration_slope": 0.9991139389368769,
+        "sensitivity": 0.23754769313171856,
+        "bias": 1.1676073013709412e-05
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.3503123480519168,
+        "rmse": 0.37340980862835066,
+        "mae": 0.27923757155831824,
+        "spearman": 0.4597704511037611,
+        "calibration_slope": 1.725828434455658,
+        "sensitivity": 0.24838653960902388,
+        "bias": 0.023337245037702913
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 55542,
+        "r2": -9.601631089561913e-05,
+        "rmse": 0.4362302362036291,
+        "mae": 0.3222025864604244,
+        "spearman": -0.02281805614128366,
+        "calibration_slope": -9.000037553460587,
+        "sensitivity": -4.5481420409133464e-05,
+        "bias": -3.686353954549357e-08
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.006046727438698385,
+        "rmse": 0.4646677073953346,
+        "mae": 0.34702269673452124,
+        "spearman": -0.019956107365290184,
+        "calibration_slope": -8.599191884783684,
+        "sensitivity": -3.8525907887118465e-05,
+        "bias": 0.03578044636937239
+       }
+      }
+     },
+     "random": {
+      "hgb": {
+       "row": {
+        "n": 55542,
+        "r2": 0.3656893940864835,
+        "rmse": 0.34741286935503213,
+        "mae": 0.234777521210512,
+        "spearman": 0.39541734154614927,
+        "calibration_slope": 1.015789047162224,
+        "sensitivity": 0.3600923155086842,
+        "bias": -0.00010900943341218913,
+        "r2_interval90": [
+         -0.03913918617462589,
+         0.4799650109983743
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.48939183083749793,
+        "rmse": 0.3310375771708082,
+        "mae": 0.23393675277009965,
+        "spearman": 0.5035540857986355,
+        "calibration_slope": 1.385047611716973,
+        "sensitivity": 0.3836593709231436,
+        "bias": 0.014097832188108473,
+        "r2_interval90": [
+         0.13965626155822203,
+         0.5787508898342154
+        ],
+        "sensitivity_interval90": [
+         0.1944771830465702,
+         0.457114805756097
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 55542,
+        "r2": 0.23740141320004293,
+        "rmse": 0.3809280150735722,
+        "mae": 0.2848205626022135,
+        "spearman": 0.33977528234019105,
+        "calibration_slope": 0.9991289414137088,
+        "sensitivity": 0.237608564699229,
+        "bias": 3.845188455072122e-06
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.35039299977817095,
+        "rmse": 0.37338663050553844,
+        "mae": 0.27921334649562496,
+        "spearman": 0.45991186955548896,
+        "calibration_slope": 1.7258818774220117,
+        "sensitivity": 0.24843922421036008,
+        "bias": 0.023331027216594375
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 55542,
+        "r2": -3.327677813147467e-05,
+        "rmse": 0.43621655286222966,
+        "mae": 0.3221860173177163,
+        "spearman": -0.008744935016795104,
+        "calibration_slope": -8.999598761642336,
+        "sensitivity": -1.5762647389601406e-05,
+        "bias": 2.0662419899334695e-08
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.006014747412279586,
+        "rmse": 0.46466032195127543,
+        "mae": 0.34701086460427116,
+        "spearman": -0.026881817559904885,
+        "calibration_slope": -102.32232612927268,
+        "sensitivity": -2.414224442575246e-05,
+        "bias": 0.03578353991365404
+       }
+      }
+     }
+    },
+    "field_median_check": {
+     "n_fields": 7061,
+     "hgb": {
+      "n": 7061,
+      "r2": 0.3785799574857803,
+      "rmse": 0.3589295460601297,
+      "mae": 0.24793570943582446,
+      "spearman": 0.40646809063629685,
+      "calibration_slope": 0.9690083186736119,
+      "sensitivity": 0.39129847253388245,
+      "bias": 0.0064978644041504855
+     },
+     "ridge": {
+      "n": 7061,
+      "r2": 0.28015400732521634,
+      "rmse": 0.3863103796108049,
+      "mae": 0.29584475677915656,
+      "spearman": 0.39185049948844525,
+      "calibration_slope": 0.9349317706129273,
+      "sensitivity": 0.30132276069853553,
+      "bias": 0.006401465943219569
+     },
+     "band_correlation_with_label": {
+      "blue": -0.07294836616423013,
+      "green": -0.20452675353390215,
+      "red": -0.3095362975640285,
+      "nir": -0.4108946613569223,
+      "swir1": -0.25144666246647573,
+      "swir2": -0.23738288207463923
+     }
+    }
+   },
+   "s2": {
+    "n_composites": 51449,
+    "n_fields": 7231,
+    "configs_chosen_in_headline_folds": {
+     "medium": 8,
+     "small": 2
+    },
+    "schemes": {
+     "map_unit": {
+      "hgb": {
+       "row": {
+        "n": 51449,
+        "r2": 0.1898505452946999,
+        "rmse": 0.39746038824008456,
+        "mae": 0.2843481190915081,
+        "spearman": 0.3123484061943481,
+        "calibration_slope": 0.8614044329903191,
+        "sensitivity": 0.2264326041585161,
+        "bias": 0.00541205621054656,
+        "r2_interval90": [
+         -0.15918666837457174,
+         0.2618498188517773
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.3293544298232598,
+        "rmse": 0.37979304726177016,
+        "mae": 0.28082819671832404,
+        "spearman": 0.44190793202116807,
+        "calibration_slope": 1.5569919340185987,
+        "sensitivity": 0.24437060140408587,
+        "bias": 0.02289111537746314,
+        "r2_interval90": [
+         0.03029956241910492,
+         0.38718614438501836
+        ],
+        "sensitivity_interval90": [
+         0.12799802356896323,
+         0.2951530651062355
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 51449,
+        "r2": 0.11065932662790734,
+        "rmse": 0.41643321119094384,
+        "mae": 0.3179730500433421,
+        "spearman": 0.2711797975565104,
+        "calibration_slope": 0.7740877482613727,
+        "sensitivity": 0.15629898825629931,
+        "bias": 0.0022018731207324727
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.2200376673754385,
+        "rmse": 0.40957863526711685,
+        "mae": 0.31283227248475437,
+        "spearman": 0.4007925019234222,
+        "calibration_slope": 1.6020463400015186,
+        "sensitivity": 0.16223949655894673,
+        "bias": 0.02611617890697814
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 51449,
+        "r2": -0.10547148789679239,
+        "rmse": 0.46428542816204194,
+        "mae": 0.3568643632247664,
+        "spearman": -0.4036203389500229,
+        "calibration_slope": -6.760958233019892,
+        "sensitivity": -0.04870983444305544,
+        "bias": -0.012853322094649247
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.11105522812154889,
+        "rmse": 0.48884176502829746,
+        "mae": 0.3780417259787748,
+        "spearman": -0.4484649791361126,
+        "calibration_slope": -7.358237493145751,
+        "sensitivity": -0.051102945517122016,
+        "bias": 0.020238233745126483
+       }
+      }
+     },
+     "map_unit_fixed": {
+      "hgb": {
+       "row": {
+        "n": 51449,
+        "r2": 0.20971609179944206,
+        "rmse": 0.39255711194341897,
+        "mae": 0.2798133641798408,
+        "spearman": 0.31678147933724354,
+        "calibration_slope": 0.86455561052891,
+        "sensitivity": 0.24867925239020955,
+        "bias": 0.0009022835993067904,
+        "r2_interval90": [
+         -0.14726106293460672,
+         0.2872204732350029
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.3583147089723072,
+        "rmse": 0.3715023129717015,
+        "mae": 0.2746192008165549,
+        "spearman": 0.44967567566564604,
+        "calibration_slope": 1.5074515825900878,
+        "sensitivity": 0.2690828579779028,
+        "bias": 0.01703475186859578,
+        "r2_interval90": [
+         0.04657893834736127,
+         0.4207061471585049
+        ],
+        "sensitivity_interval90": [
+         0.13684979109350312,
+         0.32398931131202435
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 51449,
+        "r2": 0.11065932662790734,
+        "rmse": 0.41643321119094384,
+        "mae": 0.3179730500433421,
+        "spearman": 0.2711797975565104,
+        "calibration_slope": 0.7740877482613727,
+        "sensitivity": 0.15629898825629931,
+        "bias": 0.0022018731207324727
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.2200376673754385,
+        "rmse": 0.40957863526711685,
+        "mae": 0.31283227248475437,
+        "spearman": 0.4007925019234222,
+        "calibration_slope": 1.6020463400015186,
+        "sensitivity": 0.16223949655894673,
+        "bias": 0.02611617890697814
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 51449,
+        "r2": -0.10547148789679239,
+        "rmse": 0.46428542816204194,
+        "mae": 0.3568643632247664,
+        "spearman": -0.4036203389500229,
+        "calibration_slope": -6.760958233019892,
+        "sensitivity": -0.04870983444305544,
+        "bias": -0.012853322094649247
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.11105522812154889,
+        "rmse": 0.48884176502829746,
+        "mae": 0.3780417259787748,
+        "spearman": -0.4484649791361126,
+        "calibration_slope": -7.358237493145751,
+        "sensitivity": -0.051102945517122016,
+        "bias": 0.020238233745126483
+       }
+      }
+     },
+     "series": {
+      "hgb": {
+       "row": {
+        "n": 51449,
+        "r2": 0.0062147837129482575,
+        "rmse": 0.4402076102667353,
+        "mae": 0.31798938195892795,
+        "spearman": 0.20846456402533103,
+        "calibration_slope": 0.531509741189289,
+        "sensitivity": 0.1062448695462445,
+        "bias": 0.035277794221008366,
+        "r2_interval90": [
+         -0.2740101659224371,
+         0.055802534540043
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.1159383545992212,
+        "rmse": 0.4360554858075437,
+        "mae": 0.3154409875518252,
+        "spearman": 0.3154798578111734,
+        "calibration_slope": 1.2443193253696145,
+        "sensitivity": 0.11082821078837413,
+        "bias": 0.05984351531432681,
+        "r2_interval90": [
+         -0.13913077271954327,
+         0.16404326810922926
+        ],
+        "sensitivity_interval90": [
+         0.0660896888731468,
+         0.1479739295378722
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 51449,
+        "r2": -0.07343448114604478,
+        "rmse": 0.4575083778781946,
+        "mae": 0.343587825665074,
+        "spearman": 0.11693911394404571,
+        "calibration_slope": 0.3060790220826775,
+        "sensitivity": 0.055931047356588826,
+        "bias": 0.02235366418416605
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.016643696486585147,
+        "rmse": 0.45989208255410974,
+        "mae": 0.34028031638019657,
+        "spearman": 0.15812902919968552,
+        "calibration_slope": 0.6942620822007329,
+        "sensitivity": 0.05208324339366375,
+        "bias": 0.05185747999807984
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 51449,
+        "r2": -0.2120992031137996,
+        "rmse": 0.48616127606386345,
+        "mae": 0.3722879413747664,
+        "spearman": -0.22722408216694315,
+        "calibration_slope": -5.129096226879736,
+        "sensitivity": -0.09549644556170868,
+        "bias": -0.022024892905442326
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.2237240298091845,
+        "rmse": 0.5130293647556624,
+        "mae": 0.39497109986706685,
+        "spearman": -0.305152068603616,
+        "calibration_slope": -5.324900261708891,
+        "sensitivity": -0.10186229920879894,
+        "bias": 0.013679203484923916
+       }
+      }
+     },
+     "block": {
+      "hgb": {
+       "row": {
+        "n": 51449,
+        "r2": 0.2897705466754841,
+        "rmse": 0.37214365584326986,
+        "mae": 0.2596692262974683,
+        "spearman": 0.3734426478555699,
+        "calibration_slope": 0.980821210344574,
+        "sensitivity": 0.29559825624729047,
+        "bias": 0.0030478115755054685,
+        "r2_interval90": [
+         -0.06229473301530006,
+         0.36670163187338234
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.429354089690163,
+        "rmse": 0.3503352476594377,
+        "mae": 0.25494377344081237,
+        "spearman": 0.4977243939525108,
+        "calibration_slope": 1.5534371557114337,
+        "sensitivity": 0.3176016496234924,
+        "bias": 0.017342018257747945,
+        "r2_interval90": [
+         0.11467347290058016,
+         0.49295769488049507
+        ],
+        "sensitivity_interval90": [
+         0.1663463754091879,
+         0.37379931766306834
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 51449,
+        "r2": 0.2097740689146993,
+        "rmse": 0.3925427122155977,
+        "mae": 0.29571902636094105,
+        "spearman": 0.33425017484224295,
+        "calibration_slope": 0.9660856248229402,
+        "sensitivity": 0.21744021329679947,
+        "bias": 0.00253359341313295
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.3222569656360671,
+        "rmse": 0.3817974392545968,
+        "mae": 0.2885858607297885,
+        "spearman": 0.4666556702600683,
+        "calibration_slope": 1.7554093869726286,
+        "sensitivity": 0.22709098387552817,
+        "bias": 0.023458611036463402
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 51449,
+        "r2": -0.018176369285764604,
+        "rmse": 0.44557702252150844,
+        "mae": 0.3318168311333737,
+        "spearman": -0.2501344259842379,
+        "calibration_slope": -8.98984348973808,
+        "sensitivity": -0.0086093471321059,
+        "bias": -5.560924712139512e-06
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.02359019423346731,
+        "rmse": 0.46920597969407385,
+        "mae": 0.35263231941724343,
+        "spearman": -0.2681857114103349,
+        "calibration_slope": -10.171612519299584,
+        "sensitivity": -0.009083750016258952,
+        "bias": 0.031212788179164563
+       }
+      }
+     },
+     "field": {
+      "hgb": {
+       "row": {
+        "n": 51449,
+        "r2": 0.3260361425744511,
+        "rmse": 0.3625180072839117,
+        "mae": 0.2522980641827251,
+        "spearman": 0.3939334725220644,
+        "calibration_slope": 1.0195089492759082,
+        "sensitivity": 0.3199146728238001,
+        "bias": 0.00024189543022039452,
+        "r2_interval90": [
+         -0.025642234285738606,
+         0.4064814926462288
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.46229374545409696,
+        "rmse": 0.3400736822934996,
+        "mae": 0.24703525652387376,
+        "spearman": 0.513941827746141,
+        "calibration_slope": 1.5417445304086455,
+        "sensitivity": 0.3427290870430792,
+        "bias": 0.013639004390763324,
+        "r2_interval90": [
+         0.14148960433147234,
+         0.5311593876973562
+        ],
+        "sensitivity_interval90": [
+         0.17261899318539592,
+         0.40439941324626516
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 51449,
+        "r2": 0.23264710330618232,
+        "rmse": 0.3868199361015055,
+        "mae": 0.2914473196139426,
+        "spearman": 0.3500816390955786,
+        "calibration_slope": 0.9998017460713696,
+        "sensitivity": 0.232693245201564,
+        "bias": -8.8053412004097e-06
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.3467202224740633,
+        "rmse": 0.3748435887812762,
+        "mae": 0.2838146437851058,
+        "spearman": 0.4816264156418329,
+        "calibration_slope": 1.765999929835251,
+        "sensitivity": 0.24315540818325695,
+        "bias": 0.020233745005624755
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 51449,
+        "r2": -7.460818011062464e-05,
+        "rmse": 0.4415983894061455,
+        "mae": 0.32880491989922056,
+        "spearman": -0.02002925159826544,
+        "calibration_slope": -9.000233157563528,
+        "sensitivity": -3.5340765078278146e-05,
+        "bias": -2.8026612143979986e-08
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.004476971980258648,
+        "rmse": 0.4648046586657304,
+        "mae": 0.3493448831301805,
+        "spearman": -0.018181745213440355,
+        "calibration_slope": -7.985676256215854,
+        "sensitivity": -2.8425399204940297e-05,
+        "bias": 0.030820709182227842
+       }
+      }
+     },
+     "random": {
+      "hgb": {
+       "row": {
+        "n": 51449,
+        "r2": 0.326452803031522,
+        "rmse": 0.3624059313399544,
+        "mae": 0.25215804304804545,
+        "spearman": 0.39422984418465723,
+        "calibration_slope": 1.0208526620469462,
+        "sensitivity": 0.3199181387173472,
+        "bias": 0.00020282477030281168,
+        "r2_interval90": [
+         -0.024060859709611165,
+         0.40619843719801535
+        ]
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.462499218095218,
+        "rmse": 0.3400087002389476,
+        "mae": 0.24698088844636476,
+        "spearman": 0.5143094129557352,
+        "calibration_slope": 1.5466563264377369,
+        "sensitivity": 0.34236416986370233,
+        "bias": 0.013690948520097196,
+        "r2_interval90": [
+         0.14212848493056365,
+         0.530356300322253
+        ],
+        "sensitivity_interval90": [
+         0.17453537956947604,
+         0.4036329337452382
+        ]
+       }
+      },
+      "ridge": {
+       "row": {
+        "n": 51449,
+        "r2": 0.2329569217844184,
+        "rmse": 0.386741839007161,
+        "mae": 0.29140356089025654,
+        "spearman": 0.35034559457714465,
+        "calibration_slope": 1.0003456705552078,
+        "sensitivity": 0.23287645184636135,
+        "bias": 1.2316814067745418e-05
+       },
+       "field": {
+        "n": 7231,
+        "r2": 0.3470044118732516,
+        "rmse": 0.3747620477893815,
+        "mae": 0.28374671112983746,
+        "spearman": 0.4819474476739658,
+        "calibration_slope": 1.7667730506863137,
+        "sensitivity": 0.2433147541033148,
+        "bias": 0.020257979485413417
+       }
+      },
+      "mean": {
+       "row": {
+        "n": 51449,
+        "r2": -2.49101290503706e-05,
+        "rmse": 0.44158741679880836,
+        "mae": 0.32880255389743684,
+        "spearman": -0.007984479400501291,
+        "calibration_slope": -8.999832228274874,
+        "sensitivity": -1.1799523236206614e-05,
+        "bias": 4.038955945208186e-09
+       },
+       "field": {
+        "n": 7231,
+        "r2": -0.00444031533350131,
+        "rmse": 0.4647961774679992,
+        "mae": 0.34934294554385154,
+        "spearman": -0.018609420266913607,
+        "calibration_slope": -63.66832978162422,
+        "sensitivity": -1.1823403191526483e-05,
+        "bias": 0.030820434196889044
+       }
+      }
+     }
+    },
+    "field_median_check": {
+     "n_fields": 7074,
+     "hgb": {
+      "n": 7074,
+      "r2": 0.33725679021853905,
+      "rmse": 0.3717598984561782,
+      "mae": 0.26276510442152945,
+      "spearman": 0.4021818700035563,
+      "calibration_slope": 0.9754093822241932,
+      "sensitivity": 0.3461474861580955,
+      "bias": 0.005850263483340133
+     },
+     "ridge": {
+      "n": 7074,
+      "r2": 0.2608398690156073,
+      "rmse": 0.3926080176612254,
+      "mae": 0.3038710153439872,
+      "spearman": 0.3884765307182925,
+      "calibration_slope": 0.936089889452878,
+      "sensitivity": 0.28024668088627824,
+      "bias": 0.007550690115926947
+     },
+     "band_correlation_with_label": {
+      "blue": 0.07078055780077548,
+      "green": -0.06755939147486331,
+      "red": -0.2037099219491299,
+      "nir": -0.3119547131481142,
+      "swir1": -0.1544733070899661,
+      "swir2": -0.13173299899580845
+     }
+    }
+   }
+  },
+  "pure_fields": {
+   "min_dominant_share": 0.9,
+   "row": {
+    "n": 25227,
+    "r2": 0.2565315118685205,
+    "rmse": 0.41122697133416447,
+    "mae": 0.3005635628493281,
+    "spearman": 0.37176802577680385,
+    "calibration_slope": 1.0788971268677343,
+    "sensitivity": 0.2662087662417252,
+    "bias": 0.08141947120149046
+   },
+   "field": {
+    "n": 3205,
+    "r2": 0.34581750691331636,
+    "rmse": 0.39929312872974043,
+    "mae": 0.30501121746774634,
+    "spearman": 0.49207026313992497,
+    "calibration_slope": 1.6402754066445369,
+    "sensitivity": 0.27762066814793834,
+    "bias": 0.09894654371889161
+   }
+  },
+  "sand_loam": {
+   "split_at": 1.2,
+   "below": {
+    "n_fields": 1555,
+    "spearman": 0.5347833894904969,
+    "sensitivity": 0.6476037364306649,
+    "rmse": 0.6095877847374577,
+    "mean_label": 0.7896045016077171,
+    "mean_pred": 1.369904219619252
+   },
+   "above": {
+    "n_fields": 5692,
+    "spearman": 0.00822717897605066,
+    "sensitivity": 0.03430013497773281,
+    "rmse": 0.2776214252767283,
+    "mean_label": 1.797851546029515,
+    "mean_pred": 1.6727245243254247
+   },
+   "within_type": {
+    "n_fields": 7247,
+    "sensitivity": 0.0842512073756392,
+    "spearman": 0.11419565304077997,
+    "sensitivity_interval90": [
+     0.0007079931219134844,
+     0.178729314410401
+    ]
+   }
+  },
+  "coverage": 0.895581591239758,
+  "coverage_by_year": {
+   "2016": 0.7838731909028256,
+   "2017": 0.8691936595451413,
+   "2018": 0.9314955203308063,
+   "2019": 0.8752584424534804,
+   "2020": 0.8920744314266024,
+   "2021": 0.8911095796002757,
+   "2022": 0.9401791867677464,
+   "2023": 0.9611302549965541,
+   "2024": 0.9159200551343901
+  },
+  "fields_never_predicted": 8,
+  "pred_sd": 0.21703748900438363
+ },
+ "confidence": {
+  "formula": "confidence = skill x tau2 / (tau2 + v x g); see pipeline/soil/confidence.py",
+  "meaning": "confidence says how repeatable om_pred is in that row (how often and how fully the field was seen bare, and whether the two satellites agreed), scaled by the model's overall skill. It is not accuracy: it does not tell a good year from a bad year of the same field, and on sandy soils higher confidence goes with a larger error.",
+  "skill": 0.40851772179547846,
+  "r_field_means_vs_ssurgo": 0.6391539108817832,
+  "tau2": 0.031920063424987065,
+  "var_field_means": 0.0345988158213005,
+  "noise_in_field_means": 0.002678752396313433,
+  "floored": false,
+  "noise_model": {
+   "landsat": {
+    "a": 0.0006946025585746428,
+    "b": 0.029560620861607854,
+    "c": 0.006778238700321725,
+    "n_rows": 55266,
+    "flat": false
+   },
+   "s2": {
+    "a": 0.008471631770523447,
+    "b": 0.036774540422890724,
+    "c": 0.008608195469709926,
+    "n_rows": 51181,
+    "flat": false
+   }
+  },
+  "rho": 0.48156953797638885,
+  "n_both": 48514,
+  "kappa": 0.6519644553025606,
+  "mean_offset_s2_minus_landsat": -0.001798285476730698,
+  "quantiles": {
+   "p05": 0.15411518713838918,
+   "p25": 0.2478060963407693,
+   "p50": 0.304731284683627,
+   "p75": 0.3390673657886976,
+   "p95": 0.36253387374059143,
+   "max": 0.37941815932542566
+  },
+  "check": {
+   "n": 58477,
+   "bins": [
+    {
+     "from": 0.05,
+     "to": 0.248,
+     "n": 14572,
+     "mean_confidence": 0.18914671973648092,
+     "median_abs_error": 0.32600000000000007,
+     "median_abs_error_constant_guess": 0.32506797544333677,
+     "rmse": 0.46477581262131534,
+     "share_upper_heap": 0.6356711501509744,
+     "median_abs_error_upper_heap": 0.22599999999999998,
+     "median_abs_error_lower_heap": 0.5429999999999999,
+     "n_stable_pairs": 5751,
+     "jump_robust_sd": 0.23721599999999987
+    },
+    {
+     "from": 0.248,
+     "to": 0.305,
+     "n": 14592,
+     "mean_confidence": 0.28096587171052634,
+     "median_abs_error": 0.19600000000000012,
+     "median_abs_error_constant_guess": 0.20906797544333666,
+     "rmse": 0.39594320353069473,
+     "share_upper_heap": 0.7929002192982456,
+     "median_abs_error_upper_heap": 0.15100000000000002,
+     "median_abs_error_lower_heap": 0.6225,
+     "n_stable_pairs": 3637,
+     "jump_robust_sd": 0.1186080000000001
+    },
+    {
+     "from": 0.305,
+     "to": 0.339,
+     "n": 14425,
+     "mean_confidence": 0.32201837088388213,
+     "median_abs_error": 0.1569999999999998,
+     "median_abs_error_constant_guess": 0.18906797544333664,
+     "rmse": 0.3656233190572982,
+     "share_upper_heap": 0.8684922010398614,
+     "median_abs_error_upper_heap": 0.13000000000000012,
+     "median_abs_error_lower_heap": 0.7,
+     "n_stable_pairs": 2414,
+     "jump_robust_sd": 0.07857780000000023
+    },
+    {
+     "from": 0.339,
+     "to": 0.379,
+     "n": 14888,
+     "mean_confidence": 0.3536278882321332,
+     "median_abs_error": 0.11099999999999999,
+     "median_abs_error_constant_guess": 0.18006797544333675,
+     "rmse": 0.30296685112873106,
+     "share_upper_heap": 0.9453250940354648,
+     "median_abs_error_upper_heap": 0.1010000000000002,
+     "median_abs_error_lower_heap": 0.725,
+     "n_stable_pairs": 886,
+     "jump_robust_sd": 0.05930400000000005
+    }
+   ],
+   "upper_heap_from": 1.2,
+   "spearman_confidence_vs_abs_error": -0.3169462866441723,
+   "spearman_confidence_vs_abs_error_upper_heap": -0.2494231716535948,
+   "spearman_confidence_vs_abs_error_lower_heap": 0.23418325166710333,
+   "n_rows_lower_heap": 11042,
+   "spearman_confidence_vs_abs_error_constant_guess": -0.20496897312040058,
+   "spearman_confidence_vs_abs_error_within_field": -0.1208046247261533,
+   "n_rows_within_field": 58324,
+   "spearman_confidence_vs_n_obs": 0.7487327962393598,
+   "spearman_confidence_vs_abs_jump": -0.41852649843406414
+  }
+ },
+ "noise": {
+  "jumps": {
+   "combined": {
+    "raw": {
+     "n": 12688,
+     "robust_sd": 0.13936440000000003,
+     "sd": 0.21343065016894408,
+     "median_abs": 0.09400000000000008,
+     "all_pairs": {
+      "n": 49266,
+      "robust_sd": 0.10971240000000008,
+      "sd": 0.18247845522992842,
+      "median_abs": 0.07400000000000007
+     }
+    },
+    "by_crop": {
+     "alfalfa": {
+      "n": 2249,
+      "robust_sd": 0.18384239999999982,
+      "sd": 0.2481755026107462,
+      "median_abs": 0.125
+     },
+     "corn": {
+      "n": 6499,
+      "robust_sd": 0.13491659999999994,
+      "sd": 0.19830868028652476,
+      "median_abs": 0.09199999999999986
+     },
+     "fallow": {
+      "n": 393,
+      "robust_sd": 0.08006040000000039,
+      "sd": 0.1705122722026148,
+      "median_abs": 0.05400000000000005
+     },
+     "grass/pasture": {
+      "n": 79,
+      "robust_sd": 0.10229939999999992,
+      "sd": 0.16902113317545714,
+      "median_abs": 0.07600000000000007
+     },
+     "sorghum": {
+      "n": 1590,
+      "robust_sd": 0.11416019999999993,
+      "sd": 0.20096892974264682,
+      "median_abs": 0.07700000000000007
+     },
+     "triticale": {
+      "n": 579,
+      "robust_sd": 0.24462900000000004,
+      "sd": 0.2817818649533809,
+      "median_abs": 0.16300000000000003
+     },
+     "winter wheat": {
+      "n": 1219,
+      "robust_sd": 0.1186080000000001,
+      "sd": 0.20588453347883684,
+      "median_abs": 0.08000000000000007
+     }
+    },
+    "crop_mix": {
+     "corn": 0.5122162673392182,
+     "alfalfa": 0.17725409836065573,
+     "sorghum": 0.12531525851197983,
+     "winter wheat": 0.0960750315258512,
+     "triticale": 0.04563366960907945,
+     "fallow": 0.030974148802017654,
+     "grass/pasture": 0.006226355611601514,
+     "double crop: winter wheat/sorghum": 0.0018915510718789407,
+     "double crop: triticale/corn": 0.0015762925598991173,
+     "soybeans": 0.0014186633039092057,
+     "double crop: winter wheat/soybeans": 0.0007881462799495586,
+     "developed": 0.0002364438839848676,
+     "shrubland": 0.0002364438839848676,
+     "cotton": 7.881462799495586e-05,
+     "deciduous forest": 7.881462799495586e-05
+    },
+    "crop_balanced_robust_sd": 0.13978800000000002,
+    "year_effect_removed": {
+     "n": 12688,
+     "robust_sd": 0.1393644000000001,
+     "sd": 0.2136057240176007,
+     "median_abs": 0.09499999999999975,
+     "all_pairs": {
+      "n": 49266,
+      "robust_sd": 0.10971239999999977,
+      "sd": 0.18200381355599685,
+      "median_abs": 0.07399999999999984
+     }
+    },
+    "year_effect": {
+     "2016": 1.716,
+     "2017": 1.694,
+     "2018": 1.692,
+     "2019": 1.695,
+     "2020": 1.699,
+     "2021": 1.686,
+     "2022": 1.707,
+     "2023": 1.69,
+     "2024": 1.713
+    },
+    "year_effect_sd": 0.01054092553389463
+   },
+   "landsat": {
+    "raw": {
+     "n": 11313,
+     "robust_sd": 0.1231031492657443,
+     "sd": 0.21219654560509318,
+     "median_abs": 0.08344871748348104,
+     "all_pairs": {
+      "n": 45103,
+      "robust_sd": 0.09499311571120182,
+      "sd": 0.1851899605601893,
+      "median_abs": 0.06415122780625904
+     }
+    },
+    "by_crop": {
+     "alfalfa": {
+      "n": 1918,
+      "robust_sd": 0.16616602908960876,
+      "sd": 0.23763101071436027,
+      "median_abs": 0.1121157977942614
+     },
+     "corn": {
+      "n": 5911,
+      "robust_sd": 0.1199701657045876,
+      "sd": 0.19937248787313516,
+      "median_abs": 0.0823986421815035
+     },
+     "fallow": {
+      "n": 367,
+      "robust_sd": 0.06097800572810178,
+      "sd": 0.1470385818319988,
+      "median_abs": 0.042973641082854286
+     },
+     "grass/pasture": {
+      "n": 65,
+      "robust_sd": 0.10622414842748844,
+      "sd": 0.17146486056285204,
+      "median_abs": 0.07457980705138545
+     },
+     "sorghum": {
+      "n": 1432,
+      "robust_sd": 0.09460290663327926,
+      "sd": 0.2068407341646904,
+      "median_abs": 0.06464153064833833
+     },
+     "triticale": {
+      "n": 449,
+      "robust_sd": 0.2300776639741292,
+      "sd": 0.2834231144590232,
+      "median_abs": 0.15339644477732772
+     },
+     "winter wheat": {
+      "n": 1099,
+      "robust_sd": 0.10024982295290429,
+      "sd": 0.2161001135024676,
+      "median_abs": 0.06728128657258492
+     }
+    },
+    "crop_mix": {
+     "corn": 0.5224962432599665,
+     "alfalfa": 0.16953946786882348,
+     "sorghum": 0.12658004066118625,
+     "winter wheat": 0.09714487757447185,
+     "triticale": 0.03968885353133563,
+     "fallow": 0.032440555113586136,
+     "grass/pasture": 0.0057456024043136215,
+     "double crop: winter wheat/sorghum": 0.0019446654291523026,
+     "soybeans": 0.0015910898965791568,
+     "double crop: triticale/corn": 0.0015026960134358702,
+     "double crop: winter wheat/soybeans": 0.0007071510651462918,
+     "developed": 0.00026518164942985947,
+     "shrubland": 0.00026518164942985947,
+     "cotton": 8.839388314328648e-05
+    },
+    "crop_balanced_robust_sd": 0.1254669632157285,
+    "year_effect_removed": {
+     "n": 11313,
+     "robust_sd": 0.1212840816599597,
+     "sd": 0.21162946457637002,
+     "median_abs": 0.08242242907673125,
+     "all_pairs": {
+      "n": 45103,
+      "robust_sd": 0.09503738106328768,
+      "sd": 0.18473427622883848,
+      "median_abs": 0.064176098884142
+     }
+    },
+    "year_effect": {
+     "2016": 1.7162720752872025,
+     "2017": 1.7187052965113143,
+     "2018": 1.7117036167340058,
+     "2019": 1.71246933951951,
+     "2020": 1.7126746922928424,
+     "2021": 1.7062846660162538,
+     "2022": 1.7146985768506917,
+     "2023": 1.7105334549679874,
+     "2024": 1.7307502693981798
+    },
+    "year_effect_sd": 0.0069101568559772585
+   },
+   "s2": {
+    "raw": {
+     "n": 10857,
+     "robust_sd": 0.1772007768166073,
+     "sd": 0.25377501282686354,
+     "median_abs": 0.12063938875536828,
+     "all_pairs": {
+      "n": 42298,
+      "robust_sd": 0.14326559836314146,
+      "sd": 0.22062137360016815,
+      "median_abs": 0.09656183605811675
+     }
+    },
+    "by_crop": {
+     "alfalfa": {
+      "n": 1670,
+      "robust_sd": 0.22359271202448844,
+      "sd": 0.31353734636464425,
+      "median_abs": 0.14949831487359855
+     },
+     "corn": {
+      "n": 5752,
+      "robust_sd": 0.17246100124724587,
+      "sd": 0.23838268003075927,
+      "median_abs": 0.1188768614076895
+     },
+     "fallow": {
+      "n": 321,
+      "robust_sd": 0.14289358218195652,
+      "sd": 0.22354335762873206,
+      "median_abs": 0.09681057588830022
+     },
+     "grass/pasture": {
+      "n": 60,
+      "robust_sd": 0.11955760505710786,
+      "sd": 0.1803039336654518,
+      "median_abs": 0.08088427297701062
+     },
+     "sorghum": {
+      "n": 1434,
+      "robust_sd": 0.14640375506428188,
+      "sd": 0.22605857987199604,
+      "median_abs": 0.09922854020245775
+     },
+     "triticale": {
+      "n": 536,
+      "robust_sd": 0.2659413198554651,
+      "sd": 0.30087966546029876,
+      "median_abs": 0.18330390678456482
+     },
+     "winter wheat": {
+      "n": 1013,
+      "robust_sd": 0.15874819576306065,
+      "sd": 0.23375893910570703,
+      "median_abs": 0.1044120908674473
+     }
+    },
+    "crop_mix": {
+     "corn": 0.5297964446900617,
+     "alfalfa": 0.15381781339228148,
+     "sorghum": 0.13208068527217465,
+     "winter wheat": 0.09330385926130606,
+     "triticale": 0.04936907064566639,
+     "fallow": 0.029566178502348717,
+     "grass/pasture": 0.005526388505111909,
+     "double crop: winter wheat/sorghum": 0.0022105554020447637,
+     "double crop: triticale/corn": 0.00184212950170397,
+     "soybeans": 0.0011052777010223818,
+     "double crop: winter wheat/soybeans": 0.0006447453255963894,
+     "developed": 0.00027631942525559546,
+     "shrubland": 0.00027631942525559546,
+     "cotton": 9.210647508519849e-05,
+     "deciduous forest": 9.210647508519849e-05
+    },
+    "crop_balanced_robust_sd": 0.1756568815990866,
+    "year_effect_removed": {
+     "n": 10857,
+     "robust_sd": 0.1779799818685868,
+     "sd": 0.2547853102493468,
+     "median_abs": 0.12032480211172847,
+     "all_pairs": {
+      "n": 42298,
+      "robust_sd": 0.14330412133195608,
+      "sd": 0.21987831231707944,
+      "median_abs": 0.09663308520596836
+     }
+    },
+    "year_effect": {
+     "2017": 1.6758844795895906,
+     "2018": 1.6828359647567877,
+     "2019": 1.693634080273842,
+     "2020": 1.6963490030186121,
+     "2021": 1.6759164105207762,
+     "2022": 1.7033938663148878,
+     "2023": 1.6683151581702946,
+     "2024": 1.693822123982339
+    },
+    "year_effect_sd": 0.012278332465265843
+   }
+  },
+  "single_crop": {
+   "combined": {
+    "n_fields": 185,
+    "n_fields_single_crop": 195,
+    "crops": {
+     "corn": 108,
+     "alfalfa": 85,
+     "sorghum": 1,
+     "winter wheat": 1
+    },
+    "n_values": 1376,
+    "robust_sd_of_value": 0.1289326246086278,
+    "equivalent_jump_sd": 0.18233826635388053
+   },
+   "landsat": {
+    "n_fields": 178,
+    "n_fields_single_crop": 195,
+    "crops": {
+     "corn": 108,
+     "alfalfa": 85,
+     "sorghum": 1,
+     "winter wheat": 1
+    },
+    "n_values": 1289,
+    "robust_sd_of_value": 0.12266375295269169,
+    "equivalent_jump_sd": 0.1734727430372794
+   },
+   "s2": {
+    "n_fields": 168,
+    "n_fields_single_crop": 195,
+    "crops": {
+     "corn": 108,
+     "alfalfa": 85,
+     "sorghum": 1,
+     "winter wheat": 1
+    },
+    "n_values": 1154,
+    "robust_sd_of_value": 0.14542994570623335,
+    "equivalent_jump_sd": 0.20566900159293808
+   }
+  },
+  "by_n_obs": {
+   "combined": [
+    {
+     "n_obs_from": 0.0,
+     "n_obs_to": 1.0,
+     "n": 3358,
+     "robust_sd": 0.1942206
+    },
+    {
+     "n_obs_from": 1.0,
+     "n_obs_to": 3.0,
+     "n": 2383,
+     "robust_sd": 0.14974259999999995
+    },
+    {
+     "n_obs_from": 3.0,
+     "n_obs_to": 6.0,
+     "n": 2081,
+     "robust_sd": 0.13491659999999994
+    },
+    {
+     "n_obs_from": 6.0,
+     "n_obs_to": 12.0,
+     "n": 2253,
+     "robust_sd": 0.1349166000000001
+    },
+    {
+     "n_obs_from": 12.0,
+     "n_obs_to": 25.0,
+     "n": 1769,
+     "robust_sd": 0.10229939999999992
+    },
+    {
+     "n_obs_from": 25.0,
+     "n_obs_to": null,
+     "n": 844,
+     "robust_sd": 0.06819960000000005
+    }
+   ],
+   "landsat": [
+    {
+     "n_obs_from": 0.0,
+     "n_obs_to": 1.0,
+     "n": 5276,
+     "robust_sd": 0.16465776917493183
+    },
+    {
+     "n_obs_from": 1.0,
+     "n_obs_to": 3.0,
+     "n": 2893,
+     "robust_sd": 0.11778557190270485
+    },
+    {
+     "n_obs_from": 3.0,
+     "n_obs_to": 6.0,
+     "n": 1565,
+     "robust_sd": 0.09582727323983631
+    },
+    {
+     "n_obs_from": 6.0,
+     "n_obs_to": 12.0,
+     "n": 1102,
+     "robust_sd": 0.07923443516696324
+    },
+    {
+     "n_obs_from": 12.0,
+     "n_obs_to": 25.0,
+     "n": 424,
+     "robust_sd": 0.05179279867472418
+    },
+    {
+     "n_obs_from": 25.0,
+     "n_obs_to": null,
+     "n": 53,
+     "robust_sd": 0.04374923682048147
+    }
+   ],
+   "s2": [
+    {
+     "n_obs_from": 0.0,
+     "n_obs_to": 1.0,
+     "n": 2853,
+     "robust_sd": 0.22919473114555042
+    },
+    {
+     "n_obs_from": 1.0,
+     "n_obs_to": 3.0,
+     "n": 2317,
+     "robust_sd": 0.18110868419883164
+    },
+    {
+     "n_obs_from": 3.0,
+     "n_obs_to": 6.0,
+     "n": 2090,
+     "robust_sd": 0.168520743309525
+    },
+    {
+     "n_obs_from": 6.0,
+     "n_obs_to": 12.0,
+     "n": 2077,
+     "robust_sd": 0.1659041769549984
+    },
+    {
+     "n_obs_from": 12.0,
+     "n_obs_to": 25.0,
+     "n": 1233,
+     "robust_sd": 0.12626447409327363
+    },
+    {
+     "n_obs_from": 25.0,
+     "n_obs_to": null,
+     "n": 287,
+     "robust_sd": 0.11646303355456866
+    }
+   ]
+  },
+  "om_noise_sd": 0.13936440000000003,
+  "om_noise_sd_year_effect_removed": 0.1393644000000001,
+  "noise_sd_of_one_value": 0.0985455122959945,
+  "repeatability": {
+   "n_pairs": 48514,
+   "r": 0.7189941475744328,
+   "bias_s2_minus_landsat": -0.001798285476730698,
+   "robust_sd_of_difference": 0.09906276428133891,
+   "sd_of_difference": 0.16962306462418994,
+   "implied_noise_sd_one_family": 0.07004795238641924,
+   "r_of_field_means": 0.8638692447313474,
+   "r_of_yearly_deviations": 0.46690320451453887
+  },
+  "sensor_step": {
+   "n": 49855,
+   "first_s2_year": 2017,
+   "mean_shift": 0.0011949317659693892,
+   "field_shift_sd": 0.0447090896220029,
+   "n_same_fields": 5136,
+   "combined_change_same_fields": -0.013783294392523364,
+   "landsat_change_same_fields": -0.00773274418961527,
+   "mean_of_available_by_year": {
+    "2016": 1.6390029892737823,
+    "2017": 1.6236425626387567,
+    "2018": 1.605407960935188,
+    "2019": 1.6289640944881891,
+    "2020": 1.6331764524103831,
+    "2021": 1.605627378190255,
+    "2022": 1.6013232663832282,
+    "2023": 1.5976057650939337,
+    "2024": 1.646025583145222
+   }
+  },
+  "detectability": {
+   "n_fields_with_trend": 6607,
+   "min_years_for_trend": 6,
+   "trend_se_one_field": 0.12644459999999985,
+   "trend_sd_plain": 0.21263564666978302,
+   "trend_se_one_field_from_jump_sd": 0.12722170932195498,
+   "median_trend": -0.0034999999999999476,
+   "z_detect": 2.8,
+   "sensitivity": 0.2561942227629161,
+   "sensitivity_interval90": [
+    0.12569607579032469,
+    0.3110729585243098
+   ],
+   "variance_components": {
+    "n": 58324,
+    "n_blocks": 78,
+    "median_fields_per_block_year": 77.0,
+    "sd_county_year": 0.016505114924806063,
+    "sd_block_year": 0.034651759052280524,
+    "sd_field_year": 0.13113702151775075,
+    "share_county_year": 0.014591195902772906,
+    "share_block_year": 0.06431382726578444,
+    "share_field_year": 0.9210949768314427,
+    "sd_total": 0.13663850715170078
+   },
+   "hoped_per_decade": [
+    0.1,
+    0.3
+   ],
+   "hoped_in_om_pred_units": [
+    0.02561942227629161,
+    0.07685826682887482
+   ],
+   "by_n_fields": [
+    {
+     "n_fields": 1,
+     "trend_se": 0.12644459999999985,
+     "mdc_om_pred": 0.35404487999999956,
+     "mdc_om_pred_difference": 0.4970287780063423,
+     "mdc_real_om": 1.3819393590605482,
+     "mdc_real_om_difference": 1.940046784217676,
+     "mdc_real_om_range": [
+      1.1381409740002573,
+      2.8166740908489984
+     ],
+     "mdc_real_om_difference_range": [
+      1.5977884428276348,
+      3.9542107808953615
+     ]
+    },
+    {
+     "n_fields": 10,
+     "trend_se": 0.07152023803170957,
+     "mdc_om_pred": 0.20025666648878676,
+     "mdc_om_pred_difference": 0.2643122675450658,
+     "mdc_real_om": 0.7816595719026251,
+     "mdc_real_om_difference": 1.0316870719979592,
+     "mdc_real_om_range": [
+      0.6437610888415976,
+      1.5931815311628152
+     ],
+     "mdc_real_om_difference_range": [
+      0.8496793446750541,
+      2.1027885388082335
+     ]
+    },
+    {
+     "n_fields": 100,
+     "trend_se": 0.03336867966575348,
+     "mdc_om_pred": 0.09343230306410974,
+     "mdc_om_pred_difference": 0.0843486830966519,
+     "mdc_real_om": 0.36469324739837183,
+     "mdc_real_om_difference": 0.3292372567460616,
+     "mdc_real_om_range": [
+      0.3003549505149551,
+      0.7433191726682495
+     ],
+     "mdc_real_om_difference_range": [
+      0.2711540196126055,
+      0.6710526368170402
+     ]
+    },
+    {
+     "n_fields": 1000,
+     "trend_se": 0.02717815236391565,
+     "mdc_om_pred": 0.07609882661896382,
+     "mdc_om_pred_difference": 0.03517915084220127,
+     "mdc_real_om": 0.2970356856539509,
+     "mdc_real_om_difference": 0.13731437993727244,
+     "mdc_real_om_range": [
+      0.2446333714764758,
+      0.6054192713693409
+     ],
+     "mdc_real_om_difference_range": [
+      0.11308971055885621,
+      0.27987469474292964
+     ]
+    }
+   ],
+   "mdc_one_field_om_pred_units": 0.35404487999999956,
+   "single_field_buried_at_any_sensitivity": true,
+   "floor_real_om": 0.2807179707164006
+  },
+  "artefacts": {
+   "n": 58456,
+   "n_fields": 7226,
+   "reference_this_year": "fallow",
+   "reference_last_year": "fallow",
+   "last_year_identified": true,
+   "this_year": {
+    "fallow": {
+     "shift": 0.0,
+     "se": 0.0,
+     "n": 11103
+    },
+    "alfalfa": {
+     "shift": -0.07889295396318773,
+     "se": 0.006306343074416767,
+     "n": 4059
+    },
+    "corn": {
+     "shift": -0.04379235101075355,
+     "se": 0.0021791380356856373,
+     "n": 15773
+    },
+    "sorghum": {
+     "shift": -0.018658589052230026,
+     "se": 0.0020465297262545813,
+     "n": 10391
+    },
+    "soybeans": {
+     "shift": -0.021895043888478034,
+     "se": 0.007965975683088882,
+     "n": 737
+    },
+    "winter wheat": {
+     "shift": -0.03651709831418916,
+     "se": 0.002651200297599135,
+     "n": 13213
+    },
+    "cotton": {
+     "shift": -0.0725529254243381,
+     "se": 0.031501739975095616,
+     "n": 55
+    },
+    "double crop: triticale/corn": {
+     "shift": -0.0980455514112175,
+     "se": 0.014500090961412273,
+     "n": 207
+    },
+    "double crop: winter wheat/corn": {
+     "shift": -0.032020090735606,
+     "se": 0.016704937408192674,
+     "n": 86
+    },
+    "double crop: winter wheat/sorghum": {
+     "shift": -0.05408993615941947,
+     "se": 0.015763568993509513,
+     "n": 234
+    },
+    "double crop: winter wheat/soybeans": {
+     "shift": -0.043893408171628,
+     "se": 0.03361568126066702,
+     "n": 40
+    },
+    "grass/pasture": {
+     "shift": -0.008887515295339512,
+     "se": 0.007828789374851455,
+     "n": 617
+    },
+    "other": {
+     "shift": -0.06268994968163237,
+     "se": 0.0175217765430647,
+     "n": 108
+    },
+    "potatoes": {
+     "shift": 0.017649513079227748,
+     "se": 0.03688179210988314,
+     "n": 35
+    },
+    "triticale": {
+     "shift": -0.03354358158629636,
+     "se": 0.0056077247014635154,
+     "n": 1798
+    }
+   },
+   "range_this_year": 0.11569506449044525,
+   "clear_this_year": 10,
+   "last_year": {
+    "fallow": {
+     "shift": 0.0,
+     "se": 0.0,
+     "n": 10088
+    },
+    "alfalfa": {
+     "shift": -0.015169430063489166,
+     "se": 0.006858722563951933,
+     "n": 4501
+    },
+    "corn": {
+     "shift": -0.019497310496839317,
+     "se": 0.0027490391595742115,
+     "n": 15234
+    },
+    "sorghum": {
+     "shift": -0.011721738822073636,
+     "se": 0.0029411524811403787,
+     "n": 10794
+    },
+    "soybeans": {
+     "shift": 0.10831309251634358,
+     "se": 0.009159109998957174,
+     "n": 773
+    },
+    "winter wheat": {
+     "shift": 0.010367484934516025,
+     "se": 0.0025487995517623906,
+     "n": 14502
+    },
+    "cotton": {
+     "shift": -0.1456349535563549,
+     "se": 0.03057972816043356,
+     "n": 52
+    },
+    "double crop: triticale/corn": {
+     "shift": -0.014578422479477758,
+     "se": 0.014840568442808727,
+     "n": 164
+    },
+    "double crop: winter wheat/corn": {
+     "shift": 0.03548885554110296,
+     "se": 0.017429414360975906,
+     "n": 86
+    },
+    "double crop: winter wheat/sorghum": {
+     "shift": 0.006942100004378945,
+     "se": 0.01357848326920899,
+     "n": 189
+    },
+    "double crop: winter wheat/soybeans": {
+     "shift": 0.04170278430497941,
+     "se": 0.027534151796553743,
+     "n": 38
+    },
+    "grass/pasture": {
+     "shift": -0.0515678467483149,
+     "se": 0.012677144438598695,
+     "n": 395
+    },
+    "other": {
+     "shift": -0.002506046652816009,
+     "se": 0.015365070759872472,
+     "n": 91
+    },
+    "potatoes": {
+     "shift": 0.04065794589582497,
+     "se": 0.02651065044661011,
+     "n": 44
+    },
+    "triticale": {
+     "shift": -0.00270885316233869,
+     "se": 0.006265774444219445,
+     "n": 1505
+    }
+   },
+   "range_last_year": 0.2539480460726985,
+   "clear_last_year": 8,
+   "largest_range": 0.2539480460726985,
+   "n_clear_shifts": 14,
+   "largest_clear_shift": {
+    "crop": "cotton",
+    "when": "last_year",
+    "shift": -0.1456349535563549,
+    "se": 0.03057972816043356,
+    "n": 52
+   },
+   "clear_shift_as_real_om_range": [
+    0.4681697639268564,
+    1.1586276869875438
+   ],
+   "signal_in_om_pred_units_per_decade": 0.05123884455258322,
+   "largest_range_as_real_om": 0.9912325240358905,
+   "range_over_decade_signal": 4.956162620179452,
+   "clear_shift_as_real_om": 0.5684552601762862,
+   "clear_shift_over_decade_signal": 2.842276300881431
+  },
+  "within_type": {
+   "n_fields": 7247,
+   "sensitivity": 0.0842512073756392,
+   "spearman": 0.11419565304077997,
+   "sensitivity_interval90": [
+    0.0007079931219134844,
+    0.178729314410401
+   ]
+  },
+  "hoped_per_decade": [
+   0.1,
+   0.3
+  ],
+  "hoped_central": 0.2,
+  "verdict": {
+   "single_field": "buried",
+   "ten_fields": "buried",
+   "hundred_fields": "buried",
+   "thousand_fields": "marginal",
+   "single_field_buried_at_any_sensitivity": true,
+   "artefact_rivals_signal": true,
+   "model_has_skill": true,
+   "sensitivity_for_change": 0.0007079931219134844,
+   "follows_organic_matter_within_soil_type": false,
+   "within_type_spearman": 0.11419565304077997,
+   "hundred_fields_mdc_at_cautious_sensitivity": null,
+   "artefact_rivals_signal_at_cautious_sensitivity": true,
+   "bare_days_checks_pass": true,
+   "bare_days_failed_checks": [],
+   "trustworthy": {
+    "om_pred": false,
+    "bare_days": true
+   },
+   "recommended": "bare_days",
+   "text": "On fields where nothing changed, the satellite organic-matter estimate still jumps by about 0.14 points from one year to the next, while a good rotation is expected to add only 0.1 to 0.3 points in ten years, so on a single field real change is buried in noise. Averaging many fields does not fix this, because within one kind of soil the estimate cannot be shown to follow organic matter (it mostly tells sand from loam) and it shifts with whatever crop residue lies on the surface; compare rotations by bare days (how long the soil sits uncovered each year) instead, which measures how exposed the soil is, not what the soil has become."
+  }
+ },
+ "bare_days": {
+  "s2_to_landsat": {
+   "a": -3.569013379168908,
+   "b": 0.9873272876321706,
+   "n_pairs": 56843,
+   "fitted": true
+  },
+  "s2_rows_dropped_for_snow": 0,
+  "snow_screened_input": true,
+  "rows_both": 56843,
+  "rows_landsat_only": 6977,
+  "rows_s2_only": 1164,
+  "rows_null": 311,
+  "coverage": 0.9952370013017842,
+  "checks": {
+   "sensors": {
+    "n_pairs": 56843,
+    "r": 0.9645558489320557,
+    "bias_s2_minus_landsat": 4.428307795155076,
+    "robust_sd_of_difference": 12.009060000000007,
+    "median_abs_difference": 8.399999999999991,
+    "noise_sd_one_sensor": 8.491687761676125
+   },
+   "year_effect": {
+    "median_by_year": {
+     "2016": 27.05,
+     "2017": 26.6,
+     "2018": 41.6,
+     "2019": 34.4,
+     "2020": 43.95,
+     "2021": 27.0,
+     "2022": 46.150000000000006,
+     "2023": 75.8,
+     "2024": 39.9
+    },
+    "sd": 15.348414232240556
+   },
+   "by_crop": {
+    "fallow": {
+     "n": 11264,
+     "median": 142.7,
+     "mean": 139.55727982954545
+    },
+    "oats": {
+     "n": 26,
+     "median": 97.75,
+     "mean": 88.75
+    },
+    "potatoes": {
+     "n": 35,
+     "median": 93.8,
+     "mean": 87.24285714285715
+    },
+    "sunflower": {
+     "n": 26,
+     "median": 81.94999999999999,
+     "mean": 98.85
+    },
+    "corn": {
+     "n": 16186,
+     "median": 45.6,
+     "mean": 60.415358952180895
+    },
+    "sorghum": {
+     "n": 10852,
+     "median": 41.8,
+     "mean": 58.65075562108367
+    },
+    "soybeans": {
+     "n": 770,
+     "median": 38.650000000000006,
+     "mean": 47.40090909090909
+    },
+    "double crop: winter wheat/corn": {
+     "n": 88,
+     "median": 23.8,
+     "mean": 57.71136363636364
+    },
+    "double crop: winter wheat/sorghum": {
+     "n": 253,
+     "median": 21.9,
+     "mean": 41.39565217391304
+    },
+    "triticale": {
+     "n": 1951,
+     "median": 20.8,
+     "mean": 37.15238339313173
+    },
+    "winter wheat": {
+     "n": 15091,
+     "median": 17.8,
+     "mean": 45.709595122920945
+    },
+    "cotton": {
+     "n": 58,
+     "median": 13.15,
+     "mean": 28.301724137931036
+    },
+    "double crop: triticale/corn": {
+     "n": 218,
+     "median": 12.85,
+     "mean": 19.792201834862386
+    },
+    "double crop: winter wheat/soybeans": {
+     "n": 43,
+     "median": 1.1,
+     "mean": 10.946511627906977
+    },
+    "alfalfa": {
+     "n": 6825,
+     "median": 0.1,
+     "mean": 7.272688644688644
+    },
+    "other hay": {
+     "n": 21,
+     "median": 0.0,
+     "mean": 14.828571428571427
+    },
+    "grass/pasture": {
+     "n": 1226,
+     "median": 0.0,
+     "mean": 20.46272430668842
+    }
+   },
+   "crop_order_ok": true,
+   "stable_crop": {
+    "n_pairs": 16759,
+    "robust_sd_of_jump": 17.49468,
+    "sd_of_jump": 43.735943377241355,
+    "median_abs_jump": 11.8,
+    "by_crop": {
+     "alfalfa": {
+      "n_pairs": 5071,
+      "robust_sd_of_jump": 0.44478000000000006,
+      "sd_of_jump": 16.653966978579856
+     },
+     "corn": {
+      "n_pairs": 6729,
+      "robust_sd_of_jump": 31.875899999999987,
+      "sd_of_jump": 42.685283550301875
+     },
+     "double crop: triticale/corn": {
+      "n_pairs": 24,
+      "robust_sd_of_jump": 8.673210000000001,
+      "sd_of_jump": 26.91104475322623
+     },
+     "double crop: winter wheat/sorghum": {
+      "n_pairs": 29,
+      "robust_sd_of_jump": 10.526459999999993,
+      "sd_of_jump": 30.96657303158031
+     },
+     "fallow": {
+      "n_pairs": 564,
+      "robust_sd_of_jump": 27.353970000000004,
+      "sd_of_jump": 63.66436730987005
+     },
+     "grass/pasture": {
+      "n_pairs": 494,
+      "robust_sd_of_jump": 0.0,
+      "sd_of_jump": 24.564789143358606
+     },
+     "sorghum": {
+      "n_pairs": 1689,
+      "robust_sd_of_jump": 32.61719999999999,
+      "sd_of_jump": 47.20616099959581
+     },
+     "soybeans": {
+      "n_pairs": 23,
+      "robust_sd_of_jump": 35.5824,
+      "sd_of_jump": 35.94643082877719
+     },
+     "triticale": {
+      "n_pairs": 675,
+      "robust_sd_of_jump": 18.829019999999993,
+      "sd_of_jump": 39.08838213730367
+     },
+     "winter wheat": {
+      "n_pairs": 1435,
+      "robust_sd_of_jump": 51.891,
+      "sd_of_jump": 77.13480230788262
+     }
+    },
+    "crop_mix": {
+     "corn": 0.4015156035562981,
+     "alfalfa": 0.3025836863774688,
+     "sorghum": 0.10078166955068918,
+     "winter wheat": 0.0856256339877081,
+     "triticale": 0.04027686616146548,
+     "fallow": 0.033653559281580044,
+     "grass/pasture": 0.0294766990870577,
+     "double crop: winter wheat/sorghum": 0.0017304135091592578,
+     "double crop: triticale/corn": 0.0014320663524076615,
+     "soybeans": 0.0013723969210573423,
+     "double crop: winter wheat/soybeans": 0.0006563637448535115,
+     "developed": 0.0004176860194522346,
+     "shrubland": 0.0001790082940509577,
+     "other hay": 0.0001790082940509577,
+     "cotton": 5.9669431350319234e-05,
+     "deciduous forest": 5.9669431350319234e-05
+    }
+   },
+   "separation": [
+    {
+     "low": "corn",
+     "high": "fallow",
+     "gap_days": 97.1,
+     "noise_sd_of_one_comparison": 29.701116776738374,
+     "gap_in_noise_sds": 3.2692373397907977,
+     "field_years_needed_per_group": 3
+    },
+    {
+     "low": "sorghum",
+     "high": "fallow",
+     "gap_days": 100.89999999999999,
+     "noise_sd_of_one_comparison": 30.100842268954032,
+     "gap_in_noise_sds": 3.352065669739352,
+     "field_years_needed_per_group": 3
+    },
+    {
+     "low": "soybeans",
+     "high": "fallow",
+     "gap_days": 104.04999999999998,
+     "noise_sd_of_one_comparison": 31.73599584478877,
+     "gap_in_noise_sds": 3.278611470359314,
+     "field_years_needed_per_group": 2
+    },
+    {
+     "low": "winter wheat",
+     "high": "fallow",
+     "gap_days": 124.89999999999999,
+     "noise_sd_of_one_comparison": 41.47840134190866,
+     "gap_in_noise_sds": 3.0112057350147774,
+     "field_years_needed_per_group": 3
+    },
+    {
+     "low": "alfalfa",
+     "high": "fallow",
+     "gap_days": 142.6,
+     "noise_sd_of_one_comparison": 19.344734477491546,
+     "gap_in_noise_sds": 7.371514980777917,
+     "field_years_needed_per_group": 1
+    },
+    {
+     "low": "sorghum",
+     "high": "corn",
+     "gap_days": 3.8000000000000043,
+     "noise_sd_of_one_comparison": 32.24868010205998,
+     "gap_in_noise_sds": 0.11783427997591964,
+     "field_years_needed_per_group": 1100
+    },
+    {
+     "low": "soybeans",
+     "high": "corn",
+     "gap_days": 6.949999999999996,
+     "noise_sd_of_one_comparison": 33.78002509301909,
+     "gap_in_noise_sds": 0.2057428903874991,
+     "field_years_needed_per_group": 253
+    },
+    {
+     "low": "winter wheat",
+     "high": "corn",
+     "gap_days": 27.8,
+     "noise_sd_of_one_comparison": 43.06244815271189,
+     "gap_in_noise_sds": 0.6455740719016524,
+     "field_years_needed_per_group": 40
+    },
+    {
+     "low": "alfalfa",
+     "high": "corn",
+     "gap_days": 45.5,
+     "noise_sd_of_one_comparison": 22.54185917419412,
+     "gap_in_noise_sds": 2.018467050494589,
+     "field_years_needed_per_group": 4
+    },
+    {
+     "low": "soybeans",
+     "high": "sorghum",
+     "gap_days": 3.1499999999999915,
+     "noise_sd_of_one_comparison": 34.13201521738791,
+     "gap_in_noise_sds": 0.09228872013379637,
+     "field_years_needed_per_group": 1391
+    },
+    {
+     "low": "winter wheat",
+     "high": "sorghum",
+     "gap_days": 23.999999999999996,
+     "noise_sd_of_one_comparison": 43.33911407054832,
+     "gap_in_noise_sds": 0.5537722797224764,
+     "field_years_needed_per_group": 56
+    },
+    {
+     "low": "alfalfa",
+     "high": "sorghum",
+     "gap_days": 41.699999999999996,
+     "noise_sd_of_one_comparison": 23.065987569237084,
+     "gap_in_noise_sds": 1.8078566926661723,
+     "field_years_needed_per_group": 6
+    },
+    {
+     "low": "winter wheat",
+     "high": "soybeans",
+     "gap_days": 20.850000000000005,
+     "noise_sd_of_one_comparison": 44.490353284504266,
+     "gap_in_noise_sds": 0.4686409178787515,
+     "field_years_needed_per_group": 66
+    },
+    {
+     "low": "alfalfa",
+     "high": "soybeans",
+     "gap_days": 38.550000000000004,
+     "noise_sd_of_one_comparison": 25.162521922577632,
+     "gap_in_noise_sds": 1.5320403939880987,
+     "field_years_needed_per_group": 5
+    },
+    {
+     "low": "alfalfa",
+     "high": "winter wheat",
+     "gap_days": 17.7,
+     "noise_sd_of_one_comparison": 36.693825844741234,
+     "gap_in_noise_sds": 0.482369978941203,
+     "field_years_needed_per_group": 78
+    }
+   ],
+   "fallow_minus_other_core_median": 104.04999999999998,
+   "fallow_vs_cropped": {
+    "high": "fallow",
+    "gap_days": 104.04999999999998,
+    "noise_sd_of_one_comparison": 41.47840134190866,
+    "gap_in_noise_sds": 2.50853448141143,
+    "field_years_needed_per_group": 4
+   },
+   "cover": {
+    "n": 64984,
+    "r": -0.5989857933462693,
+    "r_within_field": -0.5447306463707385,
+    "r_s2_only": -0.5923738065833628,
+    "r_landsat_only": -0.5887976042173825
+   }
+  },
+  "passes": {
+   "sensors_agree": true,
+   "crop_order": true,
+   "fallow_stands_out": true,
+   "follows_green_cover": true,
+   "failed": [],
+   "untested": [],
+   "all_pass": true
+  }
+ },
+ "sentinel2_adds": {
+  "bare_days_coverage_landsat_alone": 0.9774102151772723,
+  "bare_days_coverage_both": 0.9952370013017842,
+  "bare_days_missing_landsat_alone_by_year": {
+   "2016": 0.04066161268090973,
+   "2017": 0.0005513439007580612,
+   "2018": 0.0002756719503790306,
+   "2019": 0.16057891109579603,
+   "2020": 0.0002756719503790306,
+   "2021": 0.0002756719503790306,
+   "2022": 0.0001378359751895708,
+   "2023": 0.0002756719503790306,
+   "2024": 0.0002756719503790306
+  },
+  "bare_days_r_between_sensors": 0.9645558489320557,
+  "bare_days_noise_sd_one_sensor": 8.491687761676125,
+  "bare_days_noise_sd_two_sensors": 6.0045300000000035,
+  "om_pred_coverage_landsat_alone": 0.8506317482196186,
+  "om_pred_coverage_both": 0.895581591239758,
+  "r2_map_unit": {
+   "landsat": 0.2282509471471741,
+   "s2": 0.1898505452946999,
+   "combined": 0.24545504943286
+  },
+  "r2_series": {
+   "landsat": 0.05005530461544094,
+   "s2": 0.0062147837129482575
+  },
+  "om_pred_jump_robust_sd": {
+   "landsat": 0.1231031492657443,
+   "s2": 0.1772007768166073,
+   "combined": 0.13936440000000003
+  }
+ }
+}

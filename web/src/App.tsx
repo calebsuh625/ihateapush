@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE, api, apiUrl, getJson } from "./api";
 import { AdvisorPanel } from "./components/AdvisorPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -19,6 +19,9 @@ import { useSelection } from "./hooks/useSelection";
 import { advisorContext, exampleQuestions } from "./lib/advisor";
 import type { Subject } from "./lib/advisor";
 import { addFields, toggleField } from "./lib/farm";
+import { FIELDS_LAYER } from "./lib/layers";
+import { decodeShare, encodeShare } from "./lib/share";
+import type { ShareChoices, ShareState } from "./lib/share";
 import { sheetHeight } from "./lib/twin";
 import type { TwinAnswer } from "./lib/twin";
 import { formatCount, plural } from "./lib/format";
@@ -68,7 +71,20 @@ const FARM_TOOLS: readonly { id: FarmTool; label: string; title: string }[] = [
   { id: "box", label: "Box", title: "Drag a box: every field whose centre is inside is added" },
 ];
 
+/** The share link's settings as the planner controls hold them. */
+const choicesFromShare = (c: ShareChoices): PlannerChoices => ({
+  weights: { ...c.weights },
+  horizon: c.horizon,
+  scenario: c.scenario,
+  limitIn: c.limitIn,
+  pricePct: c.pricePct,
+  costPct: c.costPct,
+});
+
 export default function App() {
+  // What the link this page was opened with says. A bare #KS-... (the old form) carries no settings.
+  const [initialShare] = useState(() => decodeShare(window.location.hash));
+  const linked = initialShare.hasParams ? initialShare.state : null;
   // Loaded once; selecting a field never refetches these.
   const [fields, retryFields] = useResource("fields", loadFields);
   const [health, retryHealth] = useResource("health", loadHealth);
@@ -76,10 +92,21 @@ export default function App() {
   const [drawn, setDrawn] = useState<number | null>(null);
   // The planner sliders, future and scenario live here so they carry over from field to field,
   // and between a field and the farm.
-  const [plannerChoices, setPlannerChoices] = useState<PlannerChoices>(DEFAULT_CHOICES);
+  const [plannerChoices, setPlannerChoices] = useState<PlannerChoices>(() => (linked ? choicesFromShare(linked.choices) : DEFAULT_CHOICES));
   // "Plan a farm": while it is on, the map picks fields for the farm instead of opening one.
-  const [farmMode, setFarmMode] = useState(false);
-  const [farm, setFarm] = useState<Farm>(storedFarm);
+  const [farmMode, setFarmMode] = useState(linked?.farmMode ?? false);
+  const [farm, setFarm] = useState<Farm>(() => {
+    const own = storedFarm();
+    return linked?.farmMode ? { ids: linked.farmIds ?? own.ids, water: linked.farmWater, minimum: linked.farmMinimum } : own;
+  });
+  // What a link said about the open field (the irrigation switch, the own rotation), until the panel has taken it.
+  const [restore, setRestore] = useState<{ fieldId: string; irrigation: boolean | null; own: (string | null)[] | null } | null>(() =>
+    linked && linked.field ? { fieldId: linked.field, irrigation: linked.irrigation, own: linked.own } : null,
+  );
+  // The map layer in a link can only be set once the list of layers is known.
+  const [pendingLayer, setPendingLayer] = useState<{ name: string; year: number | null } | null>(() =>
+    linked?.layer ? { name: linked.layer, year: linked.year } : null,
+  );
   const [tool, setTool] = useState<FarmTool>("click");
   // "Compare with its twin": the field whose twin view is open. It is only open while that field is
   // the selected one, so opening another field (the twin, from the map) closes it.
@@ -98,6 +125,14 @@ export default function App() {
   // The map layer (colour by bare days, erosion risk …) and its year live here, so they stay as they are
   // when a field is opened or closed.
   const layers = useMapLayers(fieldData);
+  useEffect(() => {
+    if (pendingLayer === null || (layers.catalog === null && layers.catalogError === null)) return;
+    if (layers.catalog?.layers.some((layer) => layer.name === pendingLayer.name)) {
+      layers.setName(pendingLayer.name);
+      if (pendingLayer.year !== null) layers.setYear(pendingLayer.year);
+    }
+    setPendingLayer(null);
+  }, [pendingLayer, layers]);
   const areaById = useMemo(() => {
     const areas = new Map<string, number>();
     for (const feature of fieldData?.features ?? []) {
@@ -113,6 +148,69 @@ export default function App() {
   const selectedId = selection?.id ?? null;
   const subject = useMemo<Subject>(() => (selectedId !== null ? { kind: "field", id: selectedId } : farmMode ? { kind: "farm" } : null), [selectedId, farmMode]);
   const factsNow = facts !== null && facts.fieldId === selectedId ? facts : null;
+  // The link to this exact view: only what differs from the defaults is written.
+  const shareState = useMemo<ShareState>(
+    () => ({
+      field: selectedId,
+      choices: {
+        weights: plannerChoices.weights,
+        horizon: plannerChoices.horizon,
+        scenario: plannerChoices.scenario,
+        limitIn: plannerChoices.limitIn ?? null,
+        pricePct: plannerChoices.pricePct ?? 0,
+        costPct: plannerChoices.costPct ?? 0,
+      },
+      irrigation: factsNow?.irrigationOverride ?? null,
+      own: factsNow?.ownSlots ?? null,
+      farmMode,
+      farmIds: farm.ids,
+      farmWater: farm.water,
+      farmMinimum: farm.minimum,
+      layer: layers.name === FIELDS_LAYER ? null : layers.name,
+      year: layers.name === FIELDS_LAYER ? null : layers.year,
+    }),
+    [selectedId, plannerChoices, factsNow, farmMode, farm, layers.name, layers.year],
+  );
+  const shareHash = encodeShare(shareState);
+  const shareUrl = `${window.location.origin}${window.location.pathname}${window.location.search}${shareHash ? `#${shareHash}` : ""}`;
+  // Not before everything a link carries has been taken in (the layer list, the open field's own facts).
+  const shareReady = pendingLayer === null && (selectedId === null || factsNow !== null);
+  useEffect(() => {
+    if (!shareReady) return;
+    const want = shareHash ? `#${shareHash}` : "";
+    if (window.location.hash === want) return;
+    window.history.replaceState(null, "", window.location.pathname + window.location.search + want);
+  }, [shareReady, shareHash]);
+  // A link pasted into the address bar of an open page, or Back to one: take in what it says.
+  const latest = useRef({ shareHash, layers });
+  latest.current = { shareHash, layers };
+  useEffect(() => {
+    const onNavigate = () => {
+      const { state, hasParams } = decodeShare(window.location.hash);
+      if (!hasParams || window.location.hash.replace(/^#/, "") === latest.current.shareHash) return;
+      setPlannerChoices(choicesFromShare(state.choices));
+      setFarmMode(state.farmMode);
+      if (state.farmMode) setFarm((current) => ({ ids: state.farmIds ?? current.ids, water: state.farmWater, minimum: state.farmMinimum }));
+      setRestore(state.field ? { fieldId: state.field, irrigation: state.irrigation, own: state.own } : null);
+      const { layers: now } = latest.current;
+      if (state.layer !== null && now.catalog?.layers.some((layer) => layer.name === state.layer)) {
+        now.setName(state.layer);
+        if (state.year !== null) now.setYear(state.year);
+      } else if (state.layer === null) {
+        now.setName(FIELDS_LAYER);
+      }
+    };
+    window.addEventListener("hashchange", onNavigate);
+    window.addEventListener("popstate", onNavigate);
+    return () => {
+      window.removeEventListener("hashchange", onNavigate);
+      window.removeEventListener("popstate", onNavigate);
+    };
+  }, []);
+  // The panel has taken what the link said about its field.
+  useEffect(() => {
+    if (restore !== null && selectedId === restore.fieldId) setRestore(null);
+  }, [restore, selectedId]);
   const advisor = useAdvisor(subject, advisorContext(subject, farmIds, plannerChoices, factsNow?.irrigationOverride ?? null));
   const advisorShown = advisorOpen && subject !== null;
   const [advisorStatus, retryAdvisorStatus] = useResource(advisorOpens > 0 && advisorShown ? `advisor-${advisorOpens}` : null, loadAdvisorStatus);
@@ -309,6 +407,8 @@ export default function App() {
           twin={{ open: compareId !== null, onToggle: () => setCompare(compareId !== null ? null : selection.id) }}
           advisor={{ open: advisorShown, onToggle: toggleAdvisor }}
           onFacts={setFacts}
+          shareUrl={shareUrl}
+          restore={restore}
         />
         </ErrorBoundary>
       ) : (
@@ -327,6 +427,7 @@ export default function App() {
             onOpenField={select}
             onClose={toggleFarmMode}
             advisor={{ open: advisorShown, onToggle: toggleAdvisor }}
+            shareUrl={shareUrl}
           />
           </ErrorBoundary>
         )

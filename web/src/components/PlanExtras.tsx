@@ -40,6 +40,11 @@ export function CurrentPatternRow({
       <p className="current-name" data-testid="current-name">
         {current.name}
       </p>
+      {current.rotation_effects && current.rotation_effects.length > 0 && (
+        <p className="plan-effects" data-testid="current-rotation-effects">
+          {current.rotation_effects.map((effect) => effect.sentence).join(" ")}
+        </p>
+      )}
       <dl className="current-scores tabular">
         {scoreRows(current.scores).map(({ key, label, value }) => (
           <div key={key}>
@@ -77,6 +82,7 @@ export function CurrentPatternRow({
 export function ScoringNote({ settings }: { settings: PlannerSettings }) {
   const models = settings.models ?? [];
   const limits = settings.limits ?? [];
+  const effects = settings.rotation_effects?.applied ? settings.rotation_effects.effects : [];
   return (
     <details className="scoring" data-testid="scoring-note">
       <summary>How this is scored</summary>
@@ -94,6 +100,18 @@ export function ScoringNote({ settings }: { settings: PlannerSettings }) {
             <ul className="scoring-limits" data-testid="scoring-limits">
               {limits.map((sentence, index) => (
                 <li key={index}>{sentence}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        {effects.length > 0 && (
+          <>
+            <p className="scoring-limits-title">Yield effects of the crop before</p>
+            <ul className="scoring-limits" data-testid="scoring-effects">
+              {effects.map((effect) => (
+                <li key={effect.id}>
+                  {effect.sentence} ({effect.status})
+                </li>
               ))}
             </ul>
           </>

@@ -591,20 +591,26 @@ function Fields({ fields, selection, onSelect, onRendered, farm, tool, onLasso, 
     layerRef.current?.setFarm(farm ?? NO_FARM);
   }, [farm, fields]);
 
-  // Farm mode starting with fields already picked (a farm kept from before): bring them into view.
+  // Farm mode starting with fields already picked (a farm kept from before, or a link): bring them into view.
+  // Not in the same breath as the layer is built: the fit waits a tick, so a layer that is rebuilt at once
+  // (React's development double run) is never framed while it is being torn down.
   const farmOn = farm !== null;
   useEffect(() => {
-    const layer = layerRef.current;
-    const ids = latest.current.farm;
-    if (!farmOn || !layer || !ids || ids.length === 0) return;
-    let all: L.LatLngBounds | null = null;
-    for (const id of ids) {
-      const one = layer.bounds(id);
-      if (one) all = all ? all.extend(one) : L.latLngBounds(one.getSouthWest(), one.getNorthEast());
-    }
-    if (!all) return;
-    map.invalidateSize({ pan: false }); // the farm panel has just opened and narrowed the map
-    map.fitBounds(all, FIT_FARM);
+    if (!farmOn) return;
+    const timer = window.setTimeout(() => {
+      const layer = layerRef.current;
+      const ids = latest.current.farm;
+      if (!layer || !ids || ids.length === 0) return;
+      let all: L.LatLngBounds | null = null;
+      for (const id of ids) {
+        const one = layer.bounds(id);
+        if (one) all = all ? all.extend(one) : L.latLngBounds(one.getSouthWest(), one.getNorthEast());
+      }
+      if (!all) return;
+      map.invalidateSize({ pan: false }); // the farm panel has just opened and narrowed the map
+      map.fitBounds(all, FIT_FARM);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [map, farmOn, fields]);
 
   // The lasso is only there in farm mode while a lasso tool is on; otherwise the map is as ever.

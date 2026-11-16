@@ -329,7 +329,7 @@ wells whose record names a bedrock aquifer are left out). Downloads are cached i
 
 ## Tracked planner files (`api/planner/`)
 
-Both are in git so a fresh clone works. Never edit `crop_response.json` by hand.
+All three are in git so a fresh clone works. Never edit `crop_response.json` by hand.
 
 - `crop_response.json`: written by `python -m api.planner.calibrate`. Keys: `written`, `written_by`,
   `model`, `sources`, `constants` (`et0_scale`, `fallow_efficiency`, `awc_mm`, `pivot_efficiency`),
@@ -345,6 +345,16 @@ Both are in git so a fresh clone works. Never edit `crop_response.json` by hand.
   `url`, ...; `fallow` included), `index_pages`, `cost_rule`, `cost_year`, `irrigation_limit` (`mm`,
   `inches`, `status`, `source`, `url`). A cost with `status` = `verified` was read from the K-State
   budget on the date given; `rough, unverified` is our estimate. Dollars are return over direct costs.
+
+- `rotation_effects.json` (Phase 5): the yield cost of a crop after itself, read by `api/planner/rotation.py`.
+  Keys: `version`, `written`, `what_it_is`, `how_to_read`, `status_words`, `effects` and `not_applied`. Each
+  `effects[]` row: `id`, `crop`, `after` (two of the six crop names, fallow excluded), `practice` (`all`,
+  `irrigated` or `dryland`), `multiplier` (relative yield, the same crop after another crop = 1.0), `low` (the
+  stronger end of the range), `high` (the weaker end), with `low <= multiplier <= high`, `status` (`verified` or
+  `rough, unverified`), `basis` (the figures and the arithmetic) and `sources[]` (`name`, `url`, `figure`). A row
+  with no source, a bad range or an unknown status makes the file unusable (the planner then applies nothing and
+  says so). `not_applied[]` rows (`id`, `crop`, `after`, `reason`, `status`, `sources`) are effects left out, with
+  the reason. Never invent a number here: an effect that cannot be sourced is simply not listed.
 
 ## `GET /field/{id}/plans`
 
@@ -364,6 +374,8 @@ Smart answer (`"engine": "smart"`), trimmed:
 | `current` | the field's last four years scored like a plan (the plan keys plus `years`, `previous_crop`, `is_candidate`, `rules_broken` as gentle sentences), or `null` |
 | `current_note` | why `current` is null, otherwise null |
 | `candidates` | how many cycles were compared (105 irrigated, 17 dryland) |
+| `settings.rotation_effects` | (Phase 5) `setting` (`on` / `off`: ROTATION_EFFECTS), `applied` (true when at least one effect is in use), `file`, `effects[]` (`id`, `crop`, `after`, `practice`, `multiplier`, `low`, `high`, `status`, `sentence`), `problem` only when the file could not be read |
+| `plans[].rotation_effects`, `current.rotation_effects` | (Phase 5) only when applied and the plan's years run into one: `[{id, crop, after, multiplier, low, high, status, sentence}]`. Absent otherwise, so a plan keeps its old keys when the effects are off. The same on `yours` of `/score` |
 
 ```json
 {"field_id": "KS-013847", "engine": "smart",
@@ -388,6 +400,59 @@ plan in either answer keeps `name`, `rotation`, `scores.soil/water/money/overall
 Errors: `400 {"detail": "<one plain sentence>"}` for a negative or non-finite priority, all four zero,
 unknown scenario or a horizon outside 2025-2060 (smart planner only); `404` no such field; `422` a value
 that is not a number.
+
+### Rotation effects (Phase 5)
+
+`settings.limits[0]` is the sentence about the crop grown before: with the effects on it says a crop after itself
+yields less by the amounts the trials measured (and that no nitrogen credit is counted); with `ROTATION_EFFECTS=off`
+it is the old "Yields do not change with the crop grown before, apart from the soil water it leaves behind
+(rotation effects are switched off)". `spread.profit_per_acre` and `spread.overall` (`low`, `mid`, `high`) span the
+six climate models and the stronger and weaker end of each effect the plan runs into; `mid`, `scores` and `numbers`
+use the middle values. Off, the whole answer is what it was before Phase 5.
+
+### Price and cost what-ifs (Phase 5, item F)
+
+`/plans`, `/score`, `/transition`, `/replay` and the farm planner take a percent change on prices and costs. We do not
+predict prices: the farmer supplies the change. Smart planner only (the basic planner ignores it).
+
+| Parameter (query; `POST /farm/plan` body keys `price_pct`, `cost_pct`, `crop_price_pct` {crop: pct}) | Meaning |
+|---|---|
+| `price_pct` | -50 to +100, percent change on every crop price (default 0) |
+| `cost_pct` | -50 to +100, percent change on every direct cost: the per-acre budget lines, fallow passes and the pumping cost per inch (default 0) |
+| `price_corn_pct`, `price_soybeans_pct`, `price_winter_wheat_pct`, `price_sorghum_pct`, `price_alfalfa_pct` | the same for one crop; it replaces `price_pct` for that crop |
+
+Anything outside -50..+100 or not a number is a `400` with one sentence. Zero (or nothing) changes nothing: the answer is
+identical to a call without the parameters. `settings.what_if` echoes what was applied (present only while a what-if is on, so a plain answer is unchanged):
+`{"active": bool, "price_pct": 0.0, "cost_pct": 0.0, "crop_price_pct": {"corn": 20.0}, "note": str|null}`; when it is
+active, `settings.limits` says prices and costs are today's moved by the what-if. Only prices and costs move; yields,
+weather, water and soil scores do not.
+
+`/plans` also carries `sensitivity` (null only if it could not be worked out): the break-even for the top plan, from
+the planner's own model. Return over direct costs is linear in a uniform price change, so per climate model the
+break-even is costs / revenue (revenue from a second run with prices doubled); no search, no new assumption. Costs are
+held where they are set.
+
+| Key | Meaning |
+|---|---|
+| `plan`, `plan_name` | which plan (1 = the top one) |
+| `basis` | `today`: percentages are against today's prices (also when `price_pct` moved all crops together); `your_prices`: against the prices as set (when per-crop prices were given) |
+| `status` | `ok` (break-even inside the control's range), `stays_above_zero` (every climate model stays above zero for any drop down to -50%), `below_zero_now` (already under its direct costs as set; the figures say how far prices would have to move), `no_revenue` |
+| `return_now` | mean return over direct costs, $ an acre a year, as set |
+| `break_even_pct`, `low_pct`, `high_pct` | the price change (percent, whole numbers) at which the return reaches zero: ensemble mean, and the lowest and highest across the climate models; null for `no_revenue` |
+| `range_shown` | `[-50, 100]` |
+| `sentence`, `note` | plain English for the farmer; "A what-if, not a forecast" |
+
+The what-if engines are cached per engine (last 8 adjustments), like the irrigation-limit engines.
+
+## `GET /rotation-effects` (Phase 5)
+
+`{"setting": "on" | "off", "applied": bool, "file": "rotation_effects.json", "effects": [...], "not_applied": [...],
+"baseline": "<how the county's mix levels the multipliers>", "levelled": [...]}`. Each `effects[]` row is the file's
+row plus `sentence`; `levelled[]` rows (`id`, `practice`, `crop`, `share_after_itself` (the county's share of that crop
+that followed itself, field-years of the soil table), `after_itself`, `after_another_crop`) give the multipliers the
+engine really uses once each crop's set is divided by its average over the county's mix (omitted when there is no mix;
+see README "Phase 5"). `400` with one sentence for an unreadable `ROTATION_EFFECTS`; without the climate tables
+`{"applied": false, "setting": null, "effects": [], "reason": "not_built"}`.
 
 ### `limit_in` and `water_outlook` (Phase 4: water reality check)
 
@@ -695,6 +760,51 @@ Errors: `400 {"detail": "<one plain sentence>"}` for `years` outside 4 to 12, a 
 both `plan` and `target`, a target `/score` would refuse, and the bad settings `/plans` refuses; `404` no
 such field; `503 {"detail": "<one plain sentence>"}` when only the basic planner is available or the
 engine failed.
+
+## `GET /field/{id}/replay` (Phase 5: weather replay)
+
+A plan or rotation run year by year through the observed weather of 2000-2024 with the planner's own crop
+response, water balance, irrigation limit, rotation effects, prices and costs (README "Phase 5", item B).
+Query: `plan` (1, 2 or 3; default 1) or `rotation` (2 to 6 crops as typed), not both, plus the `/plans`
+parameters (`soil water money risk scenario horizon irrigated limit_in`). Weather does not depend on the
+scenario or horizon; they only choose which plan is "plan N". Dollars are returns over direct costs per acre,
+whole dollars, at today's prices and costs.
+
+| Key | Meaning |
+|---|---|
+| `field_id`, `engine` (`"smart"`), `status` (`"ok"`) | |
+| `settings` | `irrigated`, `irrigation_source`, `irrigation_basis`, `weights`, `scenario`, `horizon`, `profit_basis`, `irrigation_limit_mm`, `irrigation_limit_in`, `rotation_effects`, `what_if` (as in `/plans`) |
+| `subject` | `source` (`plan` or `own`), `plan` (1-3 or null), `name`, `cycle` |
+| `weather` | `source`, `first_year`, `last_year`, `years`, `normal_season_rain_mm` (mean April-September rain), `season`, `dry_rule` (sentence), `dry_years` (the driest fifth of the years by that rain, from our own rule), `rows[]` (`year`, `season_rain_mm`, `rain_vs_normal_pct`, `hot_days`, `dry`) |
+| `plan` | the replayed rotation, a series (below) |
+| `carry_on` | the field's current pattern (`transition.carry_on_pattern`) as a series, plus `repeating`; null with fewer than four years in a row of the six crops |
+| `comparison` | `plan` against `carry_on`, year by year; null without `carry_on`. `against`, `years[]`, `difference[]` (plan minus carry on), `carry_return[]`, `mean_difference`, `median_difference`, `years_ahead`, `years_behind`, `years_same`, `total`, `worst_year`, `median_return`, `below_cost_share`, `below_cost_years`, `failed_years` (each `{plan, carry_on}`), `sentences[]` |
+| `notes[]`, `not_modelled[]` | plain sentences: history is not a forecast, how the phase was chosen, the dry rule, prices and costs are today's, the irrigation limit, what the replay leaves out |
+
+A series (`plan`, `carry_on`): `name`, `cycle` (the repeating unit), `phases` (its length: one starting year per
+phase), `phase` (`known`: true when the field has a crop history, then the bars are the cycle lined up so its first
+year is `first_year`, the year after the field's last year on record; `starts_with`, `shown`, `count`), `basis`
+(`this_start`, or `all_starts` when the phase is not known: the bars are the average of every phase), `years[]`,
+`summary`, `all_starts` (the same pooled over every phase and year), `effects_range` (worst / median return and
+share under the line under the strong and weak end of the rotation effects; null when they do not move),
+`worst_years` (the three worst years of the bars), `worst_in_dry_years`, `model_error[]` (`crop`,
+`typical_miss_pct`: the crop model's own leave-one-year-out error as a share of a normal yield, `status`), `sentences[]`.
+
+`years[]` rows: `year`, `dry`, `worst_rank` (1-3 or null), `crop` (the crop of the shown phase; null when
+averaged), `return`, `low` and `high` (over every phase), `yield_pct` (percent of a normal yield; null for fallow),
+`yield` (per acre), `fail_chance` (the crop model's chance that the crop failed), `failed` (yield under half of
+normal in the model; null when averaged), `failed_phases` (how many phases fail that year), `water_in` (inches
+pumped; irrigated only), `water_met` (share of the crop's water need met), `below_cost` (return under $0),
+`crops_by_phase`, `returns_by_phase`.
+
+`summary`: `years`, `crop_years`, `worst_year` and `best_year` (`year`, `return`, `crop`), `median_return`,
+`mean_return`, `below_cost_years`, `below_cost_share`, `planted_years`, `failed_years`, `failed_share`, `dry`
+(`years`, `mean_return`, `other_mean_return`, `below_cost_years`, `failed_years`, `mean_yield_pct`,
+`other_mean_yield_pct`).
+
+Errors: `400` (one sentence) for a `plan` outside 1 to 3, both `plan` and `rotation`, a rotation we cannot read,
+or bad `/plans` settings; `404` no such field; `503` (one sentence) when only the basic planner is available or the
+observed weather record (`climate_history.parquet` with its observed monthly rows) is missing.
 
 ## `POST /farm/plan` (Phase 4: whole-farm planner)
 
@@ -1119,3 +1229,20 @@ a table the answer needs has not been built (the sentence names the `make` comma
 `GET /fields` and `GET /layers...` answer `ETag` and honour `If-None-Match` (304); both are gzipped once.
 The API does first-use work in the background right after it starts (`API_WARMUP=0` turns that off); it
 changes no answer.
+
+## Share link and CSV files (Phase 5, item C)
+
+Browser-side only; no API answer changed.
+
+- **URL hash.** `#<field>` (the original form, still valid) or `#<field>?<params>` or `#?<params>` (no field open). Params, all
+  optional, written only when not the default: `w` priorities `soil.water.money.risk` (0-10), `h` year (2030, 2035 ... 2060), `s`
+  `ssp585`, `lim` pumping limit in inches, `pp` / `cp` price and cost change in percent (-50 to 100), `irr` `1` or `0` (open field),
+  `own` own rotation crops separated by `,` with `_` for an empty year (open field), `m=farm`, `farm` field ids separated by `,`,
+  `fw` water budget, `fm` least return (as typed), `layer` and `yr` map layer and year. Parsed by `web/src/lib/share.ts`.
+- **Top-plans CSV** (`rotation-plans-<field>.csv`): `#` comment rows, then the header `rank, name, year_1..year_4, cycle,
+  place_of_candidates, ranking_score, soil_protection_score, water_score, money_score, risk_score, holds_up_in_futures, futures_total,
+  return_low/middle/high_per_acre_year, bare_days_per_year, water_pumped_inches_per_year, crop_water_need_met_percent,
+  planted_crops_failing_percent, reason`; `rank` is `1`-`3`, `as now` or `yours`. Dollars are over direct costs.
+- **Farm CSV** (`farm-plan.csv`): `#` comment rows, then `field_id, acres, practice, compared_with_own_first_pick, plan_name,
+  year_1..year_12, plan_ranking_score, plan_return_per_acre_year, plan_bare_days_per_year, plan_water_pumped_inches_per_year,
+  own_first_pick_name, sentence`.

@@ -696,7 +696,8 @@ def test_result_has_everything_the_plans_endpoint_needs(engine):
     assert s["models"] == ["cool", "hot", "mid"]
     assert set(s) == {"weights", "scenario", "horizon", "window", "irrigated", "irrigation_source", "irrigation_basis",
                       "soil_source", "soil_note", "holds_up_rule", "ranking_rule", "profit_basis", "irrigation_limit_mm",
-                      "irrigation_limit_in", "yield_change_note", "limits", "models"}
+                      "irrigation_limit_in", "yield_change_note", "limits", "models", "rotation_effects"}
+    assert s["rotation_effects"]["setting"] == "off" and s["rotation_effects"]["applied"] is False   # this engine is built with none
     assert s["irrigation_limit_mm"] == 610 and s["irrigation_limit_in"] == 24.0
     assert s["profit_basis"] == money.profit_basis(money.builtin_economics())
     assert "new varieties" in s["yield_change_note"] and "adaptation" in s["yield_change_note"]
@@ -1261,7 +1262,9 @@ def test_sanity_script_runs_and_writes_only_where_told(real_settings, tmp_path, 
     out = capsys.readouterr().out
     assert code in (0, 1) and len(out.splitlines()) <= 8
     report = json.loads((tmp_path / "sanity.json").read_text())
-    assert set(report["checks"]) == {"dryland_heat", "irrigation", "weights", "soil_order", "results", "irrigation_limit"}
+    assert set(report["checks"]) == {"dryland_heat", "irrigation", "weights", "soil_order", "results", "irrigation_limit",
+                                     "rotation_effects"}
+    assert report["checks"]["rotation_effects"]["passed"] is True       # Phase 5: monocultures lose rank, the county mix is level
     assert len(report["checks"]["irrigation_limit"]["lines"]) >= 6 and report["irrigation_limit_mm"] > 0
     assert all("lead" in line for line in report["checks"]["dryland_heat"]["lines"][:4])     # the raw leads are printed
     assert report["checks"]["results"]["passed"] is True          # rules, 0-1 and determinism must always hold

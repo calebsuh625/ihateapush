@@ -11,6 +11,7 @@ Endpoints (the frontend is written against exactly these shapes):
                                    soil, water, money, risk, scenario, horizon, irrigated; else the basic one)
     GET /field/{field_id}/score    the farmer's own rotation (?rotation=corn,sorghum,wheat,fallow) scored like
                                    the plans, next to our top picks (smart planner only; 503 without it)
+    GET /field/{field_id}/replay      a plan or rotation run year by year through the real 2000-2024 weather
     GET /field/{field_id}/transition  the year-by-year path from what the field grows now to one of our plans
                                    (?plan=1|2|3) or to a rotation (?target=corn,soy), against carrying on as
                                    now (smart planner only; 503 without it)
@@ -54,7 +55,7 @@ from typing import Any
 
 import numpy as np
 import shapely
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -69,7 +70,7 @@ from api.layers import LayerService, router as layers_router
 from api.regions import router as regions_router
 from api.planner import FieldInput, Plan, Planner, rank_plans
 from api.planner import config as planner_config
-from api.planner import custom, farm, smart, transition
+from api.planner import custom, farm, replay as weather_replay, smart, transition, whatif
 from api.planner.traits import FieldTraits
 from pipeline import groundwater_schema, satellite_schema
 from pipeline.soil import health_schema
@@ -660,6 +661,20 @@ async def climate() -> JSONResponse:
         return JSONResponse({"available": False, "reason": "not_built"})
 
 
+@router.get("/rotation-effects", summary="The yield effects of the previous crop the planner applies, with sources")
+async def rotation_effects() -> JSONResponse:
+    """Phase 5, item A. `setting` is ROTATION_EFFECTS (on / off), `applied` whether any effect is in use, `effects`
+    each effect with its multiplier, range, status, basis and sources, `not_applied` the ones left out and why,
+    `baseline` how the county's own mix of previous crops is used."""
+    try:
+        return JSONResponse(smart.rotation_effects_report())
+    except ValueError as exc:
+        raise _bad_request(str(exc).split("\n")[0]) from exc
+    except Exception as exc:
+        log.warning("rotation effects report failed, reporting it as not built: %s: %s", type(exc).__name__, exc)
+        return JSONResponse({"applied": False, "setting": None, "effects": [], "reason": "not_built"})
+
+
 @router.get("/fields", summary="All field outlines (simplified) as GeoJSON")
 async def fields(request: Request) -> Response:
     store = _store(request)
@@ -690,6 +705,26 @@ def _bad_request(detail: str) -> HTTPException:
     return HTTPException(status_code=400, detail=detail)
 
 
+def _what_if_params(
+    price_pct: float | None = None,
+    cost_pct: float | None = None,
+    price_corn_pct: float | None = None,
+    price_soybeans_pct: float | None = None,
+    price_winter_wheat_pct: float | None = None,
+    price_sorghum_pct: float | None = None,
+    price_alfalfa_pct: float | None = None,
+) -> "whatif.Adjustment":
+    """Phase 5, item F: the price and cost what-if of /plans, /score, /transition and /replay (api/planner/whatif.py):
+    percent change, -50 to +100, on all crop prices (`price_pct`; `price_<crop>_pct` for one crop instead) and on all
+    direct costs (`cost_pct`). Nothing given, or 0, changes nothing. A plain 400 sentence for anything else."""
+    try:
+        return whatif.parse(price_pct, cost_pct, {
+            "corn": price_corn_pct, "soybeans": price_soybeans_pct, "winter wheat": price_winter_wheat_pct,
+            "sorghum": price_sorghum_pct, "alfalfa": price_alfalfa_pct})
+    except ValueError as exc:
+        raise _bad_request(str(exc)) from exc
+
+
 def _plain_weights(given: dict[str, float | None]) -> dict[str, float]:
     """The four priorities, a missing one at the planner's default; a plain 400 for bad numbers."""
     weights = {}
@@ -718,6 +753,7 @@ async def plans(
     horizon: int = planner_config.TODAY,
     irrigated: bool | None = None,
     limit_in: float | None = None,
+    adjustment: whatif.Adjustment = Depends(_what_if_params),
 ) -> JSONResponse:
     """`limit_in` (Phase 4, item 6): a what-if, the most inches that can be pumped on an acre in a year,
     from 1 up to the planner's own limit; the plans are scored again under it. An irrigated field's answer
@@ -736,12 +772,14 @@ async def plans(
             # The fake fields reuse ids that real fields have, so they must never pick up a real field's
             # row of field_traits.parquet: empty traits = guess irrigation from the fake history alone.
             traits = FieldTraits() if _store(request).is_fake else None
-            engine = _engine_for(limit_in)
+            engine = _engine_for(limit_in, adjustment)
             result = smart.rank_plans_smart(
                 record.planner_input(), weights=weights, scenario=scenario, horizon=horizon, irrigated=irrigated,
                 traits=traits, engine=engine,
             )
-            return JSONResponse(_with_water_outlook(request, record, result.to_dict(), engine))
+            body = result.to_dict()
+            body["sensitivity"] = result.sensitivity          # Phase 5, item F: the top plan's break-even price change
+            return JSONResponse(_with_water_outlook(request, record, body, engine))
         except HTTPException:
             raise
         except ValueError as exc:
@@ -756,10 +794,13 @@ async def plans(
     )
 
 
-def _engine_for(limit_in: float | None):
-    """The planner's tables, or those for the lower pumping limit asked for; a plain 400 for a bad limit."""
+def _engine_for(limit_in: float | None, adjustment: "whatif.Adjustment | None" = None):
+    """The planner's tables, or those for the lower pumping limit asked for and the price / cost what-if
+    (Phase 5, item F); a plain 400 for a bad limit."""
     try:
-        return smart.engine_for_limit(limit_in)
+        engine = smart.engine_for_limit(limit_in)
+        # (the advisor calls these handlers directly: an un-resolved Depends default means "no what-if")
+        return engine if not isinstance(adjustment, whatif.Adjustment) else engine.with_adjustment(adjustment)
     except ValueError as exc:
         raise _bad_request(str(exc)) from exc
 
@@ -813,6 +854,7 @@ async def score(
     horizon: int = planner_config.TODAY,
     irrigated: bool | None = None,
     limit_in: float | None = None,
+    adjustment: whatif.Adjustment = Depends(_what_if_params),
 ) -> JSONResponse:
     """Phase 4, item 1 (api/planner/custom.py). Same settings as /plans plus `rotation`: 2 to 6 crops,
     one a year, as typed ("corn, milo, wheat, fallow"). 400 with one plain sentence for a rotation we
@@ -829,7 +871,7 @@ async def score(
         raise _bad_request("The scenario must be ssp245 (middle road) or ssp585 (high emissions).")
     if not planner_config.HORIZON_MIN <= horizon <= planner_config.HORIZON_MAX:
         raise _bad_request(f"The year must be between {planner_config.HORIZON_MIN} and {planner_config.HORIZON_MAX}.")
-    engine = _engine_for(limit_in)
+    engine = _engine_for(limit_in, adjustment)
     try:
         traits = FieldTraits() if _store(request).is_fake else None      # as in /plans: fake ids are not real fields
         body = custom.score_rotation(record.planner_input(), cycle, weights=weights, scenario=scenario,
@@ -858,6 +900,7 @@ async def transition_path(
     horizon: int = planner_config.TODAY,
     irrigated: bool | None = None,
     limit_in: float | None = None,
+    adjustment: whatif.Adjustment = Depends(_what_if_params),
 ) -> JSONResponse:
     """Phase 4, item 2 (api/planner/transition.py). `limit_in`: as /plans. `target`: the rotation to get to, 2 to 6 crops as typed;
     or `plan`: 1, 2 or 3, that pick of /plans for the same settings (the default). `years`: 4 to 12. The
@@ -878,7 +921,7 @@ async def transition_path(
         raise _bad_request("The scenario must be ssp245 (middle road) or ssp585 (high emissions).")
     if not planner_config.HORIZON_MIN <= horizon <= planner_config.HORIZON_MAX:
         raise _bad_request(f"The year must be between {planner_config.HORIZON_MIN} and {planner_config.HORIZON_MAX}.")
-    engine = _engine_for(limit_in)
+    engine = _engine_for(limit_in, adjustment)
     try:
         traits = FieldTraits() if _store(request).is_fake else None      # as in /plans: fake ids are not real fields
         body = transition.transition_path(record.planner_input(), target=cycle, plan=plan, years=years,
@@ -892,11 +935,66 @@ async def transition_path(
     return JSONResponse(body)
 
 
+REPLAY_NEEDS_CLIMATE = weather_replay.NEEDS_CLIMATE
+
+
+@router.get("/field/{field_id}/replay", summary="A plan or rotation replayed in the real weather of 2000-2024")
+async def replay_in_real_weather(
+    request: Request,
+    field_id: str,
+    plan: int | None = None,
+    rotation: str | None = None,
+    soil: float | None = None,
+    water: float | None = None,
+    money: float | None = None,
+    risk: float | None = None,
+    scenario: str = planner_config.DEFAULT_SCENARIO,
+    horizon: int = planner_config.TODAY,
+    irrigated: bool | None = None,
+    limit_in: float | None = None,
+    adjustment: whatif.Adjustment = Depends(_what_if_params),
+) -> JSONResponse:
+    """Phase 5, item B (api/planner/replay.py). `plan`: 1, 2 or 3, that pick of /plans for the same settings (the
+    default is 1); or `rotation`: the farmer's own rotation, 2 to 6 crops as typed. The other parameters are those of
+    /plans (they choose which plan is "plan 2", and whether the field is irrigated). 400 with one plain sentence for a
+    request we cannot answer, 503 when the climate or the observed-weather tables are missing."""
+    record = _record(request, field_id)
+    if not _use_smart(request):
+        raise HTTPException(status_code=503, detail=REPLAY_NEEDS_CLIMATE)
+    if rotation is not None and plan is not None:
+        raise _bad_request("Give either a rotation or a plan number, not both.")
+    cycle = None
+    if rotation is not None:
+        try:
+            cycle = custom.parse_rotation(rotation)
+        except custom.RotationError as exc:
+            raise _bad_request(str(exc)) from exc
+    weights = _plain_weights({"soil": soil, "water": water, "money": money, "risk": risk})
+    if scenario not in planner_config.SCENARIOS:
+        raise _bad_request("The scenario must be ssp245 (middle road) or ssp585 (high emissions).")
+    if not planner_config.HORIZON_MIN <= horizon <= planner_config.HORIZON_MAX:
+        raise _bad_request(f"The year must be between {planner_config.HORIZON_MIN} and {planner_config.HORIZON_MAX}.")
+    engine = _engine_for(limit_in, adjustment)
+    try:
+        traits = FieldTraits() if _store(request).is_fake else None      # as in /plans: fake ids are not real fields
+        body = weather_replay.replay(record.planner_input(), plan=plan, rotation=cycle, weights=weights,
+                                     scenario=scenario, horizon=horizon, irrigated=irrigated, traits=traits,
+                                     engine=engine)
+    except weather_replay.ReplayUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise _bad_request(str(exc).split("\n")[0]) from exc
+    except Exception as exc:
+        log.warning("weather replay failed for %s: %s: %s", field_id, type(exc).__name__, exc)
+        raise HTTPException(status_code=503, detail="The planner could not replay this plan just now.") from exc
+    return JSONResponse(body)
+
+
 FARM_NEEDS_CLIMATE = (
     "Planning a whole farm needs the future-weather tables, which are not set up on this server."
 )
 FARM_KEYS = ("field_ids", "weights", "scenario", "horizon", "water_budget_acre_in", "min_income", "irrigated",
-             "limit_in")
+             "limit_in", "price_pct", "cost_pct", "crop_price_pct")
 
 
 def _farm_request(body: Any) -> dict:
@@ -950,7 +1048,16 @@ def _farm_request(body: Any) -> dict:
     limit_in = body.get("limit_in")
     if limit_in is not None and (isinstance(limit_in, bool) or not isinstance(limit_in, (int, float))):
         raise _bad_request("The pumping limit must be a number of inches an acre a year.")
-    return {"field_ids": ids, "weights": weights, "scenario": scenario, "horizon": horizon,
+    crop_pct = body.get("crop_price_pct")
+    if crop_pct is None:
+        crop_pct = {}
+    if not isinstance(crop_pct, dict) or any(key not in whatif.PRICE_CROPS for key in crop_pct):
+        raise _bad_request(f"crop_price_pct must be an object with any of {', '.join(whatif.PRICE_CROPS)}.")
+    try:
+        adjustment = whatif.parse(body.get("price_pct"), body.get("cost_pct"), crop_pct)
+    except ValueError as exc:
+        raise _bad_request(str(exc)) from exc
+    return {"adjustment": adjustment, "field_ids": ids, "weights": weights, "scenario": scenario, "horizon": horizon,
             "water_budget_acre_in": budget, "min_income": minimum, "irrigated": irrigated, "limit_in": limit_in}
 
 
@@ -971,7 +1078,7 @@ async def farm_plan(request: Request) -> JSONResponse:
     if not _use_smart(request):
         raise HTTPException(status_code=503, detail=FARM_NEEDS_CLIMATE)
     traits = FieldTraits() if _store(request).is_fake else None          # as in /plans: fake ids are not real fields
-    engine = _engine_for(asked["limit_in"])
+    engine = _engine_for(asked["limit_in"], asked["adjustment"])
     try:
         result = await run_in_threadpool(
             farm.plan_farm_cached, [record.planner_input() for record in records], weights=asked["weights"],

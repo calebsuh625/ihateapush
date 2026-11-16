@@ -2,6 +2,7 @@
 // (or the browser's AbortError when the caller cancelled the request).
 import type { AdvisorReply, AdvisorStatus } from "./lib/advisor";
 import type { LayerAnswer, LayerCatalog } from "./lib/layers";
+import type { FieldReplay } from "./lib/replay";
 import type { FarmPlan, FieldCollection, FieldDetail, FieldPlans, FieldSatellite, FieldScore, FieldSoil, FieldTransition, Health } from "./types";
 
 const configured: string | undefined = import.meta.env.VITE_API_URL;
@@ -174,6 +175,22 @@ export const api = {
         typeof b.summary === "string" &&
         isObject(b.target) &&
         Array.isArray(b.history) &&
+        Array.isArray(b.not_modelled),
+      signal,
+    ),
+
+  /** A plan or rotation run through the real 2000-2024 weather. `query` comes from replayQuery (lib/replay.ts). */
+  replay: (fieldId: string, signal: AbortSignal | undefined, query: string) =>
+    getJson<FieldReplay>(
+      `${fieldPath(fieldId)}/replay?${query}`,
+      (b) =>
+        isObject(b) &&
+        b.field_id === fieldId &&
+        b.status === "ok" &&
+        isObject(b.plan) &&
+        Array.isArray(b.plan.years) &&
+        isObject(b.weather) &&
+        Array.isArray(b.notes) &&
         Array.isArray(b.not_modelled),
       signal,
     ),
