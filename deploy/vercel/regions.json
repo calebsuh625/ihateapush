@@ -38,6 +38,15 @@
    "has_traits": true
   },
   {
+   "fips": "20063",
+   "state": "KS",
+   "county": "Gove",
+   "label": "Gove County, KS",
+   "is_default": false,
+   "field_count": 5017,
+   "has_traits": true
+  },
+  {
    "fips": "20067",
    "state": "KS",
    "county": "Grant",
@@ -56,6 +65,15 @@
    "has_traits": true
   },
   {
+   "fips": "20071",
+   "state": "KS",
+   "county": "Greeley",
+   "label": "Greeley County, KS",
+   "is_default": false,
+   "field_count": 4825,
+   "has_traits": true
+  },
+  {
    "fips": "20075",
    "state": "KS",
    "county": "Hamilton",
@@ -71,6 +89,15 @@
    "label": "Haskell County, KS",
    "is_default": false,
    "field_count": 4715,
+   "has_traits": true
+  },
+  {
+   "fips": "20083",
+   "state": "KS",
+   "county": "Hodgeman",
+   "label": "Hodgeman County, KS",
+   "is_default": false,
+   "field_count": 3814,
    "has_traits": true
   },
   {
@@ -119,12 +146,39 @@
    "has_traits": true
   },
   {
+   "fips": "20135",
+   "state": "KS",
+   "county": "Ness",
+   "label": "Ness County, KS",
+   "is_default": false,
+   "field_count": 5053,
+   "has_traits": true
+  },
+  {
+   "fips": "20171",
+   "state": "KS",
+   "county": "Scott",
+   "label": "Scott County, KS",
+   "is_default": false,
+   "field_count": 4442,
+   "has_traits": true
+  },
+  {
    "fips": "20175",
    "state": "KS",
    "county": "Seward",
    "label": "Seward County, KS",
    "is_default": false,
    "field_count": 3128,
+   "has_traits": true
+  },
+  {
+   "fips": "20187",
+   "state": "KS",
+   "county": "Stanton",
+   "label": "Stanton County, KS",
+   "is_default": false,
+   "field_count": 3777,
    "has_traits": true
   },
   {
