@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "written": "2026-11-15",
+  "what_it_is": "How much one crop's yield changes with the crop that grew on the field the year before, beyond the stored soil water that water.py already models. Phase 5, item A.",
+  "how_to_read": "Every multiplier is a relative yield on a ROTATED field, where the previous crop was a different crop, which is 1.0. 'multiplier' is the value the planner uses; 'low' is the stronger drag and 'high' the weaker one, taken from the sources below (never invented). The planner then re-levels each crop against the county's own mix of previous crops, because the county yields our crop model is fitted to already contain that mix (for example, 57% of irrigated corn in the county follows corn). A pair that is not listed here has no sourced effect and stays at the rotated level.",
+  "status_words": "verified = the number was read in the named source and the ratio worked out here; rough, unverified = a figure we could not read ourselves",
+  "effects": [
+    {
+      "id": "corn_after_corn",
+      "crop": "corn",
+      "after": "corn",
+      "practice": "all",
+      "multiplier": 0.91,
+      "low": 0.876,
+      "high": 0.91,
+      "status": "verified",
+      "basis": "K-State says there is about a 10 percent yield advantage to corn in a corn/soybean rotation over continuous corn (1 / 1.10 = 0.91). At Tribune, western Kansas, limited irrigation, 2013-2019 averages, continuous corn made 176 bu/a against 201 for corn after wheat (176 / 201 = 0.876; difference significant, LSD 17). The weaker of the two, 0.91, is the one used.",
+      "sources": [
+        {"name": "K-State Research and Extension, No-Till in Kansas: Rotations and Cultural Practices (MF2908), eastern Kansas section", "url": "https://bookstore.ksre.ksu.edu/pubs/mf2908.pdf", "figure": "about a 10 percent yield advantage to corn in a corn/soybean rotation as opposed to continuous corn"},
+        {"name": "Schlegel and Bond 2020, Alternative Cropping Systems with Limited Irrigation, Kansas Agricultural Experiment Station Research Reports 6(8), Table 2", "url": "https://doi.org/10.4148/2378-5977.7956", "figure": "continuous corn 176 bu/a, corn-wheat 201 bu/a, 2013-2019"}
+      ]
+    },
+    {
+      "id": "sorghum_after_sorghum",
+      "crop": "sorghum",
+      "after": "sorghum",
+      "practice": "all",
+      "multiplier": 0.93,
+      "low": 0.82,
+      "high": 0.985,
+      "status": "verified",
+      "basis": "Parsons, southeast Kansas, 1997-2001 (Kelley 2005, Table 4): second-year sorghum made 88 and 97 bu/a at 75 and 135 lb N against 97 and 102 for sorghum rotated every year with soybeans (0.907 and 0.951, mean 0.93). Hesston, central Kansas (Claassen and Roozeboom 2007): continuous sorghum 1,035 kg/ha under the 5,620 of sorghum rotated with wheat (4,585 / 5,620 = 0.82). Tribune, western Kansas, limited irrigation, 2013-2019: continuous sorghum 135 bu/a against 137 after corn (0.985, not significantly different). The one-repeat-year value, 0.93, is the one used; longer runs of sorghum do worse (Kelley: continuous 0.77 at 75 lb N).",
+      "sources": [
+        {"name": "Kelley 2005, Grain Sorghum and Soybean Cropping Sequence Affect Yield and Fertilizer N Requirement, Crop Management (K-State Southeast Agricultural Research Center), Table 4", "url": "https://mssoy.org/sites/default/files/documents/kelley-2005.pdf", "figure": "2nd-year grain sorghum 88 / 97 bu/a, annual rotation 97 / 102 bu/a (75 / 135 lb N)"},
+        {"name": "Claassen and Roozeboom 2007, Reduced Tillage and Crop Rotation Systems with Winter Wheat, Grain Sorghum, Corn and Soybean (ASA abstract, K-State Hesston)", "url": "https://download.clib.psu.ac.th/datawebclib/e_resource/e_database/agronomy/2007/techprogram/AM07/P36252.HTM", "figure": "grain sorghum after wheat 5620 kg/ha, 1035 kg/ha more than continuous grain sorghum"},
+        {"name": "Schlegel and Bond 2020, Kansas Agricultural Experiment Station Research Reports 6(8), Table 2", "url": "https://doi.org/10.4148/2378-5977.7956", "figure": "continuous sorghum 135 bu/a, corn-sorghum 137 bu/a, 2013-2019"}
+      ]
+    },
+    {
+      "id": "soybeans_after_soybeans",
+      "crop": "soybeans",
+      "after": "soybeans",
+      "practice": "all",
+      "multiplier": 0.93,
+      "low": 0.81,
+      "high": 0.93,
+      "status": "verified",
+      "basis": "Parsons, southeast Kansas, 1997-2001 (Kelley 2005, Table 3), 5-year average: soybeans rotated every year with sorghum 30.3 bu/a, second-year soybeans 28.2 (0.93), continuous soybeans 24.5 (0.81). Only one Kansas source was found, so there is no weaker value than the second-year one; the high end equals the middle.",
+      "sources": [
+        {"name": "Kelley 2005, Grain Sorghum and Soybean Cropping Sequence Affect Yield and Fertilizer N Requirement, Crop Management, Table 3", "url": "https://mssoy.org/sites/default/files/documents/kelley-2005.pdf", "figure": "GS/SB 30.3, 2nd yr SB 28.2, continuous SB 24.5 bu/a (5-year average)"}
+      ]
+    },
+    {
+      "id": "wheat_after_wheat",
+      "crop": "winter wheat",
+      "after": "winter wheat",
+      "practice": "all",
+      "multiplier": 0.83,
+      "low": 0.82,
+      "high": 0.84,
+      "status": "verified",
+      "basis": "Hesston, central Kansas, no-till, 10-year averages (Claassen and Roozeboom 2007): continuous wheat 3,246 kg/ha against 3,965 after soybeans and 3,877 after corn (0.82 and 0.84). Tribune, western Kansas dryland (Schlegel et al. 2019), shown for context and not used: continuous wheat averaged about 60% of wheat after sorghum in a 4-year rotation, a figure that also contains the stored-water loss the planner models separately, so it would count that loss twice. Our own rules already keep wheat after wheat out of the plans; this applies when a farmer scores such a rotation.",
+      "sources": [
+        {"name": "Claassen and Roozeboom 2007, ASA abstract, K-State Hesston", "url": "https://download.clib.psu.ac.th/datawebclib/e_resource/e_database/agronomy/2007/techprogram/AM07/P36252.HTM", "figure": "wheat after soybean 3965, after corn 3877, continuous wheat 3246 kg/ha"},
+        {"name": "Schlegel, Holman and Burnett 2019, Wheat and Grain Sorghum in Four-Year Rotations, Kansas Agricultural Experiment Station Research Reports 5(7)", "url": "https://doi.org/10.4148/2378-5977.7813", "figure": "continuous wheat about 60% of wheat following sorghum in a 4-year rotation; recrop wheat about 75%"}
+      ]
+    }
+  ],
+  "not_applied": [
+    {
+      "id": "corn_or_wheat_after_soybeans_credit",
+      "crop": "corn, winter wheat",
+      "after": "soybeans",
+      "reason": "K-State credits corn after soybeans with 40 lb N an acre (Corn Production Handbook C-560, Table 10). That is fertilizer the farmer does not have to buy, not extra bushels, and the planner's costs are fixed budgets per crop, so it is not counted a second time. The yield side of the same benefit is the corn-after-corn drag above, which re-levels corn after soybeans upward against the county mix.",
+      "status": "verified",
+      "sources": [
+        {"name": "K-State Corn Production Handbook C-560, Table 10, Corn nitrogen credits for various previous crops", "url": "https://bookstore.ksre.ksu.edu/pubs/c560.pdf", "figure": "soybeans 40 lb N/A; alfalfa (more than 5 plants/ft2) 120, (2-5) 80, (1-2) 40 lb N/A"}
+      ]
+    },
+    {
+      "id": "corn_or_wheat_after_alfalfa_credit",
+      "crop": "corn, winter wheat",
+      "after": "alfalfa",
+      "reason": "No Kansas yield figure was found. K-State's nitrogen credit for alfalfa (40 to 120 lb N an acre by stand) is a fertilizer saving, and an old eastern Kansas trial found corn the first year after alfalfa yielded less, believed to be soil moisture used up by the alfalfa. A yield credit would be a guess, so the effect is left out (multiplier 1, the rotated level).",
+      "status": "verified",
+      "sources": [
+        {"name": "K-State Corn Production Handbook C-560, Table 10", "url": "https://bookstore.ksre.ksu.edu/pubs/c560.pdf", "figure": "alfalfa 40 to 120 lb N/A by stand"},
+        {"name": "Sloan 1976, Legume Rotations: Crop Yields and Nitrogen Fixation, Kansas Agricultural Experiment Station Research Reports (Keeping up with Research)", "url": "https://ksu.janeway.systems/kaesrr/article/7487/galley/7418/download", "figure": "reduced corn yields the first year after alfalfa believed to result from soil moisture depletion"}
+      ]
+    },
+    {
+      "id": "wheat_after_sorghum",
+      "crop": "winter wheat",
+      "after": "sorghum",
+      "reason": "Sourced (Hesston: wheat after sorghum 3,279 kg/ha against about 3,900 after soybeans or corn) but not asked for in this item and our dryland rule already keeps wheat off summer-crop stubble; left for a later item.",
+      "status": "verified",
+      "sources": [
+        {"name": "Claassen and Roozeboom 2007, ASA abstract, K-State Hesston", "url": "https://download.clib.psu.ac.th/datawebclib/e_resource/e_database/agronomy/2007/techprogram/AM07/P36252.HTM", "figure": "wheat after grain sorghum 3279 kg/ha"}
+      ]
+    },
+    {
+      "id": "alfalfa_after_alfalfa",
+      "crop": "alfalfa",
+      "after": "alfalfa",
+      "reason": "An alfalfa stand is one crop over several years, not a repeated crop; no drag applies.",
+      "status": "not applicable",
+      "sources": []
+    }
+  ]
+}

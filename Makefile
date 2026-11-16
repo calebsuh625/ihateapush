@@ -117,7 +117,7 @@ test:
 e2e:
 	@cd web && npx playwright install chromium > /dev/null 2>&1 || true
 	@mkdir -p data/logs
-	@fail=0; for s in e2e e2e:states e2e:planner e2e:phase4; do \
+	@fail=0; for s in e2e e2e:states e2e:planner e2e:phase4 e2e:phase5; do \
 		log=data/logs/e2e_$$(echo $$s | tr ':' '_').log; \
 		if WEB_URL=http://localhost:$(WEB_PORT) npm --prefix web run $$s --if-present > $$log 2>&1; then \
 			echo "$$s: $$(grep -E 'PASS|FAIL' $$log | tail -1)"; \

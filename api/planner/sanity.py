@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 
 from api.planner import candidates as cand
-from api.planner import config, money, smart, soil_effect
+from api.planner import config, money, rotation, smart, soil_effect
 from api.planner.crops import CROPS, PRACTICES
 from api.planner.legacy import FieldInput, rotation_name
 from api.planner.money import MM_PER_INCH
@@ -329,6 +329,72 @@ def _top_numbers(ev, weights) -> dict:
     return {"plan": code(ev.plans.cycles[i]), "bare_days": float(ev.bare[i]),
             "irrigation_mm": float(ev.irrigation[i].mean()), "water_met": float(ev.water_met[i].mean()),
             "profit": float(ev.profit[i].mean()), "failed": float(ev.failed[i].mean())}
+
+
+MONOCULTURES = ("corn", "sorghum", "soybeans", "winter wheat")
+
+
+def check_rotation_effects(engine, off, fields_by_practice, weights) -> dict:
+    """7. Rotation effects (Phase 5, item A): a crop grown after itself now yields less than after another
+    crop, so a monoculture falls down the ranking; the county's own mix of previous crops still averages to
+    the yield the model was fitted to; and rotated plans are not worse off than before.
+
+    `off` is the same tables with the effects switched off (what the planner did before)."""
+    lines, rows = [], {}
+    if not engine.rotation.active:
+        return {"passed": False, "lines": ["The rotation effects are not in use (ROTATION_EFFECTS=off or no file): "
+                                           "nothing to check."], "rows": rows}
+    ok = True
+    for irrigated in (True, False):
+        label = "irrigated" if irrigated else "dryland"
+        cands = list(cand.candidates(irrigated))
+        parts = []
+        for crop in MONOCULTURES:
+            mono = (crop,) * 4
+            got = {}
+            for name, eng in (("off", off), ("on", engine)):
+                ev = eng.evaluate(irrigated, "ssp245", config.TODAY, rotations=[mono] + cands, **TYPICAL)
+                robust = ev.robust(weights)
+                got[name] = (1 + int((robust[1:] > robust[0] + 1e-12).sum()), float(ev.profit[0].mean()))
+            rows[f"{label} {crop}"] = {"rank_off": got["off"][0], "rank_on": got["on"][0],
+                                       "profit_off": got["off"][1], "profit_on": got["on"][1]}
+            ok &= got["on"][0] >= got["off"][0] and got["on"][1] <= got["off"][1] + 1e-9
+            parts.append(f"continuous {crop} number {got['off'][0]} -> {got['on'][0]} of {len(cands) + 1} "
+                         f"(${got['off'][1]:.0f} -> ${got['on'][1]:.0f} an acre a year)".replace("$-", "-$"))
+        lines.append(f"Typical {label} field, ssp245 today, default weights, ranked among the "
+                     f"{len(cands)} candidate plans (the monoculture makes {len(cands) + 1}): " + "; ".join(parts) + ".")
+    # levelling: the county's mix of previous crops averages to exactly the fitted yield
+    mix = rotation.mix_from_soil(engine.soil)
+    worst = 0.0
+    if mix:
+        m = engine.rotation.multipliers("mid", mix)
+        for p, practice in enumerate(PRACTICES):
+            for crop in CROPS:
+                cells = (mix.get(practice) or {}).get(crop) or {}
+                w = np.array([cells.get(q, 0) for q in CROPS], dtype=float)
+                if w.sum() >= rotation.MIN_MIX_FIELD_YEARS and not np.allclose(m[p, CROPS.index(crop)], 1.0):
+                    worst = max(worst, abs(float((w * m[p, CROPS.index(crop)]).sum() / w.sum()) - 1.0))
+        ok &= worst < 1e-9
+        lines.append(f"The county's own mix of previous crops averages to the fitted yield (largest gap {worst:.1e}, "
+                     "so the county's average yield is not moved, only who gets more and who gets less).")
+    else:
+        lines.append("No county mix of previous crops is available: the effects apply as written in the file.")
+    # real fields: how often the first plan and the field's own pattern change
+    changed = n = worse = top3 = 0
+    for irrigated, fields in fields_by_practice.items():
+        for f in fields:
+            a = smart.rank_plans_smart(f, engine=engine, irrigated=irrigated)
+            b = smart.rank_plans_smart(f, engine=off, irrigated=irrigated)
+            n += 1
+            changed += list(a.plans[0].cycle) != list(b.plans[0].cycle)
+            top3 += {tuple(p.cycle) for p in a.plans} != {tuple(p.cycle) for p in b.plans}
+            if a.current is not None and b.current is not None:
+                worse += a.current.rank > b.current.rank
+    lines.append(f"Of {n} sampled real fields, {changed} get a different first plan today and {top3} a different set of "
+                 f"three plans; {worse} have their own last four "
+                 "years rank lower than before (fields growing corn after corn, sorghum after sorghum and so on).")
+    rows["fields"] = {"sampled": n, "first_plan_changed": changed, "top3_changed": top3, "own_pattern_ranks_lower": worse}
+    return {"passed": bool(ok), "lines": lines, "rows": rows, "levelling_gap": worst}
 
 
 def check_weights(engine, fields_by_practice) -> dict:
@@ -652,7 +718,8 @@ def write_report(path: Path, report: dict) -> None:
              "weights": "3. turning a priority up moves the top plan the right way",
              "soil_order": "4. fallow-heavy worst on soil and erosion, alfalfa best",
              "results": "5. rules kept, scores in 0-1, deterministic",
-             "irrigation_limit": "6. irrigation limit: thirsty plans lose more than thrifty ones as reference ET rises"}
+             "irrigation_limit": "6. irrigation limit: thirsty plans lose more than thrifty ones as reference ET rises",
+             "rotation_effects": "7. rotation effects: a crop after itself yields less, the county's own mix is not moved"}
     for key, title in names.items():
         lines.append(f"| {title} | {'PASS' if c[key]['passed'] else 'FAIL'} |")
     for key, title in names.items():
@@ -735,8 +802,12 @@ def main(argv: list[str] | None = None) -> int:
     by_practice = sample_fields(fields, engine)
 
     # the same tables with no irrigation limit, to price the limit (check 6)
-    free = smart.Engine(*_climate_tables(settings), params=engine.params, economics=engine.economics, soil=engine.soil,
-                        traits=engine.traits, irrigation_limit_mm=0.0)
+    tables = _climate_tables(settings)
+    free = smart.Engine(*tables, params=engine.params, economics=engine.economics, soil=engine.soil,
+                        traits=engine.traits, irrigation_limit_mm=0.0, rotation_effects=engine.rotation)
+    # the same tables with the rotation effects off: what the planner did before Phase 5 (check 7)
+    off = smart.Engine(*tables, params=engine.params, economics=engine.economics, soil=engine.soil,
+                       traits=engine.traits, irrigation_limit_mm=engine.irrigation_limit_mm)
     checks = {
         "dryland_heat": check_dryland_heat(engine, weights),
         "irrigation": check_irrigation(engine),
@@ -744,6 +815,7 @@ def main(argv: list[str] | None = None) -> int:
         "soil_order": check_soil_order(engine),
         "results": check_results(engine, by_practice),
         "irrigation_limit": check_irrigation_limit(engine, free),
+        "rotation_effects": check_rotation_effects(engine, off, by_practice, weights),
     }
     examples, change_stats = [], {}
     for weights_used, label in ((None, "default"), ({"soil": 1, "water": 1, "money": 1, "risk": 3}, "risk first (1, 1, 1, 3)"),

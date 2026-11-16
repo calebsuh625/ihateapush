@@ -329,7 +329,7 @@ wells whose record names a bedrock aquifer are left out). Downloads are cached i
 
 ## Tracked planner files (`api/planner/`)
 
-Both are in git so a fresh clone works. Never edit `crop_response.json` by hand.
+All three are in git so a fresh clone works. Never edit `crop_response.json` by hand.
 
 - `crop_response.json`: written by `python -m api.planner.calibrate`. Keys: `written`, `written_by`,
   `model`, `sources`, `constants` (`et0_scale`, `fallow_efficiency`, `awc_mm`, `pivot_efficiency`),
@@ -345,6 +345,16 @@ Both are in git so a fresh clone works. Never edit `crop_response.json` by hand.
   `url`, ...; `fallow` included), `index_pages`, `cost_rule`, `cost_year`, `irrigation_limit` (`mm`,
   `inches`, `status`, `source`, `url`). A cost with `status` = `verified` was read from the K-State
   budget on the date given; `rough, unverified` is our estimate. Dollars are return over direct costs.
+
+- `rotation_effects.json` (Phase 5): the yield cost of a crop after itself, read by `api/planner/rotation.py`.
+  Keys: `version`, `written`, `what_it_is`, `how_to_read`, `status_words`, `effects` and `not_applied`. Each
+  `effects[]` row: `id`, `crop`, `after` (two of the six crop names, fallow excluded), `practice` (`all`,
+  `irrigated` or `dryland`), `multiplier` (relative yield, the same crop after another crop = 1.0), `low` (the
+  stronger end of the range), `high` (the weaker end), with `low <= multiplier <= high`, `status` (`verified` or
+  `rough, unverified`), `basis` (the figures and the arithmetic) and `sources[]` (`name`, `url`, `figure`). A row
+  with no source, a bad range or an unknown status makes the file unusable (the planner then applies nothing and
+  says so). `not_applied[]` rows (`id`, `crop`, `after`, `reason`, `status`, `sources`) are effects left out, with
+  the reason. Never invent a number here: an effect that cannot be sourced is simply not listed.
 
 ## `GET /field/{id}/plans`
 
@@ -364,6 +374,8 @@ Smart answer (`"engine": "smart"`), trimmed:
 | `current` | the field's last four years scored like a plan (the plan keys plus `years`, `previous_crop`, `is_candidate`, `rules_broken` as gentle sentences), or `null` |
 | `current_note` | why `current` is null, otherwise null |
 | `candidates` | how many cycles were compared (105 irrigated, 17 dryland) |
+| `settings.rotation_effects` | (Phase 5) `setting` (`on` / `off`: ROTATION_EFFECTS), `applied` (true when at least one effect is in use), `file`, `effects[]` (`id`, `crop`, `after`, `practice`, `multiplier`, `low`, `high`, `status`, `sentence`), `problem` only when the file could not be read |
+| `plans[].rotation_effects`, `current.rotation_effects` | (Phase 5) only when applied and the plan's years run into one: `[{id, crop, after, multiplier, low, high, status, sentence}]`. Absent otherwise, so a plan keeps its old keys when the effects are off. The same on `yours` of `/score` |
 
 ```json
 {"field_id": "KS-013847", "engine": "smart",
@@ -388,6 +400,25 @@ plan in either answer keeps `name`, `rotation`, `scores.soil/water/money/overall
 Errors: `400 {"detail": "<one plain sentence>"}` for a negative or non-finite priority, all four zero,
 unknown scenario or a horizon outside 2025-2060 (smart planner only); `404` no such field; `422` a value
 that is not a number.
+
+### Rotation effects (Phase 5)
+
+`settings.limits[0]` is the sentence about the crop grown before: with the effects on it says a crop after itself
+yields less by the amounts the trials measured (and that no nitrogen credit is counted); with `ROTATION_EFFECTS=off`
+it is the old "Yields do not change with the crop grown before, apart from the soil water it leaves behind
+(rotation effects are switched off)". `spread.profit_per_acre` and `spread.overall` (`low`, `mid`, `high`) span the
+six climate models and the stronger and weaker end of each effect the plan runs into; `mid`, `scores` and `numbers`
+use the middle values. Off, the whole answer is what it was before Phase 5.
+
+## `GET /rotation-effects` (Phase 5)
+
+`{"setting": "on" | "off", "applied": bool, "file": "rotation_effects.json", "effects": [...], "not_applied": [...],
+"baseline": "<how the county's mix levels the multipliers>", "levelled": [...]}`. Each `effects[]` row is the file's
+row plus `sentence`; `levelled[]` rows (`id`, `practice`, `crop`, `share_after_itself` (the county's share of that crop
+that followed itself, field-years of the soil table), `after_itself`, `after_another_crop`) give the multipliers the
+engine really uses once each crop's set is divided by its average over the county's mix (omitted when there is no mix;
+see README "Phase 5"). `400` with one sentence for an unreadable `ROTATION_EFFECTS`; without the climate tables
+`{"applied": false, "setting": null, "effects": [], "reason": "not_built"}`.
 
 ### `limit_in` and `water_outlook` (Phase 4: water reality check)
 

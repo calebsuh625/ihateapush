@@ -233,3 +233,37 @@ Nothing from the eight-item list.
   `make groundwater` (7 small requests) or the section says the levels are not built.
 - Item 7: the free Gemini quota runs out quickly (each `make e2e` and pytest run with a key makes one live call; set ADVISOR_LIVE_TESTS off if you want to save it). Decide whether to keep the model fallback chain. Never commit .env.
 - Item 8: unreadable query values answer 422 with a sentence (an older test asserts 422, so it was not changed to 400). Say if you want 400.
+
+# Phase 5 progress
+
+## Status
+
+| Item | What | Status |
+|---|---|---|
+| A | Rotation yield effects | done, checked |
+| B | not started | |
+| C | not started | |
+| D | not started | |
+| E | not started | |
+| F | not started | |
+
+## Done
+
+- Item A: a crop grown after itself now yields less (corn 0.91, sorghum 0.93, soybeans 0.93, wheat 0.83),
+  from sourced Kansas trials in `api/planner/rotation_effects.json` (source, URL, status, range each).
+  Multipliers are levelled against the county's mix of previous crops; the range widens the spread.
+- Setting `ROTATION_EFFECTS=on|off` (default on), echoed in `settings.rotation_effects`; `GET /rotation-effects`.
+  Off keeps the old behaviour. The "limits" sentence follows the switch.
+- Real-data effect: continuous irrigated corn went from rank 2 to rank 29 of 106; KS-014376 plan 3 now
+  shows a gain over carrying on. Sanity doc regenerated (`data/planner_sanity.md`, check 7).
+- Left out, no yield figure sourced: soybean or alfalfa credit to corn/wheat (it is nitrogen, saves fertilizer).
+- Notes: data/logs/phase5/item_A.md; checks: data/logs/phase5/check_A_*.log.
+
+## What is left
+
+- Items B-F.
+
+## For you in the morning
+
+- Item A: the 0.91 corn drag is the weaker of two sourced values; the soybeans range has no weaker end
+  (one Kansas source). Say if you want a different choice.

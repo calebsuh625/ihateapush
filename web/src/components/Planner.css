@@ -635,3 +635,9 @@
   justify-content: flex-end;
   margin-top: var(--s2);
 }
+
+.plan-effects {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}

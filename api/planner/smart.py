@@ -66,16 +66,16 @@ from __future__ import annotations
 import math
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass, field as dataclass_field, replace
 from functools import lru_cache
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 import numpy as np
 
 from api.planner import candidates as cand
-from api.planner import config, erosion, futures, money, soil_effect
-from api.planner.crops import CROP_TABLE, CROPS, PRACTICES, PREV_KINDS
+from api.planner import config, erosion, futures, money, rotation, soil_effect
+from api.planner.crops import CROP_TABLE, CROPS, MAX_YIELD_REL, PRACTICES, PREV_KINDS
 from api.planner.legacy import FieldInput, Plan, Scores, rotation_name
 from api.planner.traits import FieldTraits, guess_irrigation, load_traits
 
@@ -101,8 +101,9 @@ WHAT_IF_MIN_IN = 1.0            # the smallest limit the what-if takes; 0 would 
 WHAT_IF_MAX_IN_NO_LIMIT = 60.0  # the largest when the planner itself has no limit (no crop here needs 36)
 
 
-def limits_for(irrigation_limit_mm: float) -> list:
-    """What the scoring leaves out, in plain sentences (the app shows them under "How this is scored")."""
+def limits_for(irrigation_limit_mm: float, rotation_effects: bool = False) -> list:
+    """What the scoring leaves out, in plain sentences (the app shows them under "How this is scored").
+    `rotation_effects`: the engine applies the yield drag of a crop after itself (rotation.py)."""
     first, last = futures.window(config.TODAY)
     if irrigation_limit_mm > 0:
         well = (f"Irrigated plans assume the well can deliver up to {irrigation_limit_mm / MM_PER_INCH:.0f} inches of water "
@@ -110,7 +111,7 @@ def limits_for(irrigation_limit_mm: float) -> list:
     else:
         well = "Irrigated plans assume the well always delivers all the water the crops need."
     return [
-        "Yields do not change with the crop grown before, apart from the soil water it leaves behind.",
+        rotation.LIMIT_SENTENCE_ON if rotation_effects else rotation.LIMIT_SENTENCE_OFF,
         well,
         "Prices and costs stay at today's levels in every future.",
         "On dryland the water, money and risk scores move together, because all three follow how much of the crops' "
@@ -122,6 +123,9 @@ def limits_for(irrigation_limit_mm: float) -> list:
 _RESPONSE_COLUMNS = ("yield", "fail_prob", "irrigation_mm", "shortfall_mm")
 _KIND_INDEX = {kind: i for i, kind in enumerate(PREV_KINDS)}
 _CROP_INDEX = {crop: i for i, crop in enumerate(CROPS)}
+# the response tables carry one number per previous CROP (the crop table gives one per previous KIND:
+# summer crop, wheat or fallow; the rotation effects, rotation.py, tell crops of one kind apart)
+_PREV_TO_KIND = np.array([_KIND_INDEX[CROP_TABLE[c].as_prev] for c in CROPS])
 
 
 # --- small public types ------------------------------------------------------------------------------
@@ -175,12 +179,15 @@ class PlanResult:
     rank: int          # place among all candidates on the robust score (1 = best)
     rules_broken: list = dataclass_field(default_factory=list)   # "current" only: rule sentences it breaks
     extra: dict = dataclass_field(default_factory=dict)   # "current" only: years, previous_crop, is_candidate
+    effects: list = dataclass_field(default_factory=list)  # rotation effects the plan's years run into (when applied)
 
     def to_dict(self) -> dict:
         out = {"name": self.name, "rotation": list(self.rotation), "cycle": list(self.cycle),
                "scores": dict(self.scores),
                "reason": self.reason, "futures": dict(self.futures), "spread": self.spread,
                "numbers": dict(self.numbers), "rank": self.rank}
+        if self.effects:
+            out["rotation_effects"] = [dict(e) for e in self.effects]
         if self.extra:            # the field's current pattern only
             out["rules_broken"] = list(self.rules_broken)
             out.update(self.extra)
@@ -228,7 +235,7 @@ class PlanSet:
     cycles: tuple             # n cycles (3 or 4 crops each)
     rotations: tuple          # the same plans as their next four years
     crop: np.ndarray          # [n, 4] crop index of each year of the cycle (a 3-year cycle is padded)
-    kind: np.ndarray          # [n, 4] index of the previous crop's kind (summer / wheat / fallow)
+    prev: np.ndarray          # [n, 4] index of the previous crop (in CROPS)
     weight: np.ndarray        # [n, 4] 1 / cycle length for a real year, 0 for padding
     planted: np.ndarray       # [n, 4] 1.0 where a crop is planted (a real year that is not fallow)
     shares: np.ndarray        # [n, 6] share of the cycle's years in each crop
@@ -252,6 +259,12 @@ class Evaluation:
     money: np.ndarray
     risk: np.ndarray
     holds: np.ndarray          # bool
+    # the same plans under the stronger and the weaker end of every rotation effect's range (None when the
+    # effects are off or have no range): the spread of a plan covers them as well as the climate models
+    others: Callable | None = None
+
+    def range_evaluations(self) -> list:
+        return list(self.others()) if self.others is not None else []
 
     def overall(self, weights: Weights) -> np.ndarray:
         return (weights.soil * self.soil + weights.water * self.water
@@ -273,14 +286,22 @@ def _clip01(x):
     return np.clip(x, 0.0, 1.0)
 
 
+def _fail_probability(yield_rel, resid_sd, fail_below):
+    from api.planner.response import fail_probability
+
+    return fail_probability(yield_rel, resid_sd, fail_below)
+
+
 class Engine:
     """The planner's tables in memory. Build one from the climate tables; ask it to rank plans."""
 
     def __init__(self, yearly, monthly, *, params: dict | None = None, economics: money.Economics | None = None,
                  soil: soil_effect.SoilEffectProvider | None = None, traits: Mapping | None = None,
-                 observed: dict | None = None, source: str = "", irrigation_limit_mm: float | None = None):
+                 observed: dict | None = None, source: str = "", irrigation_limit_mm: float | None = None,
+                 rotation_effects: rotation.RotationEffects | None = None):
         """`irrigation_limit_mm`: the most mm pumped per acre per year; None = the economics file's value
-        (610 mm), 0 = no limit."""
+        (610 mm), 0 = no limit. `rotation_effects`: the yield drag of a crop after itself (rotation.py);
+        None = none, the tables the planner had before Phase 5."""
         from api.planner.response import crop_response, load_params
 
         self.climate = futures.Climate(yearly)
@@ -297,6 +318,9 @@ class Engine:
         self._lock = threading.Lock()
         self._plan_sets: dict = {}
         self._tables = (yearly, monthly)            # kept for `with_limit`
+        self.rotation = rotation_effects if rotation_effects is not None else rotation.OFF
+        self._mix = rotation.mix_from_soil(self.soil) if self.rotation.active else None
+        self._variants: dict = {}                   # "strong" / "weak" response tables, built when first asked for
         self._limited: OrderedDict = OrderedDict()  # limit in tenths of a mm -> Engine
 
         c = self.climate
@@ -308,30 +332,66 @@ class Engine:
         ci = table["crop"].map(_CROP_INDEX).to_numpy()
         pi = table["practice"].map({p: i for i, p in enumerate(PRACTICES)}).to_numpy()
         shape = (len(PRACTICES), len(c.scenarios), len(c.models), len(c.years), len(CROPS))
-        self._response = {}
-        for name in _RESPONSE_COLUMNS:
+        self._kind_response = {}                    # [..., crop, kind of previous crop], straight from the table
+        for name in _RESPONSE_COLUMNS + ("yield_rel",):
             arr = np.zeros(shape + (len(PREV_KINDS),))
             for k, kind in enumerate(PREV_KINDS):
                 arr[pi, si, mi, yi, ci, k] = table[f"{name}_after_{kind}"].to_numpy(dtype=float)
-            self._response[name] = arr
+            self._kind_response[name] = arr
         need = np.zeros(shape)
         need[pi, si, mi, yi, ci] = table["water_need_mm"].to_numpy(dtype=float)
-        self._response["need_mm"] = need
         typical = np.zeros(shape)       # yield after the county's usual previous crop: for the yield-change note
         typical[pi, si, mi, yi, ci] = table["yield"].to_numpy(dtype=float)
-        self._response["yield_typical"] = typical
-        # 1.0 in a year the irrigation limit leaves a crop short (irrigated only; the mean is how often it binds)
-        self._response["short"] = (self._response["shortfall_mm"] > 1e-6).astype(float)
+        self._shared = {"need_mm": need, "yield_typical": typical}
         price = np.array([self.economics.price(crop) for crop in CROPS])
         normals = money.normal_yields(self.params)
-        cost = np.array([[self.economics.cost(crop, practice, normals[crop][practice]) for crop in CROPS]
-                         for practice in PRACTICES])
-        # profit [practice, scenario, model, year, crop, kind]
-        self._response["profit"] = (price[None, None, None, None, :, None] * self._response["yield"]
-                                    - cost[:, None, None, None, :, None]
-                                    - self.economics.pump_per_mm * self._response["irrigation_mm"])
+        self._price = price
+        self._cost = np.array([[self.economics.cost(crop, practice, normals[crop][practice]) for crop in CROPS]
+                               for practice in PRACTICES])
+        self._response = self._assemble("mid")
         self._window = lru_cache(maxsize=256)(self._window_uncached)
         self._base = lru_cache(maxsize=512)(self._base_uncached)
+
+    def _assemble(self, variant: str) -> dict:
+        """The response arrays [practice, scenario, model, year, crop, previous crop] under one variant of the
+        rotation effects ("mid", "strong" or "weak"). With no effects every number is the one the table gave
+        for the previous crop's kind, unchanged."""
+        out = {name: arr[..., _PREV_TO_KIND] for name, arr in self._kind_response.items()}
+        mult = self.rotation.multipliers(variant, self._mix)           # [practice, crop, previous crop]
+        if not np.allclose(mult, 1.0):
+            m = mult[:, None, None, None, :, :]
+            rel = out["yield_rel"]
+            changed = np.broadcast_to(m != 1.0, rel.shape)
+            cap = float(self.params.get("max_yield_rel", MAX_YIELD_REL))
+            fail_below = float(self.params.get("fail_below", 0.5))
+            rel_m = np.where(changed, np.minimum(rel * m, cap), rel)
+            ratio = np.where(changed, np.where(rel > 0, rel_m / np.maximum(rel, 1e-12), m), 1.0)
+            fail = out["fail_prob"].copy()
+            for pi, practice in enumerate(PRACTICES):
+                for ci, crop in enumerate(CROPS):
+                    if crop == "fallow" or not changed[pi, ..., ci, :].any():
+                        continue
+                    sd = self.params["series"][crop][practice]["resid_sd"]
+                    fp = _fail_probability(rel_m[pi, ..., ci, :], sd, fail_below)
+                    fail[pi, ..., ci, :] = np.where(changed[pi, ..., ci, :], fp, fail[pi, ..., ci, :])
+            out["yield"] = out["yield"] * ratio
+            out["fail_prob"], out["yield_rel"] = fail, rel_m
+        out.update(self._shared)
+        # 1.0 in a year the irrigation limit leaves a crop short (irrigated only; the mean is how often it binds)
+        out["short"] = (out["shortfall_mm"] > 1e-6).astype(float)
+        # profit [practice, scenario, model, year, crop, previous crop]
+        out["profit"] = (self._price[None, None, None, None, :, None] * out["yield"]
+                         - self._cost[:, None, None, None, :, None]
+                         - self.economics.pump_per_mm * out["irrigation_mm"])
+        return out
+
+    def _response_for(self, variant: str) -> dict:
+        if variant == "mid":
+            return self._response
+        with self._lock:
+            if variant not in self._variants:
+                self._variants[variant] = self._assemble(variant)
+            return self._variants[variant]
 
     def with_limit(self, irrigation_limit_mm: float) -> "Engine":
         """The same tables under another irrigation limit (mm per acre per year, above 0): this engine when
@@ -350,7 +410,8 @@ class Engine:
                 return hit
         yearly, monthly = self._tables
         built = Engine(yearly, monthly, params=self.params, economics=self.economics, soil=self.soil,
-                       traits=self.traits, observed=self.observed, source=self.source, irrigation_limit_mm=key / 10)
+                       traits=self.traits, observed=self.observed, source=self.source, irrigation_limit_mm=key / 10,
+                       rotation_effects=self.rotation)
         with self._lock:
             built = self._limited.setdefault(key, built)        # two requests raced: both get the first one
             self._limited.move_to_end(key)
@@ -374,9 +435,8 @@ class Engine:
         never under four."""
         cycles = tuple(tuple(r) for r in rotations)
         n, width = len(cycles), max([cand.YEARS, *(len(cycle) for cycle in cycles)])
-        prev_kind = {c: _KIND_INDEX[CROP_TABLE[c].as_prev] for c in CROPS}
         crop = np.zeros((n, width), dtype=int)
-        kind = np.zeros((n, width), dtype=int)
+        prev = np.zeros((n, width), dtype=int)
         weight = np.zeros((n, width))
         planted = np.zeros((n, width))
         shares = np.zeros((n, len(CROPS)))
@@ -386,11 +446,13 @@ class Engine:
                 raise ValueError(f"a plan is a cycle of at most {max_years} years, got {length}")
             for j, name in enumerate(cycle):
                 before = first_prev if (j == 0 and first_prev is not None) else cycle[j - 1]
-                crop[i, j], kind[i, j], weight[i, j] = _CROP_INDEX[name], prev_kind[before], 1.0 / length
+                if before not in _CROP_INDEX:
+                    raise KeyError(f"unknown crop {before!r}; expected one of {CROPS}")
+                crop[i, j], prev[i, j], weight[i, j] = _CROP_INDEX[name], _CROP_INDEX[before], 1.0 / length
                 planted[i, j] = 0.0 if name == "fallow" else 1.0
                 shares[i, _CROP_INDEX[name]] += 1.0 / length
         bare = np.array([soil_effect.plan_bare_days(self.soil, cycle, irrigated, first_prev) for cycle in cycles])
-        return PlanSet(cycles, tuple(cand.show(cycle) for cycle in cycles), crop, kind, weight, planted, shares, bare)
+        return PlanSet(cycles, tuple(cand.show(cycle) for cycle in cycles), crop, prev, weight, planted, shares, bare)
 
     def candidate_set(self, irrigated: bool) -> PlanSet:
         irrigated = bool(irrigated)
@@ -400,14 +462,15 @@ class Engine:
             return self._plan_sets[irrigated]
 
     # --- window means ---
-    def _window_uncached(self, scenario: str, horizon: int) -> dict:
-        """{name: [practice, model, crop, (kind)]} window means, plus "erosion_climate": [model]."""
+    def _window_uncached(self, scenario: str, horizon: int, variant: str = "mid") -> dict:
+        """{name: [practice, model, crop, (previous crop)]} window means, plus "erosion_climate": [model]."""
         s = self.climate._scenario_index(scenario)
         years = self.climate.year_slice(horizon)
+        response = self._response_for(variant)
         if horizon == config.TODAY:     # one Today: every scenario's run of a model pooled (futures.py)
-            out = {name: arr[:, :, :, years].mean(axis=(1, 3)) for name, arr in self._response.items()}
+            out = {name: arr[:, :, :, years].mean(axis=(1, 3)) for name, arr in response.items()}
         else:
-            out = {name: arr[:, s, :, years].mean(axis=2) for name, arr in self._response.items()}
+            out = {name: arr[:, s, :, years].mean(axis=2) for name, arr in response.items()}
         out["erosion_climate"] = self.climate.averages(scenario, horizon)["erosion_climate"]
         return out
 
@@ -431,20 +494,20 @@ class Engine:
     def limit_binds(self, scenario: str, horizon: int) -> dict:
         """{crop: share of irrigated crop-years in which the irrigation limit leaves the crop short}
         (after the county's usual kind of previous crop for irrigated fields, a summer crop)."""
-        w = self._window(scenario, horizon)["short"][PRACTICES.index("irrigated")]     # [model, crop, kind]
-        return {crop: float(w[:, ci, _KIND_INDEX["summer"]].mean()) for ci, crop in enumerate(CROPS) if crop != "fallow"}
+        w = self._window(scenario, horizon)["short"][PRACTICES.index("irrigated")]     # [model, crop, previous crop]
+        return {crop: float(w[:, ci, _CROP_INDEX["corn"]].mean()) for ci, crop in enumerate(CROPS) if crop != "fallow"}
 
-    def _base_uncached(self, irrigated: bool, scenario: str, horizon: int, plans_key) -> dict:
+    def _base_uncached(self, irrigated: bool, scenario: str, horizon: int, plans_key, variant: str = "mid") -> dict:
         """Everything about a plan set in a (scenario, horizon) that does not depend on the field."""
         plans = self.candidate_set(irrigated) if plans_key is None else self.plan_set(plans_key, irrigated)
-        return self._base_for(plans, irrigated, scenario, horizon)
+        return self._base_for(plans, irrigated, scenario, horizon, variant)
 
-    def _base_for(self, plans: PlanSet, irrigated: bool, scenario: str, horizon: int) -> dict:
-        w = self._window(scenario, horizon)
+    def _base_for(self, plans: PlanSet, irrigated: bool, scenario: str, horizon: int, variant: str = "mid") -> dict:
+        w = self._window(scenario, horizon, variant)
         p = PRACTICES.index("irrigated" if irrigated else "dryland")
 
         def over_years(name):            # [model, plan, year-of-plan]
-            return w[name][p][:, plans.crop, plans.kind]
+            return w[name][p][:, plans.crop, plans.prev]
 
         real = (plans.weight > 0).astype(float)
         profit = (over_years("profit") * plans.weight[None]).sum(axis=2).T
@@ -472,15 +535,29 @@ class Engine:
 
         `first_prev` (with `rotations`): the crop that really grew before year 1, instead of year 4.
         `max_years` (with `rotations`): the longest cycle taken, four unless the caller says otherwise.
+
+        The numbers use the middle of every rotation effect. The result's `range_evaluations()` are the same
+        plans under the strong and the weak end of each effect's range (empty when there is no range).
         """
+        kwargs = dict(rotations=rotations, first_prev=first_prev, wei=wei, weg=weg, slope_pct=slope_pct,
+                      max_years=max_years)
+        ev = self._evaluate(irrigated, scenario, horizon, "mid", **kwargs)
+        if self.rotation.ranges_differ():
+            ev = replace(ev, others=lambda: [self._evaluate(irrigated, scenario, horizon, v, **kwargs)
+                                             for v in ("strong", "weak")])
+        return ev
+
+    def _evaluate(self, irrigated: bool, scenario: str, horizon: int, variant: str, *,
+                  rotations: Sequence | None = None, first_prev: str | None = None,
+                  wei=None, weg=None, slope_pct=None, max_years: int = cand.YEARS) -> Evaluation:
         futures.check_scenario(scenario)
         horizon = futures.check_horizon(horizon)
         irrigated = bool(irrigated)
         if rotations is None:
-            base = self._base(irrigated, scenario, horizon, None)
+            base = self._base(irrigated, scenario, horizon, None, variant)
         else:
             base = self._base_for(self.plan_set(rotations, irrigated, first_prev, max_years), irrigated, scenario,
-                                  horizon)
+                                  horizon, variant)
         plans = base["plans"]
         index = erosion.erosion_index(plans.bare[:, None], base["erosion_climate"][None, :], wei, weg, slope_pct)
         soil = (config.SOIL_BARE_SHARE * _clip01(1.0 - plans.bare / config.BARE_DAYS_WORST)[:, None]
@@ -502,12 +579,13 @@ class Engine:
         bare_days      one number: bare days that year after that previous crop (no rotation-type shift)
 
         The previous crop enters the yield through the kind it is (summer crop, wheat or fallow: the soil
-        water it leaves) and the bare days through the crop itself. Used year by year by transition.py.
+        water it leaves), and through the rotation effect of crop after previous crop when those are on,
+        and the bare days through the crop itself. Used year by year by transition.py.
         """
         futures.check_scenario(scenario)
         w = self._window(scenario, futures.check_horizon(horizon))
         p = PRACTICES.index("irrigated" if irrigated else "dryland")
-        c, k = _CROP_INDEX[crop], _KIND_INDEX[CROP_TABLE[prev].as_prev]
+        c, k = _CROP_INDEX[crop], _CROP_INDEX[prev]
         planted = crop != "fallow"
         need = w["need_mm"][p][:, c]
         met = np.where(need > 0, 1.0 - w["shortfall_mm"][p][:, c, k] / np.maximum(need, 1e-9), 1.0)
@@ -583,14 +661,26 @@ def reason_for(numbers: dict, scores: dict, holds: int, total: int, irrigated: b
     return sentence(parts[:1], last)
 
 
-def _spread(values: np.ndarray, digits: int) -> dict:
-    return {"low": round(float(values.min()), digits), "mid": round(float(np.median(values)), digits),
-            "high": round(float(values.max()), digits)}
+def _spread(values: np.ndarray, digits: int, wider_by: Sequence = ()) -> dict:
+    """{low, mid, high} of the values across the climate models; `wider_by`: the same values under the other
+    ends of the rotation effects' range, which can only widen low and high (mid stays the middle one's)."""
+    every = [values, *wider_by]
+    return {"low": round(float(min(v.min() for v in every)), digits), "mid": round(float(np.median(values)), digits),
+            "high": round(float(max(v.max() for v in every)), digits)}
+
+
+def profit_extremes(ev: Evaluation, i: int) -> tuple:
+    """(lowest, highest) return of plan `i` over the climate models and the rotation effects' range, rounded to
+    dollars: what a plan card's low-high shows."""
+    every = [ev.profit[i]] + [other.profit[i] for other in ev.range_evaluations()]
+    return round(float(min(v.min() for v in every))), round(float(max(v.max() for v in every)))
 
 
 def _plan_result(ev: Evaluation, i: int, weights: Weights, rank: int, irrigated: bool, rotation=None,
-                 rules_broken: list | None = None, extra: dict | None = None) -> PlanResult:
+                 rules_broken: list | None = None, extra: dict | None = None,
+                 effects: Sequence = ()) -> PlanResult:
     overall = ev.overall(weights)[i]
+    others = ev.range_evaluations()
     scores = {
         "soil": round(float(ev.soil[i].mean()), 3), "water": round(float(ev.water[i].mean()), 3),
         "money": round(float(ev.money[i].mean()), 3), "risk": round(float(ev.risk[i].mean()), 3),
@@ -615,8 +705,11 @@ def _plan_result(ev: Evaluation, i: int, weights: Weights, rank: int, irrigated:
         name=name, rotation=rotation, cycle=cycle, scores=scores,
         reason=reason_for(numbers, scores, holds, total, irrigated, crop_failures),
         futures={"holds": holds, "total": total},
-        spread={"overall": _spread(overall, 3), "profit_per_acre": _spread(ev.profit[i], 0)},
+        spread={"overall": _spread(overall, 3, [o.overall(weights)[i] for o in others]),
+                "profit_per_acre": _spread(ev.profit[i], 0, [o.profit[i] for o in others])},
         numbers=numbers, rank=rank, rules_broken=list(rules_broken or []), extra=dict(extra or {}),
+        effects=[{"id": e.id, "crop": e.crop, "after": e.after, "multiplier": e.multiplier, "low": e.low,
+                  "high": e.high, "status": e.status, "sentence": e.words()} for e in effects],
     )
 
 
@@ -706,7 +799,9 @@ def rank_plans_smart(field: FieldInput, *, weights: Weights | Mapping | None = N
     order = sorted(range(len(keys)), key=lambda i: (-keys[i], i))
     rank_of = {i: n + 1 for n, i in enumerate(order)}
     picked = pick_different(order, ev.plans.shares, top)
-    plans = [_plan_result(ev, i, weights, rank_of[i], is_irrigated) for i in picked]
+    practice = "irrigated" if is_irrigated else "dryland"
+    plans = [_plan_result(ev, i, weights, rank_of[i], is_irrigated,
+                          effects=engine.rotation.pairs_in(ev.plans.cycles[i], practice)) for i in picked]
 
     current, current_note = None, None
     rotation, years, note, before = current_pattern(field.crop_history)
@@ -724,9 +819,11 @@ def rank_plans_smart(field: FieldInput, *, weights: Weights | Mapping | None = N
             broken = cand.rules_broken(rotation, is_irrigated, cyclic=False, gentle=True)
         value = round(float(one.robust(weights)[0]), 6)
         rank = 1 + int((keys > value).sum())
+        used = engine.rotation.pairs_in(match if match is not None else rotation, practice,
+                                        None if match is not None else before)
         current = _plan_result(one, 0, weights, rank, is_irrigated, rotation=rotation, rules_broken=broken,
                                extra={"years": [years[0], years[-1]], "previous_crop": before,
-                                      "is_candidate": match is not None})
+                                      "is_candidate": match is not None}, effects=used)
 
     describe = getattr(engine.soil, "describe", None)
     soil_info = describe() if describe is not None else {"name": engine.soil.name, "note": ""}
@@ -747,8 +844,9 @@ def rank_plans_smart(field: FieldInput, *, weights: Weights | Mapping | None = N
         "irrigation_limit_in": (round(engine.irrigation_limit_mm / MM_PER_INCH, 1)
                                 if engine.irrigation_limit_mm > 0 else None),
         "yield_change_note": YIELD_CHANGE_NOTE,
-        "limits": limits_for(engine.irrigation_limit_mm),
+        "limits": limits_for(engine.irrigation_limit_mm, engine.rotation.active),
         "models": list(engine.climate.models),
+        "rotation_effects": engine.rotation.describe(),
     }
     climate = engine.climate.describe(scenario, horizon)
     climate["yield_change"] = engine.yield_change(is_irrigated, scenario, horizon)
@@ -767,8 +865,8 @@ def _stamp(settings: config.Settings) -> tuple:
 
     paths = [settings.climate_futures_path, settings.climate_monthly_path, settings.climate_history_path,
              settings.field_traits_path, settings.soil_health_path, settings.fields_path, settings.effects_path,
-             settings.soil_cache_path, settings.economics_path, PARAMS_PATH]
-    out = [settings.soil_effect_source, settings.irrigation_limit_mm]
+             settings.soil_cache_path, settings.economics_path, settings.rotation_effects_path, PARAMS_PATH]
+    out = [settings.soil_effect_source, settings.irrigation_limit_mm, settings.rotation_effects]
     for path in paths:
         try:
             st = Path(path).stat()
@@ -797,7 +895,8 @@ def load_engine(settings: config.Settings | None = None) -> Engine:
     params = with_observed_heat_cap(load_params(), history)
     return Engine(yearly, monthly, params=params, economics=money.load_economics(settings.economics_path),
                   soil=soil_effect.load_provider(settings), traits=load_traits(settings.field_traits_path),
-                  observed=observed, source=climate_schema.SOURCE, irrigation_limit_mm=settings.irrigation_limit_mm)
+                  observed=observed, source=climate_schema.SOURCE, irrigation_limit_mm=settings.irrigation_limit_mm,
+                  rotation_effects=rotation.load_effects(settings.rotation_effects_path, settings.rotation_effects))
 
 
 def get_engine() -> Engine:
@@ -846,6 +945,33 @@ def available() -> bool:
     except Exception:
         return False
     return True
+
+
+def rotation_effects_report() -> dict:
+    """The body of GET /rotation-effects: the effects in use (or the setting being off), with sources, and how
+    the county's mix of previous crops levels them."""
+    engine = get_engine()
+    out = engine.rotation.describe(full=True)
+    out["baseline"] = (
+        "Each multiplier is relative to a rotated field (previous crop a different crop = 1.0). The crop model is "
+        "fitted to county yields, which already contain the county's mix of previous crops, so every crop's "
+        "multipliers are divided by their average over that mix: the county's average yield stays where it was fitted, "
+        "a crop after itself falls below it and a rotated crop rises above it.")
+    out["levelled"] = []
+    if engine.rotation.active and engine._mix:
+        m = engine.rotation.multipliers("mid", engine._mix)
+        for e in engine.rotation.effects:
+            for p, practice in enumerate(PRACTICES):
+                if e.covers(practice):
+                    cells = engine._mix.get(practice, {}).get(e.crop, {})
+                    total = sum(cells.get(q, 0) for q in CROPS)
+                    out["levelled"].append({
+                        "id": e.id, "practice": practice, "crop": e.crop,
+                        "share_after_itself": round(cells.get(e.after, 0) / total, 3) if total else None,
+                        "after_itself": round(float(m[p, _CROP_INDEX[e.crop], _CROP_INDEX[e.after]]), 3),
+                        "after_another_crop": round(float(m[p, _CROP_INDEX[e.crop], _CROP_INDEX["fallow"]]), 3),
+                    })
+    return out
 
 
 def climate_summary() -> dict:

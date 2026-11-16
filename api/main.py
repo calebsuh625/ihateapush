@@ -660,6 +660,20 @@ async def climate() -> JSONResponse:
         return JSONResponse({"available": False, "reason": "not_built"})
 
 
+@router.get("/rotation-effects", summary="The yield effects of the previous crop the planner applies, with sources")
+async def rotation_effects() -> JSONResponse:
+    """Phase 5, item A. `setting` is ROTATION_EFFECTS (on / off), `applied` whether any effect is in use, `effects`
+    each effect with its multiplier, range, status, basis and sources, `not_applied` the ones left out and why,
+    `baseline` how the county's own mix of previous crops is used."""
+    try:
+        return JSONResponse(smart.rotation_effects_report())
+    except ValueError as exc:
+        raise _bad_request(str(exc).split("\n")[0]) from exc
+    except Exception as exc:
+        log.warning("rotation effects report failed, reporting it as not built: %s: %s", type(exc).__name__, exc)
+        return JSONResponse({"applied": False, "setting": None, "effects": [], "reason": "not_built"})
+
+
 @router.get("/fields", summary="All field outlines (simplified) as GeoJSON")
 async def fields(request: Request) -> Response:
     store = _store(request)

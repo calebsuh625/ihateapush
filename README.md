@@ -730,8 +730,10 @@ Read the numbers as a comparison between plans, not a forecast.
 - **Money is not income.** Land, machinery and pivot ownership are not taken off (about $100 an acre
   dryland, $430-490 irrigated), no insurance payments or government payments are counted, prices and
   costs stay at today's level, and the cost of a fallow year ($14) is our rough, unverified estimate.
-- **No rotation effect on yield** beyond stored soil water: no nitrogen credit after soybeans or alfalfa,
-  no disease carry-over. Three agronomy rules stand in for the worst cases.
+- **Rotation effects on yield are only the four sourced ones** (Phase 5, "Rotation effects on yield" below):
+  a crop after itself yields less. No nitrogen credit after soybeans or alfalfa is counted and no other disease
+  carry-over; three agronomy rules stand in for the worst cases. (Before Phase 5 there was no yield effect at all
+  beyond stored soil water; `ROTATION_EFFECTS=off` brings that back exactly.)
 - **Close calls at the top.** On dryland the water, money and risk scores move almost together. Under
   `ssp585` in 2060 the first irrigated plan differs from today's for 227 of 300 sampled fields, by 0.006
   on the ranking score. Bare days do not change with the climate in the model; only the wind does.
@@ -781,10 +783,11 @@ Limits:
 
 - Only the six crops. Anything else (cotton, a cover crop) is refused with one sentence listing them.
 - Everything that is county-level in the planner is county-level here; the limits listed under "How this
-  is scored" apply unchanged (no yield effect of the previous crop beyond soil water, today's prices).
+  is scored" apply unchanged (the Phase 5 rotation effects, today's prices).
 - A rotation our rules would never recommend can still score well, because the rules are agronomy the
-  crop model cannot see (see Phase 3). Continuous corn under irrigation would be number 2 of 106 on
-  KS-014376 today; the section says which rule it breaks rather than hiding the score.
+  crop model cannot see (see Phase 3). Continuous corn under irrigation was number 2 of 106 on
+  KS-014376 before the Phase 5 rotation effects and is number 27 of 105 now; the section says which rule it
+  breaks rather than hiding the score.
 - A rotation that plants no crop in any year (fallow every year) is **not rankable**. With nothing planted
   the engine's water and risk scores are 1.00, which once put it "first, ahead of all 17" on dryland. It
   now gets no rank, no comparison, no "would come first" sentence and no mark in its column
@@ -1223,3 +1226,71 @@ Full tables: `data/logs/phase4/perf_before.txt`, `perf_after.txt` (git-ignored; 
   running) and prints one line each and PASS or FAIL; full logs in `data/logs/check_*.log`.
 - Limits: frame times are from software drawing in headless Chromium; a section that fails to draw is replaced
   by a note, but the cause is only in the browser console. Notes: `data/logs/phase4/item_8.md`.
+
+## Phase 5
+
+### Rotation effects on yield (item A)
+
+Before, the previous crop changed a yield only through the soil water it left behind, so corn after corn yielded
+the same as corn after soybeans and continuous irrigated corn ranked second of 106. Now the planner takes
+the yield cost of a crop after itself from sourced trials.
+
+- **The numbers** are in the tracked `api/planner/rotation_effects.json`: for each of corn after corn, sorghum after
+  sorghum, soybeans after soybeans and wheat after wheat, a relative yield (middle, with the stronger and weaker end of
+  the range), the source name and URL, the figure read in it, and a status (`verified` = the number was read in the
+  source; `rough, unverified` = it was not). Source downloads are cached in `data/raw/rotation_effects/`.
+
+| effect (relative to the same crop after another crop = 1.0) | middle | range | where it comes from |
+| --- | --- | --- | --- |
+| corn after corn | 0.91 | 0.88 to 0.91 | K-State MF2908: "about a 10 percent yield advantage" for corn in a corn/soybean rotation; Tribune limited irrigation, 176 against 201 bu/a |
+| sorghum after sorghum | 0.93 | 0.82 to 0.99 | Kelley 2005 (Parsons) second-year sorghum; Hesston continuous sorghum; Tribune continuous against corn-sorghum |
+| soybeans after soybeans | 0.93 | 0.81 to 0.93 | Kelley 2005 (Parsons): second-year and continuous soybeans against annual rotation |
+| wheat after wheat | 0.83 | 0.82 to 0.84 | Hesston no-till 10-year averages: continuous wheat 3,246 against 3,965 (after soybeans) and 3,877 kg/ha (after corn) |
+
+- **Left out because no yield figure could be sourced** (multiplier 1, with the reason in the file and in `GET
+  /rotation-effects`): the credit to corn or wheat after soybeans or alfalfa. K-State's credits are nitrogen
+  (soybeans 40 lb N an acre, alfalfa 40 to 120 by stand, Corn Production Handbook C-560): they save fertilizer,
+  not bushels, and the planner's costs are fixed budgets, so nothing is counted twice. An old eastern Kansas trial found corn
+  the first year after alfalfa yielded *less* (soil moisture used up), so a yield credit would be a guess. Wheat after
+  sorghum (Hesston) is sourced but was not asked for and is left for later. The Tribune figure for continuous
+  wheat (about 60% of wheat after sorghum) is in the file for context and not used: it also contains the stored-water
+  loss the planner models separately.
+- **Levelled against the county's own mix** (`api/planner/rotation.py`). The crop model is fitted to county yields, which already
+  contain what the county grows after what: 57% of irrigated corn in Finney follows corn. Applying 0.91 on top
+  would count the drag twice. So each crop's multipliers are divided by their average over the county's mix of
+  previous crops (the soil table's field-year counts). The county's average yield stays where it was fitted; on
+  irrigated corn, corn after corn is 0.96 of it and corn after another crop 1.05. With no mix, or under 50
+  field-years for a crop and practice, the file's numbers are used as written.
+- **Where it is applied.** In the engine (`Engine._assemble` in `api/planner/smart.py`) as a multiplier on yield for
+  each (crop, previous crop) before the climate windows are averaged, so profit and the chance of failure
+  follow the yield (a crop failing under half its normal yield is judged on the adjusted yield). Water pumped is not
+  changed (the crop needs the same water). It reaches the cards, the field's own pattern, "Try your own rotation",
+  "How to get there" and the farm planner, since they all use the engine.
+- **The range feeds the spread.** A plan's low-high return (and the overall score's low-high) now spans the six
+  climate models *and* the stronger and weaker end of every effect it runs into; the middle and the ranking use the
+  middle values. The range does not enter the per-year rows of "How to get there" or the farm totals, which stay at
+  the middle values (the long-run card low-high in "How to get there" does span it, as the plan card does).
+- **The switch** is `ROTATION_EFFECTS=on|off` (default on; `ROTATION_EFFECTS_PATH` picks another file). Every plan
+  answer echoes it in `settings.rotation_effects`, and the plain "What the scores leave out" sentence says which
+  it is. Off, every table is exactly what it was before Phase 5. Any other value is an error, like
+  `SOIL_EFFECT_SOURCE`.
+- **API**: `GET /rotation-effects` (every effect with basis and sources, what was left out, how the mix levels
+  each one); plan cards carry `rotation_effects` (the effects their years run into) when they run into one;
+  see schema.md. **In the app**: a line on a card (and on "What this field grows now") that runs into an effect,
+  and the effects listed with their status in "How this is scored".
+- **What changed in the rankings** (real data; `python -m api.planner.sanity`, check 7): on a typical irrigated field today,
+  continuous corn goes from number 2 to number 29 of 106 ($323 to $287 an acre a year over direct costs), continuous
+  sorghum from 95 to 105, continuous soybeans from number 1 to number 6, continuous wheat from 100 to 106. On KS-014376
+  the field's own continuous corn ranks 27 of 105. Eight years of "How to get there" on KS-014376, difference to
+  carrying on as now (dollars an acre over direct costs): our plan 3 (corn, wheat, soybeans) -$289 before, +$175
+  now and paid back in 2031; plan 1 -$295 before, -$5 now (too close to call); plan 2 -$682 before, -$329 now,
+  still behind (`data/logs/phase5/transition_off_vs_on.txt`). Of 600 sampled
+  real fields none gets a different first plan, 74 a different set of three, and 170 have their own last four years rank
+  lower than before. Notes: `data/logs/phase5/item_A.md`.
+- **Limits.** Four effects, all a crop after itself; the middle uses the one-repeat-year value, so a long
+  monoculture (four years of sorghum or soybeans) is probably penalised less than the trials show (their continuous
+  figures are the stronger end of each range); soybeans have one Kansas source (Parsons, southeast Kansas, which is
+  wetter than Finney); the corn range has no weaker end than "about 10 percent"; the trials are eastern, central and
+  western Kansas, not Finney itself; no disease, weed or insect carry-over beyond what the trials contain; nitrogen
+  credits and alfalfa are not counted; dryland soybeans have too few county field-years to level (so they use the
+  file's number as written); the transition's year-by-year rows and the farm totals show the middle values only.

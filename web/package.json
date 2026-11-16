@@ -13,6 +13,7 @@
     "e2e:states": "node e2e/states.mjs",
     "e2e:planner": "node e2e/planner.mjs",
     "e2e:phase4": "node e2e/phase4.mjs",
+    "e2e:phase5": "node e2e/phase5.mjs",
     "perf": "node e2e/perf.mjs"
   },
   "dependencies": {
