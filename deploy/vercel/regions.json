@@ -497,6 +497,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20115",
+   "state": "KS",
+   "county": "Marion",
+   "label": "Marion County, KS",
+   "is_default": false,
+   "field_count": 6991,
+   "has_traits": true,
+   "km_from_finney": 320,
+   "borrow_climate": false
+  },
+  {
    "fips": "20119",
    "state": "KS",
    "county": "Meade",
@@ -516,6 +527,17 @@
    "field_count": 2473,
    "has_traits": true,
    "km_from_finney": 518,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20127",
+   "state": "KS",
+   "county": "Morris",
+   "label": "Morris County, KS",
+   "is_default": false,
+   "field_count": 2819,
+   "has_traits": true,
+   "km_from_finney": 363,
    "borrow_climate": false
   },
   {
