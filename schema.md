@@ -1229,3 +1229,20 @@ a table the answer needs has not been built (the sentence names the `make` comma
 `GET /fields` and `GET /layers...` answer `ETag` and honour `If-None-Match` (304); both are gzipped once.
 The API does first-use work in the background right after it starts (`API_WARMUP=0` turns that off); it
 changes no answer.
+
+## Share link and CSV files (Phase 5, item C)
+
+Browser-side only; no API answer changed.
+
+- **URL hash.** `#<field>` (the original form, still valid) or `#<field>?<params>` or `#?<params>` (no field open). Params, all
+  optional, written only when not the default: `w` priorities `soil.water.money.risk` (0-10), `h` year (2030, 2035 ... 2060), `s`
+  `ssp585`, `lim` pumping limit in inches, `pp` / `cp` price and cost change in percent (-50 to 100), `irr` `1` or `0` (open field),
+  `own` own rotation crops separated by `,` with `_` for an empty year (open field), `m=farm`, `farm` field ids separated by `,`,
+  `fw` water budget, `fm` least return (as typed), `layer` and `yr` map layer and year. Parsed by `web/src/lib/share.ts`.
+- **Top-plans CSV** (`rotation-plans-<field>.csv`): `#` comment rows, then the header `rank, name, year_1..year_4, cycle,
+  place_of_candidates, ranking_score, soil_protection_score, water_score, money_score, risk_score, holds_up_in_futures, futures_total,
+  return_low/middle/high_per_acre_year, bare_days_per_year, water_pumped_inches_per_year, crop_water_need_met_percent,
+  planted_crops_failing_percent, reason`; `rank` is `1`-`3`, `as now` or `yours`. Dollars are over direct costs.
+- **Farm CSV** (`farm-plan.csv`): `#` comment rows, then `field_id, acres, practice, compared_with_own_first_pick, plan_name,
+  year_1..year_12, plan_ranking_score, plan_return_per_acre_year, plan_bare_days_per_year, plan_water_pumped_inches_per_year,
+  own_first_pick_name, sentence`.

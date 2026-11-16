@@ -248,7 +248,7 @@ Nothing from the eight-item list.
 |---|---|---|
 | A | Rotation yield effects | done, checked |
 | B | Weather replay | done, checked |
-| C | not started | |
+| C | Export and share | done, checked |
 | D | not started | |
 | E | not started | |
 | F | Price and cost what-ifs | done, checked |
@@ -274,9 +274,18 @@ Nothing from the eight-item list.
   checked at phone width). Note says history is not a forecast and prices and costs are today's.
 - Notes: data/logs/phase5/item_B.md; checks: data/logs/phase5/check_B_*.log (pytest 1296 passed, web, typecheck, make e2e all pass).
 
+- Item C: the app state (open field, priorities, year, emissions path, pumping limit, price and cost what-ifs,
+  irrigated/dryland switch, own rotation, map layer, farm picks and limits) lives in the URL hash
+  (`web/src/lib/share.ts`); only non-default values are written, old `#KS-...` links still work. "Copy link" button.
+- "Print this plan" sheet (`PrintSheet.tsx`, print stylesheet, no dependency) for a field and for a farm: settings line,
+  our top 3, build-your-own, caveats (soil protection, returns over direct costs).
+- CSV downloads built in the browser (`web/src/lib/exportplan.ts`): top plans and farm plan, with '#' settings rows.
+- Fixed a Leaflet 'clearRect' error when opening straight into farm mode. Formats in schema.md; notes data/logs/phase5/item_C.md.
+- Checks: pytest 1328 passed, web 134 passed, typecheck clean, make e2e all five suites pass (phase5 947).
+
 ## What is left
 
-- Items C-E.
+- Items D-E.
 
 ## For you in the morning
 

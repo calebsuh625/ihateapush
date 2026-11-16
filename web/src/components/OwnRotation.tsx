@@ -38,6 +38,8 @@ interface OwnRotationProps {
   currentCycle: readonly Slot[] | null;
   /** Changes when a plan card sent its rotation here: bring the section into view. */
   jump: number;
+  /** The scored rotation when it is on screen and up to date, else null: the print sheet and CSV use it. */
+  onResult?: (score: FieldScore | null) => void;
 }
 
 type TextState = { status: "idle" } | { status: "busy" } | { status: "error"; message: string };
@@ -47,12 +49,17 @@ type TextState = { status: "idle" } | { status: "busy" } | { status: "error"; me
  * GET /field/{id}/score next to our top picks, with the API's own sentences on why ours is ahead
  * or is not. Hidden when the server can only run the basic planner (the endpoint answers 503).
  */
-export function OwnRotation({ fieldId, plansQuery, slots, onSlots, currentCycle, jump }: OwnRotationProps) {
+export function OwnRotation({ fieldId, plansQuery, slots, onSlots, currentCycle, jump, onResult }: OwnRotationProps) {
   const id = useId();
   const rootRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const query = scoreQuery(plansQuery, slots);
   const latest = useLatest<FieldScore>(fieldId, query, api.score);
+  const readyScore = query !== null && !latest.updating && latest.resource.status === "ready" ? latest.resource.data : null;
+  useEffect(() => {
+    onResult?.(readyScore);
+    return () => onResult?.(null);
+  }, [readyScore, onResult]);
 
   // ---- typing a rotation: the API reads the text, so there is one list of crop names -------------
   const [text, setText] = useState("");
@@ -385,7 +392,7 @@ const NOT_RANKED = "not ranked";
 const plantsNothing = (plan: Plan) => (plan.cycle ?? plan.rotation).every((crop) => crop === "fallow");
 
 /** The table rows for yours and our picks, each figure formatted the way the plan cards format it. */
-function tableRows(score: FieldScore): { scores: Row[]; figures: Row[] } {
+export function tableRows(score: FieldScore): { scores: Row[]; figures: Row[] } {
   const columns: Plan[] = [score.yours, ...score.plans.slice(0, 3)];
   const irrigated = score.settings.irrigated;
   // Yours plants nothing: no ranking score, and no water or risk score (they would be full marks only

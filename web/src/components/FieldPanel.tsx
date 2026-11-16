@@ -7,16 +7,19 @@ import type { PlansState } from "../hooks/usePlans";
 import { useResource } from "../hooks/useResource";
 import type { Resource } from "../hooks/useResource";
 import { formatOneDecimal, formatPercent, hectaresToAcres, plural } from "../lib/format";
-import { emptySlots, slotsFrom } from "../lib/custom";
+import { emptySlots, sameSlots, slotsFrom } from "../lib/custom";
 import type { Slot } from "../lib/custom";
+import { csvFileName, plansCsv } from "../lib/exportplan";
 import { plansQuery, spreadDomain } from "../lib/planner";
 import { resetWords, whatIfLine } from "../lib/water";
 import type { PlannerChoices } from "../lib/planner";
 import { organicMatterClass, slopeClass } from "../thresholds";
-import type { FieldDetail, FieldSatellite, FieldSoil, Plan, Streak } from "../types";
+import type { FieldDetail, FieldSatellite, FieldScore, FieldSoil, Plan, Streak } from "../types";
 import { AdvisorButton } from "./AdvisorButton";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Neighbors } from "./Neighbors";
+import { FieldPrintSheet } from "./PrintSheet";
+import { ShareBar } from "./ShareBar";
 import { OwnRotation } from "./OwnRotation";
 import { PlanCard } from "./PlanCard";
 import { CurrentPatternRow, ScoringNote } from "./PlanExtras";
@@ -50,6 +53,10 @@ interface FieldPanelProps {
   advisor?: { open: boolean; onToggle: () => void };
   /** Tells the app what the advisor needs to know about this field: the irrigation switch and whether it is irrigated. */
   onFacts?: (facts: FieldFacts) => void;
+  /** The link that reopens this view (settings, switch and own rotation included): "Copy link" and the printed sheet. */
+  shareUrl: string;
+  /** What a share link said about this field, used once when the panel first opens. */
+  restore?: { fieldId: string; irrigation: boolean | null; own: (string | null)[] | null } | null;
 }
 
 /** What the farm advisor is told about the open field beyond its id. */
@@ -59,20 +66,27 @@ export interface FieldFacts {
   irrigationOverride: boolean | null;
   /** Whether the plans below treat the field as irrigated (null while they are loading). */
   irrigated: boolean | null;
+  /** The farmer's own rotation (one crop or null per year), or null while it is untouched. */
+  ownSlots: Slot[] | null;
 }
 
-export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlannerChoices, back, twin, advisor, onFacts }: FieldPanelProps) {
+export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlannerChoices, back, twin, advisor, onFacts, shareUrl, restore }: FieldPanelProps) {
   // Two independent requests, started together; each can fail and be retried on its own.
   const [detail, retryDetail] = useResource(fieldId, api.field);
   // The irrigated / dryland override belongs to one field: it is forgotten when another is opened.
-  const [override, setOverride] = useState<{ fieldId: string; value: boolean } | null>(null);
+  const [override, setOverride] = useState<{ fieldId: string; value: boolean } | null>(() =>
+    restore && restore.fieldId === fieldId && restore.irrigation !== null ? { fieldId, value: restore.irrigation } : null,
+  );
   const irrigationOverride = override !== null && override.fieldId === fieldId ? override.value : null;
   const plannerQuery = plansQuery(plannerChoices, irrigationOverride);
   const planner = usePlans(fieldId, plannerQuery);
   const plans = planner.resource;
   // The farmer's own rotation also belongs to one field. `ownJump` counts the times a plan card sent
   // its rotation there, so the section can bring itself into view.
-  const [own, setOwn] = useState<{ fieldId: string; slots: Slot[] } | null>(null);
+  const [own, setOwn] = useState<{ fieldId: string; slots: Slot[] } | null>(() =>
+    restore && restore.fieldId === fieldId && restore.own ? { fieldId, slots: restore.own } : null,
+  );
+  const [ownScore, setOwnScore] = useState<FieldScore | null>(null);
   const ownSlots = own !== null && own.fieldId === fieldId ? own.slots : NO_SLOTS;
   const [ownJump, setOwnJump] = useState(0);
   const editPlan = (plan: Plan) => {
@@ -87,8 +101,14 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
   const waterOutlook = smartPlans?.settings?.irrigated ? smartPlans.water_outlook : undefined;
   const irrigatedNow = smartPlans?.settings ? Boolean(smartPlans.settings.irrigated) : null;
   useEffect(() => {
-    onFacts?.({ fieldId, irrigationOverride, irrigated: irrigatedNow });
-  }, [onFacts, fieldId, irrigationOverride, irrigatedNow]);
+    onFacts?.({ fieldId, irrigationOverride, irrigated: irrigatedNow, ownSlots: own !== null && own.fieldId === fieldId && !sameSlots(own.slots, NO_SLOTS) ? own.slots : null });
+  }, [onFacts, fieldId, irrigationOverride, irrigatedNow, own]);
+  // A link opened while this panel is already up (pasted into the address bar) sets the switch and the own rotation again.
+  useEffect(() => {
+    if (!restore || restore.fieldId !== fieldId) return;
+    setOverride(restore.irrigation === null ? null : { fieldId, value: restore.irrigation });
+    setOwn(restore.own ? { fieldId, slots: restore.own } : null);
+  }, [restore, fieldId]);
   const setLimitIn = (limitIn: number | null) => onPlannerChoices({ ...plannerChoices, limitIn });
   // A third, optional one: the satellite numbers. Its failure stays inside its own section.
   const [satellite, retrySatellite] = useResource(fieldId, api.satellite);
@@ -103,6 +123,7 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
   const area = detail.status === "ready" ? detail.data.area_ha : areaHa;
   // A link to a field that does not exist: say so once, and do not offer plans for it.
   const unknownField = detail.status === "error" && detail.notFound;
+  const yoursNow = ownScore !== null && ownScore.field_id === fieldId ? ownScore : null;
   const state =
     detail.status === "ready" && plans.status === "ready"
       ? "ready"
@@ -148,6 +169,29 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
       </header>
 
       <div className="panel-body" ref={bodyRef} aria-busy={state === "loading"}>
+        {!unknownField && (
+          <ShareBar
+            url={shareUrl}
+            printWhat="plan"
+            ready={plans.status === "ready" && plans.data.plans.length > 0}
+            csv={
+              plans.status === "ready"
+                ? () => ({
+                    text: plansCsv({
+                      fieldId,
+                      areaAcres: area === null ? null : hectaresToAcres(area),
+                      settings: plans.data.settings ?? null,
+                      plans: plans.data.plans,
+                      current: plans.data.current ?? null,
+                      yours: yoursNow?.yours ?? null,
+                      candidates: plans.data.candidates,
+                    }),
+                    name: csvFileName("plans", fieldId),
+                  })
+                : null
+            }
+          />
+        )}
         <DetailSections detail={detail} onRetry={retryDetail} satellite={satellite} onRetrySatellite={retrySatellite} soil={soil} onRetrySoil={retrySoil} />
         {!unknownField && (
           <PlansSection
@@ -178,6 +222,7 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
               onSlots={(slots) => setOwn({ fieldId, slots })}
               currentCycle={slotsFrom(smartPlans.current?.cycle ?? smartPlans.current?.rotation)}
               jump={ownJump}
+              onResult={setOwnScore}
             />
           </ErrorBoundary>
         )}
@@ -187,6 +232,9 @@ export function FieldPanel({ fieldId, areaHa, onClose, plannerChoices, onPlanner
           </ErrorBoundary>
         )}
       </div>
+      {plans.status === "ready" && plans.data.plans.length > 0 && !unknownField && (
+        <FieldPrintSheet fieldId={fieldId} areaHa={area} answer={plans.data} score={yoursNow} url={shareUrl} />
+      )}
     </aside>
   );
 }

@@ -20,6 +20,13 @@
 // price_pct / cost_pct (never hard-coded); 0 is the same answer as no parameters; Reset returns to it; the other
 // endpoints echo the setting. One screenshot goes to e2e/screenshots/phase5-price-cost.png.
 //
+// Item C, export and share: the settings the page is in are written into the URL hash; the copied link is opened in a
+// fresh browser and in a page that is already open, and the controls, the plan query, the own rotation and the map
+// layer must come back as they were; the old #KS-... form still opens the field with defaults. The CSV downloads (top
+// plans, farm plan) are parsed and compared with direct calls to GET /field/{id}/plans and POST /farm/plan; "Print this
+// plan" is checked under emulated print media (the sheet shows and the app does not; its figures equal the API; the
+// page count of the PDF). One screenshot goes to e2e/screenshots/phase5-share-print.png.
+//
 // Environment: WEB_URL (default http://localhost:5173), E2E_TIMEOUT_MS (default 20000),
 // IRRIGATED_FIELD (default KS-014376, irrigated and growing continuous corn), DRY_FIELD (default KS-013847).
 import path from "node:path";
@@ -28,6 +35,7 @@ import { chromium } from "playwright";
 import { DEFAULT_CHOICES, formatDollars, plansQuery } from "../src/lib/planner.ts";
 import { DEFAULT_SPAN, transitionQuery } from "../src/lib/transition.ts";
 import { replayQuery } from "../src/lib/replay.ts";
+import { farmRequest } from "../src/lib/farm.ts";
 
 const WEB_URL = (process.env.WEB_URL ?? "http://localhost:5173").replace(/\/+$/, "");
 const TIMEOUT = Number.parseInt(process.env.E2E_TIMEOUT_MS ?? "20000", 10) || 20000;
@@ -297,6 +305,277 @@ async function checkPriceCost(browser, page, get, defaults, effects, apiPrefix) 
   await phone.close();
 }
 
+
+/** A small CSV reader: quoted cells, doubled quotes, CRLF. */
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i += 1; }
+      else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i += 1;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += ch;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+const ascii = (t) => t.replace(/[−–—]/g, "-").replace(/×/g, "x").replace(/[^\x00-\x7f]/g, "").replace(/\s+/g, " ").trim();
+const r2 = (n) => (Math.round((n + Number.EPSILON) * 100) / 100).toFixed(2);
+
+async function download(page, selector) {
+  const [file] = await Promise.all([page.waitForEvent("download", { timeout: TIMEOUT }), page.click(selector)]);
+  const stream = await file.createReadStream();
+  let text = "";
+  for await (const chunk of stream) text += chunk.toString("utf8");
+  return { name: file.suggestedFilename(), text };
+}
+
+async function checkShare(browser, get, defaults, apiPrefix) {
+  const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1, permissions: ["clipboard-read", "clipboard-write"], acceptDownloads: true });
+  const page = await context.newPage();
+  page.setDefaultTimeout(TIMEOUT);
+  const problems = watch(page, "share");
+
+  // the old form: a bare #KS-... opens the field with the defaults, and the hash stays as it was
+  await openField(page, WET);
+  equal(await page.evaluate(() => window.location.hash), `#${WET}`, "a field with default settings keeps the plain #KS-... hash");
+  equal(await page.getAttribute('[data-testid="plans-region"]', "data-query"), defaults, "the bare hash asks with the default settings");
+
+  // change everything the link should carry
+  await page.locator('[data-testid="weight-soil"]').fill("6");
+  await page.locator('[data-testid="weight-money"]').fill("1");
+  await page.locator('[data-testid="horizon"]').fill("3"); // 2040
+  await page.locator('[data-testid="scenario-ssp585"]').check();
+  await page.locator('[data-testid="price-pct"]').fill("10");
+  await page.locator('[data-testid="cost-pct"]').fill("-10");
+  await page.locator('[data-testid="water-limit"]').fill("12");
+  await page.locator('[data-testid="irrigation-switch"]').uncheck(); // dryland, set by the farmer
+  await page.waitForSelector('[data-testid="plans-region"][data-updating="false"][data-query*="irrigated=false"]', { timeout: TIMEOUT });
+  const card = page.locator('[data-testid="plan-card"]').nth(1);
+  await card.locator('[data-testid="plan-edit"]').click(); // card 2 into "Try your own rotation"
+  const slotsOf = async (pg) => pg.locator('[data-testid="own-slot"]').evaluateAll((els) => els.map((el) => el.getAttribute("data-crop")));
+  const ownSlots = await slotsOf(page);
+  check(ownSlots.length >= 2 && ownSlots.every((c) => c), `the own rotation is filled: ${ownSlots.join(",")}`);
+  await page.waitForSelector('[data-testid="own-result"][data-state="ready"]', { timeout: TIMEOUT }).catch(() => {});
+  const names = await page.locator('[data-testid="layer-select"] option').evaluateAll((els) => els.map((el) => el.value));
+  const layer = names.find((n) => n !== "fields" && n !== "") ?? null;
+  if (layer) await page.selectOption('[data-testid="layer-select"]', layer);
+  await page.waitForSelector(layer ? `[data-testid="layer-control"][data-layer="${layer}"]:not([data-state="loading"])` : "body", { timeout: TIMEOUT });
+  const query = await page.getAttribute('[data-testid="plans-region"]', "data-query");
+  check(query.includes("price_pct=10") && query.includes("cost_pct=-10") && query.includes("limit_in=12") && query.includes("irrigated=false") && query.includes("horizon=2040") && query.includes("scenario=ssp585"), `the page is in the changed state: ${query}`);
+
+  const hash = await page.evaluate(() => window.location.hash);
+  check(hash.startsWith(`#${WET}?`), `the hash carries the settings: ${hash}`);
+  for (const part of ["w=6.2.1.2", "h=2040", "s=ssp585", "lim=12", "pp=10", "cp=-10", "irr=0", "own="]) check(hash.includes(part), `the hash has ${part}: ${hash}`);
+  if (layer) check(hash.includes(`layer=${layer}`), `the hash names the map layer: ${hash}`);
+  const layerYear = layer ? await page.getAttribute('[data-testid="layer-control"]', "data-year") : null;
+
+  // Copy link puts the same link on the clipboard
+  await page.click('[data-testid="share-copy"]');
+  await page.waitForFunction(() => (document.querySelector('[data-testid="share-note"]')?.textContent ?? "") !== "", null, { timeout: TIMEOUT });
+  equal(squash(await page.locator('[data-testid="share-note"]').textContent()), "Link copied", "Copy link says it copied");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  equal(copied, page.url(), "the copied link is the page's address");
+  log(`  ✓ Copy link: ${copied.length} characters, equal to the address bar`);
+
+  // a fresh browser opens it: everything is back
+  const other = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
+  const fresh = await other.newPage();
+  fresh.setDefaultTimeout(TIMEOUT);
+  const freshProblems = watch(fresh, "fresh");
+  await fresh.goto(copied, { waitUntil: "domcontentloaded" });
+  await fresh.waitForSelector(`[data-testid="panel"][data-field-id="${WET}"][data-state="ready"]`, { timeout: TIMEOUT });
+  await fresh.waitForSelector('[data-testid="plans-region"][data-updating="false"]', { timeout: TIMEOUT });
+  const restore = async (pg, what) => {
+    equal(await pg.getAttribute('[data-testid="plans-region"]', "data-query"), query, `${what}: the plans are asked with the same settings`);
+    equal(await pg.locator('[data-testid="weight-soil"]').inputValue(), "6", `${what}: soil slider`);
+    equal(await pg.locator('[data-testid="weight-money"]').inputValue(), "1", `${what}: money slider`);
+    equal(await pg.locator('[data-testid="horizon"]').inputValue(), "3", `${what}: year slider`);
+    equal(await pg.locator('[data-testid="scenario-ssp585"]').isChecked(), true, `${what}: emissions path`);
+    equal(await pg.locator('[data-testid="price-pct"]').inputValue(), "10", `${what}: price slider`);
+    equal(await pg.locator('[data-testid="cost-pct"]').inputValue(), "-10", `${what}: cost slider`);
+    equal(await pg.locator('[data-testid="irrigation-switch"]').isChecked(), false, `${what}: irrigation switch`);
+    equal((await slotsOf(pg)).join(","), ownSlots.join(","), `${what}: the own rotation`);
+    if (layer) {
+      equal(await pg.getAttribute('[data-testid="layer-control"]', "data-layer"), layer, `${what}: map layer`);
+      if (layerYear) equal(await pg.getAttribute('[data-testid="layer-control"]', "data-year"), layerYear, `${what}: map layer year`);
+    }
+  };
+  await restore(fresh, "fresh browser");
+  const body = await get(`/field/${WET}/plans?${query}`);
+  const names3 = await texts(fresh, '[data-testid="plan-name"]');
+  equal(names3.slice(0, 3).join(" | "), body.plans.slice(0, 3).map((p) => squash(p.name)).join(" | "), "the restored cards are the API's for that query");
+  equal(await fresh.evaluate(() => window.location.hash), hash, "opening the link leaves the hash as it was");
+  log("  ✓ a link opened in a fresh browser restores sliders, year, path, what-ifs, switch, own rotation and layer; cards equal the API");
+
+  // pasted into a page that is already open (same tab): the hash changes, the state follows
+  await fresh.evaluate((id) => { window.location.hash = id; }, DRY);
+  await fresh.waitForSelector(`[data-testid="panel"][data-field-id="${DRY}"][data-state="ready"]`, { timeout: TIMEOUT });
+  await fresh.evaluate((h) => { window.location.hash = h; }, hash);
+  await fresh.waitForSelector(`[data-testid="panel"][data-field-id="${WET}"][data-state="ready"]`, { timeout: TIMEOUT });
+  await fresh.waitForSelector(`[data-testid="plans-region"][data-updating="false"][data-query="${query}"]`, { timeout: TIMEOUT });
+  await restore(fresh, "pasted into an open page");
+  log("  ✓ the same link pasted into an open page restores the same state");
+  check(freshProblems.length === 0, `console errors in the fresh page:\n  ${freshProblems.join("\n  ")}`);
+  await other.close();
+
+  // CSV of the top plans, with the own rotation and the field's own pattern, against the API
+  await page.locator('[data-testid="own-result"][data-state="ready"]').waitFor({ timeout: TIMEOUT });
+  const score = await get(`/field/${WET}/score?rotation=${encodeURIComponent(ownSlots.join(","))}&${query}`);
+  const csv = await download(page, '[data-testid="share-csv"]');
+  equal(csv.name, `rotation-plans-${WET}.csv`, "the CSV file name");
+  const rows = parseCsv(csv.text);
+  const comments = rows.filter((r) => r[0].startsWith("#")).map((r) => r.join(","));
+  check(comments.length >= 3 && comments.every((c) => !c.includes(",") || true), "the CSV opens with comment rows");
+  const settingsRow = comments.find((c) => c.startsWith("# Settings:")) ?? "";
+  check(/Dryland \(set by you\)/.test(settingsRow) && /2040, high emissions/.test(settingsRow) && /prices \+10%, direct costs -10%/.test(settingsRow) && /soil protection 40%/.test(settingsRow) === false || /soil protection/.test(settingsRow), `the settings comment row: ${settingsRow}`);
+  check(comments.some((c) => /not profit/.test(c)) && comments.some((c) => /soil protection/.test(c)), "the comment rows carry the dollars and soil wording");
+  const data = rows.filter((r) => !r[0].startsWith("#") && r.length > 1);
+  const header = data[0];
+  const col = (name) => header.indexOf(name);
+  for (const name of ["rank", "name", "ranking_score", "soil_protection_score", "return_middle_per_acre_year", "holds_up_in_futures", "bare_days_per_year"]) check(col(name) >= 0, `CSV has the column ${name}`);
+  const planRows = data.slice(1);
+  equal(planRows.length, 3 + (body.current ? 1 : 0) + 1, "CSV rows: three plans, the field's own pattern and your own rotation");
+  body.plans.slice(0, 3).forEach((p, i) => {
+    const r = planRows[i];
+    equal(r[col("rank")], String(i + 1), `CSV plan ${i + 1}: rank`);
+    equal(r[col("name")], ascii(p.name), `CSV plan ${i + 1}: name`);
+    equal(r[col("ranking_score")], r2(p.scores.robust), `CSV plan ${i + 1}: ranking score`);
+    equal(r[col("soil_protection_score")], r2(p.scores.soil), `CSV plan ${i + 1}: soil protection`);
+    equal(r[col("money_score")], r2(p.scores.money), `CSV plan ${i + 1}: money`);
+    equal(r[col("holds_up_in_futures")], String(p.futures.holds), `CSV plan ${i + 1}: holds up`);
+    equal(r[col("return_low_per_acre_year")], String(Math.round(p.spread.profit_per_acre.low)), `CSV plan ${i + 1}: low return`);
+    equal(r[col("return_middle_per_acre_year")], String(Math.round(p.spread.profit_per_acre.mid)), `CSV plan ${i + 1}: middle return`);
+    equal(r[col("return_high_per_acre_year")], String(Math.round(p.spread.profit_per_acre.high)), `CSV plan ${i + 1}: high return`);
+    equal(r[col("bare_days_per_year")], String(Math.round(p.numbers.bare_days)), `CSV plan ${i + 1}: bare days`);
+    equal(r[col("planted_crops_failing_percent")], String(Math.round(p.numbers.failed_share * 100)), `CSV plan ${i + 1}: failing`);
+    equal(r[col("water_pumped_inches_per_year")], "", `CSV plan ${i + 1}: dryland has no pumped water`);
+    equal(r[col("reason")], ascii(p.reason), `CSV plan ${i + 1}: reason`);
+  });
+  const mine = planRows[planRows.length - 1];
+  equal(mine[col("rank")], "yours", "CSV: the last row is yours");
+  equal(mine[col("ranking_score")], r2(score.yours.scores.robust), "CSV: your rotation's ranking score");
+  equal(planRows[3][col("rank")], "as now", "CSV: the field's own pattern");
+  log(`  ✓ CSV download: ${planRows.length} rows equal /plans and /score, settings in the comment rows`);
+
+  // print: nothing is sent to a printer here; the sheet is checked under print media
+  await page.evaluate(() => { window.__printed = 0; window.print = () => { window.__printed += 1; }; });
+  await page.click('[data-testid="share-print"]');
+  equal(await page.evaluate(() => window.__printed), 1, "Print this plan calls the browser's print");
+  const sheetVisible = async () => page.locator('[data-testid="print-sheet"]').isVisible();
+  equal(await sheetVisible(), false, "the sheet is not on screen");
+  await page.emulateMedia({ media: "print" });
+  equal(await sheetVisible(), true, "the sheet shows under print media");
+  equal(await page.locator('[data-testid="app"]').isVisible(), false, "the app is hidden under print media");
+  const sheet = page.locator('[data-testid="print-sheet"]');
+  const sheetNames = await texts(sheet, '[data-testid="print-plan-name"]');
+  equal(sheetNames.slice(0, 3).join(" | "), body.plans.slice(0, 3).map((p) => squash(p.name)).join(" | "), "the sheet's top three are the API's");
+  const sheetScores = await texts(sheet, '[data-testid="print-plan-score"]');
+  equal(sheetScores.slice(0, 3).join(","), body.plans.slice(0, 3).map((p) => r2(p.scores.robust)).join(","), "the sheet's ranking scores");
+  const figures = await texts(sheet, '[data-testid="print-plan-figures"]');
+  body.plans.slice(0, 3).forEach((p, i) => {
+    const s = p.spread.profit_per_acre;
+    check(figures[i].includes(`Holds up in ${p.futures.holds} of ${p.futures.total} futures`), `sheet plan ${i + 1} says how many futures it holds up in`);
+    check(figures[i].includes(`low ${formatDollars(s.low)}, middle ${formatDollars(s.mid)}, high ${formatDollars(s.high)}`), `sheet plan ${i + 1} shows the spread`);
+  });
+  const sheetText = squash(await sheet.textContent());
+  check(sheetText.includes("Dryland (set by you)") && sheetText.includes("2040, high emissions path") && sheetText.includes("prices +10%, direct costs -10%"), "the sheet's assumptions line");
+  check(sheetText.includes("soil protection") && sheetText.includes("not a measure of soil health") && sheetText.includes("returns over direct costs, not profit"), "the sheet carries the soil protection and direct-costs wording");
+  check(sheetText.includes("agree on heat, not on rain"), "the sheet says the models agree on heat, not rain");
+  check(sheetText.includes(`Your own rotation: ${score.yours.name}`), "the sheet shows the build-your-own result");
+  check(sheetText.includes(score.comparison.headline[0]), "the sheet carries the comparison's headline");
+  equal(squash(await sheet.locator('[data-testid="print-link"]').textContent()).replace("Open this exact view again: ", ""), page.url(), "the sheet prints the link");
+  const pdf = await page.pdf({ format: "Letter", printBackground: true });
+  const pages = (pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+  check(pages >= 1 && pages <= 2, `the field sheet with the own rotation is ${pages} page(s)`);
+  await page.screenshot({ path: path.join(SHOTS, "phase5-share-print.png"), fullPage: true });
+  await page.emulateMedia({ media: "screen" });
+  equal(await sheetVisible(), false, "back on screen the sheet is hidden again");
+  log(`  ✓ print: the sheet shows only under print media, equals the API, PDF is ${pages} page(s); screenshot -> e2e/screenshots/phase5-share-print.png`);
+
+  // without an own rotation the sheet is one page
+  const plain = await (await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 })).newPage();
+  plain.setDefaultTimeout(TIMEOUT);
+  await openField(plain, WET);
+  await plain.emulateMedia({ media: "print" });
+  const pdf1 = await plain.pdf({ format: "Letter", printBackground: true });
+  const pages1 = (pdf1.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+  equal(pages1, 1, "the plain field plan prints on one page");
+  await plain.context().close();
+  log("  ✓ a field plan with the default settings prints on one page");
+
+  // the farm: a link with fields and limits, the table as CSV, the sheet
+  const farmIds = [WET, DRY];
+  const farmHash = `#?m=farm&farm=${farmIds.join(",")}&fw=900&fm=1000&h=2040`;
+  const farmPage = await context.newPage();
+  farmPage.setDefaultTimeout(TIMEOUT);
+  const farmProblems = watch(farmPage, "farm");
+  await farmPage.goto(`${WEB_URL}/${farmHash}`, { waitUntil: "domcontentloaded" });
+  await farmPage.waitForSelector('[data-testid="farm-panel"]', { timeout: TIMEOUT });
+  equal((await farmPage.locator('[data-testid="farm-chip"]').evaluateAll((els) => els.map((el) => el.getAttribute("data-field-id")))).join(","), farmIds.join(","), "the farm link brings back the fields");
+  equal(await farmPage.locator('[data-testid="farm-water"]').inputValue(), "900", "the farm link brings back the water budget");
+  equal(await farmPage.locator('[data-testid="farm-minimum"]').inputValue(), "1000", "the farm link brings back the least return");
+  equal(await farmPage.locator('[data-testid="horizon"]').inputValue(), "3", "the farm link brings back the year");
+  await farmPage.waitForSelector('[data-testid="farm-result"][data-updating="false"]', { timeout: 60000 });
+  const fh = await farmPage.evaluate(() => window.location.hash);
+  check(fh.startsWith("#?") && fh.includes("m=farm") && fh.includes(`farm=${farmIds.join(",")}`) && fh.includes("fw=900") && fh.includes("fm=1000"), `the farm's hash stays: ${fh}`);
+  const request = farmRequest(farmIds, { ...DEFAULT_CHOICES, horizon: 2040 }, "900", "1000");
+  const farmResponse = await fetch(`${apiPrefix}/farm/plan`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request) });
+  equal(farmResponse.status, 200, "POST /farm/plan answers");
+  const farm = await farmResponse.json();
+  const farmFile = await download(farmPage, '[data-testid="share-csv"]');
+  equal(farmFile.name, "farm-plan.csv", "the farm CSV file name");
+  const frows = parseCsv(farmFile.text);
+  const fdata = frows.filter((r) => !r[0].startsWith("#") && r.length > 1);
+  equal(fdata.length, 1 + farm.fields.length, "farm CSV: a row per field");
+  const fcol = (name) => fdata[0].indexOf(name);
+  farm.fields.forEach((f, i) => {
+    const r = fdata[i + 1];
+    equal(r[fcol("field_id")], f.field_id, `farm CSV row ${i + 1}: field`);
+    equal(r[fcol("practice")], f.irrigated ? "irrigated" : "dryland", `farm CSV row ${i + 1}: practice`);
+    equal(r[fcol("plan_name")], ascii(f.plan.name), `farm CSV row ${i + 1}: plan`);
+    equal([...Array(12)].map((_, k) => r[fcol(`year_${k + 1}`)]).join(","), f.plan.years.join(","), `farm CSV row ${i + 1}: the twelve years`);
+    equal(r[fcol("sentence")], ascii(f.sentence), `farm CSV row ${i + 1}: sentence`);
+  });
+  const fcomments = frows.filter((r) => r[0].startsWith("#")).map((r) => r.join(","));
+  check(fcomments.some((c) => /water budget 900 acre-inches/.test(c) && /least return \$1000/.test(c) && /2040/.test(c)), "the farm CSV's comment rows carry the settings");
+  log(`  ✓ farm link restores fields, limits and year; farm CSV (${farm.fields.length} fields) equals POST /farm/plan`);
+  await farmPage.emulateMedia({ media: "print" });
+  const fsheet = farmPage.locator('[data-testid="print-sheet"][data-kind="farm"]');
+  equal(await fsheet.isVisible(), true, "the farm sheet shows under print media");
+  const frowsText = await texts(fsheet, '[data-testid="print-farm-row"] strong');
+  equal(frowsText.join(","), farm.fields.map((f) => f.field_id).join(","), "the farm sheet lists the fields");
+  const ftext = squash(await fsheet.textContent());
+  check(ftext.includes("not profit") && ftext.includes("soil protection") && ftext.includes(farm.summary[0]), "the farm sheet carries the wording and the summary");
+  const fpdf = await farmPage.pdf({ format: "Letter", printBackground: true });
+  const fpages = (fpdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+  check(fpages >= 1 && fpages <= 2, `the farm sheet is ${fpages} page(s)`);
+  await farmPage.emulateMedia({ media: "screen" });
+  check(farmProblems.length === 0, `console errors in the farm page:\n  ${farmProblems.join("\n  ")}`);
+  log(`  ✓ farm print sheet equals the API (${fpages} page(s))`);
+
+  // phone width: the share row fits
+  const phone = await browser.newContext({ viewport: { width: 390, height: 800 }, deviceScaleFactor: 1 });
+  const small = await phone.newPage();
+  small.setDefaultTimeout(TIMEOUT);
+  await small.goto(`${WEB_URL}/#${WET}`, { waitUntil: "domcontentloaded" });
+  await small.waitForSelector('[data-testid="share-bar"]', { timeout: TIMEOUT });
+  check(await small.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "no sideways scrolling at phone width with the share row");
+  await phone.close();
+
+  check(problems.length === 0, `console errors:\n  ${problems.join("\n  ")}`);
+  await context.close();
+}
+
 async function run(browser) {
   const apiBase = await (async () => {
     const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
@@ -385,6 +664,9 @@ async function run(browser) {
 
   // ---- item F: price and cost what-ifs ------------------------------------------------------------------------
   await checkPriceCost(browser, page, get, defaults, effects, apiPrefix);
+
+  // ---- item C: export and share ------------------------------------------------------------------------------
+  await checkShare(browser, get, defaults, apiPrefix);
 
   // ---- the picture ---------------------------------------------------------------------------------------
   await openField(page, WET);

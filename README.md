@@ -1366,3 +1366,33 @@ prices; the farmer supplies the change.
   are returns over direct costs, not profit. The set of plans that is ranked first can change as prices move, and the
   break-even line is for whichever plan is first under the settings on screen.
 - Notes: `data/logs/phase5/item_F.md`. Tests: `tests/test_whatif.py`, `web/tests/planner.test.mjs`, `web/e2e/phase5.mjs`.
+
+### Export and share (item C)
+
+Nothing here needs a new server call; it all runs in the browser from the answers already on screen.
+
+- **Share link.** The page keeps its state in the URL hash, so "Copy link" (top of the field and farm panels) copies an address
+  that reopens the same view. Written: the open field, the four priorities, the year, the emissions path, the pumping limit,
+  the price and cost what-ifs, the irrigated / dryland switch (only if you set it), your own rotation, the map layer and its
+  year, and, in "Plan a farm", the picked fields and the two limit boxes. Only what differs from the defaults is written, so
+  an untouched field is still just `#KS-014376`; a bare `#KS-...` link keeps working and opens the field with the defaults.
+  Format: `#<field>?w=6.2.1.2&h=2040&s=ssp585&lim=12&pp=10&cp=-10&irr=0&own=corn,_,winter+wheat&layer=bare_days&yr=2022`
+  and `#?m=farm&farm=KS-1,KS-2&fw=900&fm=20000` (keys in `web/src/lib/share.ts`). Unreadable or unknown parts are ignored. The
+  address is updated in place as you change things (Back still steps between fields, not between slider moves). A link pasted
+  into a page that is already open is taken in too.
+- **Print this plan.** Opens the browser's print window (save as PDF from there). Only a sheet prints: the field with
+  area, a settings-and-assumptions line (priorities, future, irrigated or dryland and why, pumping limit, price what-if), our
+  top 3 with ranking score, the four scores, how many futures each holds up in, return over direct costs with the low-middle-high
+  across the climate models, bare days, water and failed crops, the field's own pattern, the build-your-own comparison when
+  there is one, the caveats (soil protection is not soil health; dollars are returns over direct costs, not profit; the models
+  agree on heat, not rain), what the scores leave out, and the link. The farm plan prints its summary, the farm against each
+  field alone, a row per field with its twelve crops, the assumptions and the link. Fixed wording is `PRINT_CAVEATS` in `lib/exportplan.ts`.
+  A field plan with the default settings is one page; with your own rotation or a farm it can be two or more.
+- **CSV.** "Download CSV" saves the cards' numbers at the precision shown (scores two decimals, dollars whole, water to a tenth of an
+  inch, shares in whole percent): one row each for our top 3, the field's own pattern ("as now") and your own rotation ("yours"), after
+  `#` comment rows with the settings and the dollar and soil wording. The farm file has a row per field (area, practice, plan, years 1-12,
+  scores, sentence) and comment rows with the settings, status and totals. Text is plain ASCII (typographic dashes and minus signs are
+  folded), so Excel and plain parsers read it the same; cells that could start a spreadsheet formula get a leading apostrophe.
+- **Fixed on the way.** Opening the app straight into "Plan a farm" with fields picked made Leaflet redraw a removed layer; the farm
+  framing now waits a tick (`FieldMap.tsx`).
+- Notes: `data/logs/phase5/item_C.md`. Tests: `web/tests/share.test.mjs`, `web/e2e/phase5.mjs` (item C).
