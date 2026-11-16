@@ -1,5 +1,16 @@
 # data is rebuilt by the pipeline (downloads are cached in data/raw)
-/data/
+# data is rebuilt by the pipeline (downloads are cached in data/raw), but the small finished tables the
+# app needs are tracked so a fresh clone works. Raw downloads, logs and scratch files stay out.
+/data/*
+!/data/*.parquet
+!/data/effects.json
+!/data/soil_health_meta.json
+!/data/fields_provenance.json
+!/data/regions/
+/data/regions/*/raw/
+/data/soil_bare_obs*.parquet
+/data/soil_health_proto*
+/data/fields_fake.parquet
 
 # python
 .venv/
