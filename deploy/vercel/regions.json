@@ -387,6 +387,17 @@
    "borrow_climate": true
   },
   {
+   "fips": "20077",
+   "state": "KS",
+   "county": "Harper",
+   "label": "Harper County, KS",
+   "is_default": false,
+   "field_count": 4595,
+   "has_traits": true,
+   "km_from_finney": 253,
+   "borrow_climate": false
+  },
+  {
    "fips": "20081",
    "state": "KS",
    "county": "Haskell",
@@ -615,6 +626,17 @@
    "field_count": 5633,
    "has_traits": true,
    "km_from_finney": 224,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20143",
+   "state": "KS",
+   "county": "Ottawa",
+   "label": "Ottawa County, KS",
+   "is_default": false,
+   "field_count": 4171,
+   "has_traits": true,
+   "km_from_finney": 294,
    "borrow_climate": false
   },
   {
