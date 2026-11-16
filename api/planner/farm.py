@@ -818,7 +818,7 @@ def plan_farm_cached(fields: Sequence[FieldInput], *, engine: Engine | None = No
         return value
 
     key = (tuple((f.field_id, f.area_ha, f.slope_pct, frozen(f.crop_history or {})) for f in fields),
-           frozen(settings), round(engine.irrigation_limit_mm, 1))
+           frozen(settings), round(engine.irrigation_limit_mm, 1), engine.adjustment)
     with _CACHE_LOCK:
         hit = _CACHE.get(key)
         if hit is not None and hit[0] is engine:
@@ -1139,6 +1139,8 @@ def _report(farm: Sequence[_Field], solution: Solution, weights: Weights, settin
     keep = ("weights", "scenario", "horizon", "window", "models", "ranking_rule", "profit_basis",
             "irrigation_limit_mm", "irrigation_limit_in", "soil_source")
     out_settings = {key: settings[key] for key in keep}
+    if "what_if" in settings:
+        out_settings["what_if"] = settings["what_if"]
     out_settings.update(span_years=SPAN_YEARS, water_budget_acre_in=budget, min_income=minimum,
                         max_fields=MAX_FIELDS)
     return {

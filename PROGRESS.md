@@ -177,6 +177,12 @@ which limit binds, and the rotation and start year chosen for each field with wh
 - Decisions: no vector tiles, zoom-dependent geometry or library swap (numbers showed no need); `API_WARMUP=0` turns the warm-up off; `/fields` gzip level 9 (wire size 1,000 to 965 kB, small).
 - Checker: reran all suites and checked four real fields plus a missing id through the live API (plain 404 sentence).
 - Limits: the gzip gain is small; the first-run frame spikes in the early "before" numbers came from the test harness, not the map; the real-browser perf numbers are from headless Chromium, not a phone.
+- Item F: `price_pct` and `cost_pct` (-50..+100) plus `price_<crop>_pct` on /plans, /score, /transition, /replay; the
+  farm planner takes them in the body. 0 changes nothing; echoed in `settings.what_if` only while on. Adjusted engines cached.
+- /plans gains `sensitivity`: the price change at which the top plan's return over direct costs reaches zero, with the
+  range across the six climate models, solved exactly (return is linear in price) rather than searched.
+- Web: "What if prices or costs change?" card (two sliders, Reset, break-even line) under the planner controls, persisted.
+- Notes: data/logs/phase5/item_F.md; checks: data/logs/phase5/check_F_*.log (pytest 1328 passed, web, typecheck, make e2e pass).
 
 ## What is left
 
@@ -245,7 +251,7 @@ Nothing from the eight-item list.
 | C | not started | |
 | D | not started | |
 | E | not started | |
-| F | not started | |
+| F | Price and cost what-ifs | done, checked |
 
 ## Done
 
@@ -270,7 +276,7 @@ Nothing from the eight-item list.
 
 ## What is left
 
-- Items C-F.
+- Items C-E.
 
 ## For you in the morning
 

@@ -410,6 +410,40 @@ it is the old "Yields do not change with the crop grown before, apart from the s
 six climate models and the stronger and weaker end of each effect the plan runs into; `mid`, `scores` and `numbers`
 use the middle values. Off, the whole answer is what it was before Phase 5.
 
+### Price and cost what-ifs (Phase 5, item F)
+
+`/plans`, `/score`, `/transition`, `/replay` and the farm planner take a percent change on prices and costs. We do not
+predict prices: the farmer supplies the change. Smart planner only (the basic planner ignores it).
+
+| Parameter (query; `POST /farm/plan` body keys `price_pct`, `cost_pct`, `crop_price_pct` {crop: pct}) | Meaning |
+|---|---|
+| `price_pct` | -50 to +100, percent change on every crop price (default 0) |
+| `cost_pct` | -50 to +100, percent change on every direct cost: the per-acre budget lines, fallow passes and the pumping cost per inch (default 0) |
+| `price_corn_pct`, `price_soybeans_pct`, `price_winter_wheat_pct`, `price_sorghum_pct`, `price_alfalfa_pct` | the same for one crop; it replaces `price_pct` for that crop |
+
+Anything outside -50..+100 or not a number is a `400` with one sentence. Zero (or nothing) changes nothing: the answer is
+identical to a call without the parameters. `settings.what_if` echoes what was applied (present only while a what-if is on, so a plain answer is unchanged):
+`{"active": bool, "price_pct": 0.0, "cost_pct": 0.0, "crop_price_pct": {"corn": 20.0}, "note": str|null}`; when it is
+active, `settings.limits` says prices and costs are today's moved by the what-if. Only prices and costs move; yields,
+weather, water and soil scores do not.
+
+`/plans` also carries `sensitivity` (null only if it could not be worked out): the break-even for the top plan, from
+the planner's own model. Return over direct costs is linear in a uniform price change, so per climate model the
+break-even is costs / revenue (revenue from a second run with prices doubled); no search, no new assumption. Costs are
+held where they are set.
+
+| Key | Meaning |
+|---|---|
+| `plan`, `plan_name` | which plan (1 = the top one) |
+| `basis` | `today`: percentages are against today's prices (also when `price_pct` moved all crops together); `your_prices`: against the prices as set (when per-crop prices were given) |
+| `status` | `ok` (break-even inside the control's range), `stays_above_zero` (every climate model stays above zero for any drop down to -50%), `below_zero_now` (already under its direct costs as set; the figures say how far prices would have to move), `no_revenue` |
+| `return_now` | mean return over direct costs, $ an acre a year, as set |
+| `break_even_pct`, `low_pct`, `high_pct` | the price change (percent, whole numbers) at which the return reaches zero: ensemble mean, and the lowest and highest across the climate models; null for `no_revenue` |
+| `range_shown` | `[-50, 100]` |
+| `sentence`, `note` | plain English for the farmer; "A what-if, not a forecast" |
+
+The what-if engines are cached per engine (last 8 adjustments), like the irrigation-limit engines.
+
 ## `GET /rotation-effects` (Phase 5)
 
 `{"setting": "on" | "off", "applied": bool, "file": "rotation_effects.json", "effects": [...], "not_applied": [...],
@@ -739,7 +773,7 @@ whole dollars, at today's prices and costs.
 | Key | Meaning |
 |---|---|
 | `field_id`, `engine` (`"smart"`), `status` (`"ok"`) | |
-| `settings` | `irrigated`, `irrigation_source`, `irrigation_basis`, `weights`, `scenario`, `horizon`, `profit_basis`, `irrigation_limit_mm`, `irrigation_limit_in`, `rotation_effects` (as in `/plans`) |
+| `settings` | `irrigated`, `irrigation_source`, `irrigation_basis`, `weights`, `scenario`, `horizon`, `profit_basis`, `irrigation_limit_mm`, `irrigation_limit_in`, `rotation_effects`, `what_if` (as in `/plans`) |
 | `subject` | `source` (`plan` or `own`), `plan` (1-3 or null), `name`, `cycle` |
 | `weather` | `source`, `first_year`, `last_year`, `years`, `normal_season_rain_mm` (mean April-September rain), `season`, `dry_rule` (sentence), `dry_years` (the driest fifth of the years by that rain, from our own rule), `rows[]` (`year`, `season_rain_mm`, `rain_vs_normal_pct`, `hot_days`, `dry`) |
 | `plan` | the replayed rotation, a series (below) |

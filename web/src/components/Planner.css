@@ -45,6 +45,17 @@
   font-size: 13px;
 }
 
+.planner-row--pct {
+  grid-template-columns: 104px minmax(0, 1fr) 46px;
+}
+
+.planner-breakeven {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
 .planner-row label {
   color: var(--ink-2);
 }
@@ -556,6 +567,10 @@
 }
 
 @media (max-width: 380px) {
+  .planner-row--pct {
+    grid-template-columns: 84px minmax(0, 1fr) 46px;
+  }
+
   .planner-row {
     grid-template-columns: 96px minmax(0, 1fr) 22px;
   }

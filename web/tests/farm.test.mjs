@@ -182,3 +182,13 @@ test("grid steps are 1, 2 or 5 times a power of ten", () => {
   assert.equal(niceStep(300), 100);
   assert.equal(niceStep(0), 1);
 });
+
+test("farmRequest sends price_pct and cost_pct only while the what-if is on", () => {
+  const plain = farmRequest(["A"], CHOICES, "", "");
+  assert.equal("price_pct" in plain, false);
+  assert.equal("cost_pct" in plain, false);
+  const moved = farmRequest(["A"], { ...CHOICES, pricePct: -20, costPct: 10 }, "", "");
+  assert.equal(moved.price_pct, -20);
+  assert.equal(moved.cost_pct, 10);
+  assert.equal("price_pct" in farmRequest(["A"], { ...CHOICES, pricePct: 0 }, "", ""), false);
+});

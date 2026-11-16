@@ -525,11 +525,14 @@ def replay(field: FieldInput, *, plan: int | None = None, rotation: Sequence[str
     settings = {k: result.settings[k] for k in ("irrigated", "irrigation_source", "irrigation_basis", "weights",
                                                 "scenario", "horizon", "profit_basis", "irrigation_limit_mm",
                                                 "irrigation_limit_in", "rotation_effects")}
+    if "what_if" in result.settings:
+        settings["what_if"] = result.settings["what_if"]
     notes = [HISTORY_NOT_FORECAST, phase_note,
              f"The weather is the observed record {first}-{last}; a year is marked dry when its April-September rain is "
              f"among the driest {len(obs.dry_years)} of the {len(obs.years)} years.",
-             "Dollars are returns over direct costs, not profit; prices and costs are today's, the same as on the plan "
-             "cards."]
+             "Dollars are returns over direct costs, not profit; prices and costs are " +
+             ("today's moved by the what-if you set, the same as on the plan cards." if "what_if" in settings
+              else "today's, the same as on the plan cards.")]
     if is_irrigated:
         limit = settings["irrigation_limit_in"]
         notes.append(f"Irrigated years pump what the crop needs up to {limit:g} inches an acre a year; a crop that needs "

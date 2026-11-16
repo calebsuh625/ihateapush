@@ -506,6 +506,7 @@ function PlansSection({ planner, choices, onChoices, irrigationOverride, onIrrig
               climate={climate}
               irrigationOverride={irrigationOverride}
               onIrrigationOverride={onIrrigationOverride}
+              sensitivity={data.sensitivity}
             />
           )}
           {planner.updateError !== null && (

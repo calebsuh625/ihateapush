@@ -63,6 +63,7 @@ in sanity.py). The default engine is rebuilt by itself when a source file or set
 """
 from __future__ import annotations
 
+import copy
 import math
 import threading
 from collections import OrderedDict
@@ -74,7 +75,7 @@ from typing import Callable, Mapping, Sequence
 import numpy as np
 
 from api.planner import candidates as cand
-from api.planner import config, erosion, futures, money, rotation, soil_effect
+from api.planner import config, erosion, futures, money, rotation, soil_effect, whatif
 from api.planner.crops import CROP_TABLE, CROPS, MAX_YIELD_REL, PRACTICES, PREV_KINDS
 from api.planner.legacy import FieldInput, Plan, Scores, rotation_name
 from api.planner.traits import FieldTraits, guess_irrigation, load_traits
@@ -97,11 +98,12 @@ MM_PER_INCH = money.MM_PER_INCH
 # "What if I can only pump N inches a year?" (Phase 4, item 6): an engine is built for one irrigation limit,
 # so each limit asked for gets its own engine, and the last few are kept (`Engine.with_limit`).
 LIMIT_ENGINES_KEPT = 8
+ADJUSTED_ENGINES_KEPT = 8       # price / cost what-if engines kept per engine (`Engine.with_adjustment`)
 WHAT_IF_MIN_IN = 1.0            # the smallest limit the what-if takes; 0 would mean "no limit" to the engine
 WHAT_IF_MAX_IN_NO_LIMIT = 60.0  # the largest when the planner itself has no limit (no crop here needs 36)
 
 
-def limits_for(irrigation_limit_mm: float, rotation_effects: bool = False) -> list:
+def limits_for(irrigation_limit_mm: float, rotation_effects: bool = False, adjustment=None) -> list:
     """What the scoring leaves out, in plain sentences (the app shows them under "How this is scored").
     `rotation_effects`: the engine applies the yield drag of a crop after itself (rotation.py)."""
     first, last = futures.window(config.TODAY)
@@ -113,7 +115,9 @@ def limits_for(irrigation_limit_mm: float, rotation_effects: bool = False) -> li
     return [
         rotation.LIMIT_SENTENCE_ON if rotation_effects else rotation.LIMIT_SENTENCE_OFF,
         well,
-        "Prices and costs stay at today's levels in every future.",
+        ("Prices and costs stay at today's levels in every future." if adjustment is None or adjustment.is_zero else
+         "Prices and costs are today's levels moved by the what-if you set, and stay there in every future; "
+         "this is a what-if, not a forecast."),
         "On dryland the water, money and risk scores move together, because all three follow how much of the crops' "
         "water need rain covers.",
         f"\"Today\" is a model climate for {first}-{last}, a little hotter than the 2000-2024 record.",
@@ -211,6 +215,7 @@ class SmartResult:
     current_note: str | None
     candidates: int
     engine: str = "smart"
+    sensitivity: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -343,9 +348,16 @@ class Engine:
         typical = np.zeros(shape)       # yield after the county's usual previous crop: for the yield-change note
         typical[pi, si, mi, yi, ci] = table["yield"].to_numpy(dtype=float)
         self._shared = {"need_mm": need, "yield_typical": typical}
-        price = np.array([self.economics.price(crop) for crop in CROPS])
+        self.adjustment = whatif.ZERO               # the price / cost what-if this engine is under (whatif.py)
+        self._base_economics = self.economics       # the file's own prices and costs, whatever the what-if
+        self._adjusted: OrderedDict = OrderedDict()  # adjustment -> Engine (this engine's tables, other money)
+        self._scaled: OrderedDict = OrderedDict()    # price factor -> Engine (break-even)
+        self._set_money()
+
+    def _set_money(self) -> None:
+        """Prices, costs and everything built on them (the profit arrays and the caches of window means)."""
+        self._price = np.array([self.economics.price(crop) for crop in CROPS])
         normals = money.normal_yields(self.params)
-        self._price = price
         self._cost = np.array([[self.economics.cost(crop, practice, normals[crop][practice]) for crop in CROPS]
                                for practice in PRACTICES])
         self._response = self._assemble("mid")
@@ -412,12 +424,52 @@ class Engine:
         built = Engine(yearly, monthly, params=self.params, economics=self.economics, soil=self.soil,
                        traits=self.traits, observed=self.observed, source=self.source, irrigation_limit_mm=key / 10,
                        rotation_effects=self.rotation)
+        built.adjustment, built._base_economics = self.adjustment, self._base_economics
         with self._lock:
             built = self._limited.setdefault(key, built)        # two requests raced: both get the first one
             self._limited.move_to_end(key)
             while len(self._limited) > LIMIT_ENGINES_KEPT:
                 self._limited.popitem(last=False)
         return built
+
+    def _derive(self, economics: money.Economics, adjustment) -> "Engine":
+        """The same tables and the same crop response under other prices and costs: a shallow copy that shares
+        the big arrays and has its own money, caches and lock."""
+        new = copy.copy(self)
+        new._lock = threading.Lock()
+        new._plan_sets, new._variants, new._limited = {}, {}, OrderedDict()
+        new._adjusted, new._scaled = OrderedDict(), OrderedDict()
+        new.economics, new.adjustment = economics, adjustment
+        new._set_money()
+        return new
+
+    def _cached(self, store: OrderedDict, key, make) -> "Engine":
+        with self._lock:
+            hit = store.get(key)
+            if hit is not None:
+                store.move_to_end(key)
+                return hit
+        built = make()
+        with self._lock:
+            built = store.setdefault(key, built)
+            store.move_to_end(key)
+            while len(store) > ADJUSTED_ENGINES_KEPT:
+                store.popitem(last=False)
+        return built
+
+    def with_adjustment(self, adjustment) -> "Engine":
+        """This engine under a price / cost what-if (`whatif.Adjustment`): itself when it changes nothing, else
+        an engine for it; the last `ADJUSTED_ENGINES_KEPT` are kept on this engine, like the limit engines."""
+        if adjustment.is_zero:
+            return self if self.adjustment.is_zero else self._derive(self._base_economics, whatif.ZERO)
+        return self._cached(self._adjusted, adjustment, lambda: self._derive(
+            whatif.apply_to_economics(self._base_economics, adjustment), adjustment))
+
+    def with_prices_scaled(self, k: float) -> "Engine":
+        """Every price of this engine times `k`, costs as they are (for the break-even; not a user setting)."""
+        key = round(float(k), 6)
+        return self._cached(self._scaled, key, lambda: self._derive(whatif.scale_prices(self.economics, key),
+                                                                    self.adjustment))
 
     def what_if_range_in(self) -> tuple:
         """(lowest, highest) limit in inches the what-if takes: up to this engine's own limit."""
@@ -844,14 +896,27 @@ def rank_plans_smart(field: FieldInput, *, weights: Weights | Mapping | None = N
         "irrigation_limit_in": (round(engine.irrigation_limit_mm / MM_PER_INCH, 1)
                                 if engine.irrigation_limit_mm > 0 else None),
         "yield_change_note": YIELD_CHANGE_NOTE,
-        "limits": limits_for(engine.irrigation_limit_mm, engine.rotation.active),
+        "limits": limits_for(engine.irrigation_limit_mm, engine.rotation.active, engine.adjustment),
         "models": list(engine.climate.models),
         "rotation_effects": engine.rotation.describe(),
     }
+    if not engine.adjustment.is_zero:       # Phase 5, item F: only when a what-if is on, so a plain answer is unchanged
+        settings["what_if"] = engine.adjustment.describe()
     climate = engine.climate.describe(scenario, horizon)
     climate["yield_change"] = engine.yield_change(is_irrigated, scenario, horizon)
+    sensitivity = None
+    if plans:
+        try:
+            top_i = picked[0]
+            doubled = engine.with_prices_scaled(2.0).evaluate(is_irrigated, scenario, horizon, wei=wei, weg=weg,
+                                                              slope_pct=field.slope_pct)
+            sensitivity = whatif.break_even(ev.profit[top_i], doubled.profit[top_i], engine.adjustment,
+                                            plans[0].name, rank=1)
+        except Exception:      # the sensitivity is extra: never cost the plans
+            sensitivity = None
     return SmartResult(field_id=field.field_id, settings=settings, climate=climate,
-                       plans=plans, current=current, current_note=current_note, candidates=len(ev.plans.cycles))
+                       plans=plans, current=current, current_note=current_note, candidates=len(ev.plans.cycles),
+                       sensitivity=sensitivity)
 
 
 # --- the default engine, loaded lazily and once --------------------------------------------------------

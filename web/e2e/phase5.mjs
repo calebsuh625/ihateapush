@@ -15,6 +15,11 @@
 // re-derived from the weather rows by the rule (driest fifth), never by name. One screenshot goes to
 // e2e/screenshots/phase5-weather-replay.png.
 //
+// Item F, price and cost what-ifs: the sliders under "Which future?" are moved in the page and the cards, the
+// break-even line and the request's query are compared with direct calls to GET /field/{id}/plans with the same
+// price_pct / cost_pct (never hard-coded); 0 is the same answer as no parameters; Reset returns to it; the other
+// endpoints echo the setting. One screenshot goes to e2e/screenshots/phase5-price-cost.png.
+//
 // Environment: WEB_URL (default http://localhost:5173), E2E_TIMEOUT_MS (default 20000),
 // IRRIGATED_FIELD (default KS-014376, irrigated and growing continuous corn), DRY_FIELD (default KS-013847).
 import path from "node:path";
@@ -229,6 +234,69 @@ async function checkReplay(browser, page, get, defaults, apiPrefix) {
   log(`  ✓ ${WET}: replay under the build-your-own result equals the API`);
 }
 
+async function checkPriceCost(browser, page, get, defaults, effects, apiPrefix) {
+  // the API first: zero is no change, a what-if moves the dollars, the break-even is consistent with the model
+  const plain = await get(`/field/${WET}/plans?${defaults}`);
+  const zero = await get(`/field/${WET}/plans?${defaults}&price_pct=0&cost_pct=0`);
+  equal(JSON.stringify(zero.plans), JSON.stringify(plain.plans), "price_pct=0 and cost_pct=0 change nothing");
+  check(!("what_if" in plain.settings), "no what-if is echoed when none is set");
+  check(plain.sensitivity && typeof plain.sensitivity.sentence === "string", "the plans answer carries a break-even block");
+  const bad = await fetch(`${apiPrefix}/field/${WET}/plans?${defaults}&price_pct=500`);
+  equal(bad.status, 400, "a price change out of range is a 400");
+
+  const moved = `${defaults}&price_pct=-20&cost_pct=10`;
+  const cut = await get(`/field/${WET}/plans?${moved}`);
+  equal(cut.settings.what_if.price_pct, -20, "the answer echoes the price change");
+  equal(cut.settings.what_if.cost_pct, 10, "the answer echoes the cost change");
+  check(cut.plans[0].numbers.profit_per_acre < plain.plans[0].numbers.profit_per_acre, "lower prices and higher costs lower the top plan's return");
+  for (const endpoint of [`score?rotation=corn,soybeans&${moved}`, `transition?plan=1&${moved}`, `replay?plan=1&${moved}`]) {
+    const body = await get(`/field/${WET}/${endpoint}`);
+    equal(body.settings.what_if.price_pct, -20, `${endpoint.split("?")[0]} echoes the what-if`);
+  }
+
+  // the page: the sliders ask with the same query
+  await openField(page, WET);
+  const region = page.locator('[data-testid="plans-region"]');
+  const price = page.locator('[data-testid="price-pct"]');
+  const cost = page.locator('[data-testid="cost-pct"]');
+  equal(await price.inputValue(), "0", "the price slider starts at 0");
+  equal(await page.locator('[data-testid="price-cost-reset"]').isDisabled(), true, "Reset is off while nothing is changed");
+  equal(squash(await page.locator('[data-testid="break-even-line"]').textContent()), squash(plain.sensitivity.sentence), "the break-even line is the API's sentence");
+  await price.fill("-20");
+  await cost.fill("10");
+  await page.waitForSelector(`[data-testid="plans-region"][data-updating="false"][data-query="${moved}"]`, { timeout: TIMEOUT });
+  equal(await page.locator('[data-testid="price-pct-value"]').textContent(), "\u221220%", "the price value is shown with a minus sign");
+  await checkPlans(page, cut, effects, `${WET} with -20% prices, +10% costs`);
+  equal(squash(await page.locator('[data-testid="break-even-line"]').textContent()), squash(cut.sensitivity.sentence), "the break-even line follows the sliders");
+  log(`  ✓ ${WET}: sliders -20% / +10% give the API's cards and break-even line (${cut.sensitivity.status})`);
+
+  // the choice stays when another field is opened, and Reset goes back
+  await openField(page, DRY);
+  await page.waitForSelector(`[data-testid="plans-region"][data-updating="false"][data-query="${moved}"]`, { timeout: TIMEOUT });
+  const dryBody = await get(`/field/${DRY}/plans?${moved}`);
+  await checkPlans(page, dryBody, effects, `${DRY} with the what-if`);
+  equal(squash(await page.locator('[data-testid="break-even-line"]').textContent()), squash(dryBody.sensitivity.sentence), `${DRY}: break-even line`);
+  await page.locator('[data-testid="price-cost"]').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(SHOTS, "phase5-price-cost.png") });
+  await page.locator('[data-testid="price-cost-reset"]').click();
+  await page.waitForSelector(`[data-testid="plans-region"][data-updating="false"][data-query="${defaults}"]`, { timeout: TIMEOUT });
+  equal(await price.inputValue(), "0", "Reset puts the price slider back");
+  equal(await cost.inputValue(), "0", "Reset puts the cost slider back");
+  log(`  ✓ ${DRY}: the what-if stays across fields, Reset restores the plain answer; screenshot -> e2e/screenshots/phase5-price-cost.png`);
+
+  // phone width: the sliders fit
+  const phone = await browser.newContext({ viewport: { width: 390, height: 800 }, deviceScaleFactor: 1 });
+  const small = await phone.newPage();
+  small.setDefaultTimeout(TIMEOUT);
+  await small.goto(`${WEB_URL}/#${WET}`, { waitUntil: "domcontentloaded" });
+  await small.waitForSelector(`[data-testid="panel"][data-field-id="${WET}"][data-state="ready"]`, { timeout: TIMEOUT });
+  await small.waitForSelector('[data-testid="price-cost"]', { timeout: TIMEOUT });
+  const fits = await small.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+  check(fits, "no sideways scrolling at phone width with the price and cost sliders");
+  await phone.close();
+}
+
 async function run(browser) {
   const apiBase = await (async () => {
     const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1 });
@@ -314,6 +382,9 @@ async function run(browser) {
 
   // ---- item B: weather replay ------------------------------------------------------------------------------
   await checkReplay(browser, page, get, defaults, apiPrefix);
+
+  // ---- item F: price and cost what-ifs ------------------------------------------------------------------------
+  await checkPriceCost(browser, page, get, defaults, effects, apiPrefix);
 
   // ---- the picture ---------------------------------------------------------------------------------------
   await openField(page, WET);

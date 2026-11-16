@@ -199,3 +199,28 @@ test("the irrigation reason says whose call it is", () => {
   assert.equal(irrigationReason("guess", null), "our guess from the crop history");
   assert.equal(irrigationReason("override", "set by the request"), "you set this");
 });
+
+// --- Price and cost what-if (Phase 5, item F) ---
+import { breakEvenLine, isDefaultPriceCost, signedPercent } from "../src/lib/planner.ts";
+
+test("plansQuery sends price_pct and cost_pct only when they are not zero", () => {
+  const base = plansQuery(DEFAULT_CHOICES);
+  assert.equal(plansQuery({ ...DEFAULT_CHOICES, pricePct: 0, costPct: 0 }), base);
+  assert.equal(plansQuery({ ...DEFAULT_CHOICES, pricePct: -20 }), `${base}&price_pct=-20`);
+  assert.equal(plansQuery({ ...DEFAULT_CHOICES, pricePct: 10, costPct: 15 }), `${base}&price_pct=10&cost_pct=15`);
+  assert.equal(plansQuery({ ...DEFAULT_CHOICES, pricePct: 999, costPct: -999 }), `${base}&price_pct=100&cost_pct=-50`);
+});
+
+test("isDefaultPriceCost and signedPercent", () => {
+  assert.equal(isDefaultPriceCost(DEFAULT_CHOICES), true);
+  assert.equal(isDefaultPriceCost({ pricePct: 5 }), false);
+  assert.equal(signedPercent(20), "+20%");
+  assert.equal(signedPercent(-30), "−30%");
+  assert.equal(signedPercent(0), "0%");
+});
+
+test("breakEvenLine is the API's sentence, or nothing", () => {
+  assert.equal(breakEvenLine(null), null);
+  assert.equal(breakEvenLine(undefined), null);
+  assert.equal(breakEvenLine({ sentence: "Plan 1 stays above its direct costs." }), "Plan 1 stays above its direct costs.");
+});

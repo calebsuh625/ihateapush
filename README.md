@@ -1342,3 +1342,27 @@ really happened, year by year, 2000-2024, so a farmer can see what 2002, 2011, 2
   worst year 2022 at $35 an acre, middle year $362, never under its direct costs; the five driest seasons averaged $167
   against $369 in the other years. Dryland KS-004139, plan 1 (wheat, sorghum, fallow): middle year -$3, worst -$57
   (2022), under its direct costs in 13 of 25 years (dryland dollars are rough, see above).
+
+### Price and cost what-ifs (item F)
+
+Dryland dollars change sign with the price years and the cost of fallow, so the farmer can test it. We do not predict
+prices; the farmer supplies the change.
+
+- **Parameters.** `price_pct` and `cost_pct` (percent, -50 to +100, default 0) on `/field/{id}/plans`, `/score`,
+  `/transition`, `/replay`, and in the `POST /farm/plan` body. `price_pct` moves every crop price; `cost_pct` moves every
+  direct cost (budget lines, fallow passes, pumping cost per inch). `price_<crop>_pct` (corn, soybeans, winter_wheat,
+  sorghum, alfalfa) moves one crop's price instead (farm body: `crop_price_pct`). 0 changes nothing. Bad values are a
+  400 with one sentence. `settings.what_if` echoes what was applied (only while a what-if is on; plain answers are unchanged).
+- **How.** The crop model, weather and soil scores are not touched: `Engine.with_adjustment` makes a shallow copy of the
+  engine with its own prices, costs and profit arrays (the big response tables are shared, so it costs about as much
+  as one plans call) and keeps the last 8 per engine, like the irrigation-limit engines. It composes with `limit_in`.
+- **Break-even.** `/plans` carries `sensitivity`: the price change at which the top plan's return over direct costs
+  reaches zero, with the range across the six climate models, or "stays above its direct costs for any price drop shown".
+  Return is linear in a uniform price change, so this is solved exactly from two runs of the planner's own model
+  (prices as set, prices doubled), not searched. Costs stay where they are set.
+- **In the app.** "What if prices or costs change?" under "Which future?" (two sliders, Reset, one break-even line). It is
+  part of every request (plans, score, transition, replay, farm), and stays when another field is opened. Phone width ok.
+- **What it is not.** A what-if, not a forecast; prices and costs stay at the set level in every year and future. Dollars
+  are returns over direct costs, not profit. The set of plans that is ranked first can change as prices move, and the
+  break-even line is for whichever plan is first under the settings on screen.
+- Notes: `data/logs/phase5/item_F.md`. Tests: `tests/test_whatif.py`, `web/tests/planner.test.mjs`, `web/e2e/phase5.mjs`.
