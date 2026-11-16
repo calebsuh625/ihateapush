@@ -739,6 +739,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20147",
+   "state": "KS",
+   "county": "Phillips",
+   "label": "Phillips County, KS",
+   "is_default": false,
+   "field_count": 5486,
+   "has_traits": true,
+   "km_from_finney": 228,
+   "borrow_climate": false
+  },
+  {
    "fips": "20149",
    "state": "KS",
    "county": "Pottawatomie",
@@ -769,6 +780,17 @@
    "field_count": 5118,
    "has_traits": true,
    "km_from_finney": 196,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20157",
+   "state": "KS",
+   "county": "Republic",
+   "label": "Republic County, KS",
+   "is_default": false,
+   "field_count": 5371,
+   "has_traits": true,
+   "km_from_finney": 333,
    "borrow_climate": false
   },
   {
@@ -882,6 +904,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20183",
+   "state": "KS",
+   "county": "Smith",
+   "label": "Smith County, KS",
+   "is_default": false,
+   "field_count": 6119,
+   "has_traits": true,
+   "km_from_finney": 257,
+   "borrow_climate": false
+  },
+  {
    "fips": "20185",
    "state": "KS",
    "county": "Stafford",
@@ -934,6 +967,17 @@
    "field_count": 4075,
    "has_traits": true,
    "km_from_finney": 123,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20197",
+   "state": "KS",
+   "county": "Wabaunsee",
+   "label": "Wabaunsee County, KS",
+   "is_default": false,
+   "field_count": 1745,
+   "has_traits": true,
+   "km_from_finney": 407,
    "borrow_climate": false
   },
   {
