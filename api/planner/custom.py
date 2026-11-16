@@ -543,7 +543,8 @@ def score_rotation(field: FieldInput, rotation: Sequence[str], *, weights: Weigh
 
     pick_at = [index[tuple(plan.cycle)] for plan in result.plans]
     pick = pick_at.index(at) + 1 if at in pick_at else None
-    scored = smart._plan_result(mine, m, weights, rank, is_irrigated)
+    scored = smart._plan_result(mine, m, weights, rank, is_irrigated,
+                                effects=engine.rotation.pairs_in(form, "irrigated" if is_irrigated else "dryland"))
     yours = replace(scored, name=cycle_name(cycle), cycle=list(cycle), rotation=list(cand.show(cycle))).to_dict()
     yours.update({
         "rules_broken": broken,

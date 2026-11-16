@@ -143,6 +143,9 @@ export interface FarmChoices {
   scenario: string;
   /** the pumping what-if set on a field ("What if I can only pump N inches a year?"); null = not set */
   limitIn?: number | null;
+  /** the price and cost what-if (percent, -50..+100); missing or 0 = today's numbers */
+  pricePct?: number;
+  costPct?: number;
 }
 
 export interface FarmRequest {
@@ -154,6 +157,9 @@ export interface FarmRequest {
   min_income: number | null;
   /** only while the pumping what-if is on: the most inches a field may pump on an acre in a year */
   limit_in?: number;
+  /** only while the price / cost what-if is on */
+  price_pct?: number;
+  cost_pct?: number;
 }
 
 /**
@@ -180,6 +186,12 @@ export function farmRequest(ids: readonly string[], choices: FarmChoices, waterT
     min_income: minimum.value,
   };
   if (typeof choices.limitIn === "number" && Number.isFinite(choices.limitIn)) request.limit_in = choices.limitIn;
+  if (typeof choices.pricePct === "number" && Number.isFinite(choices.pricePct) && choices.pricePct !== 0) {
+    request.price_pct = choices.pricePct;
+  }
+  if (typeof choices.costPct === "number" && Number.isFinite(choices.costPct) && choices.costPct !== 0) {
+    request.cost_pct = choices.costPct;
+  }
   return request;
 }
 

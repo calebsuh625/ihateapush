@@ -13,11 +13,16 @@ import {
   horizonIndex,
   horizonLabel,
   irrigationReason,
+  isDefaultPriceCost,
   isDefaultWeights,
+  PRICE_COST_MAX,
+  PRICE_COST_MIN,
+  breakEvenLine,
+  signedPercent,
   yieldChangeLine,
   yieldChangeRange,
 } from "../lib/planner";
-import type { PlannerChoices } from "../lib/planner";
+import type { PlannerChoices, Sensitivity } from "../lib/planner";
 import type { ClimateSummary, PlannerSettings } from "../types";
 import "./Planner.css";
 
@@ -36,10 +41,12 @@ interface PlannerControlsProps {
   /** null = our guess; true/false = the user's own call for this field. */
   irrigationOverride?: boolean | null;
   onIrrigationOverride?: (value: boolean | null) => void;
+  /** From the plans answer: the break-even line under the price and cost sliders (a single field only). */
+  sensitivity?: Sensitivity | null;
 }
 
 /** The planner's inputs: what matters, which future, irrigated or not. Sits above the plan cards. */
-export function PlannerControls({ choices, onChange, settings, climate, horizon, irrigationOverride = null, onIrrigationOverride }: PlannerControlsProps) {
+export function PlannerControls({ choices, onChange, settings, climate, horizon, irrigationOverride = null, onIrrigationOverride, sensitivity }: PlannerControlsProps) {
   const id = useId();
   const irrigated = irrigationOverride ?? settings?.irrigated ?? false;
   const horizonPosition = horizonIndex(choices.horizon);
@@ -49,6 +56,7 @@ export function PlannerControls({ choices, onChange, settings, climate, horizon,
   const yieldTitle = climate && settings ? [yieldChangeRange(climate.yield_change), settings.yield_change_note].filter(Boolean).join(" ") : "";
 
   return (
+    <>
     <div className="planner" data-testid="planner-controls">
       <div className="planner-group" role="group" aria-labelledby={`${id}-weights`}>
         <div className="planner-head">
@@ -177,5 +185,56 @@ export function PlannerControls({ choices, onChange, settings, climate, horizon,
         </div>
       )}
     </div>
+    <div className="planner planner--price-cost">
+      <div className="planner-group" role="group" aria-labelledby={`${id}-money`} data-testid="price-cost">
+        <div className="planner-head">
+          <h4 id={`${id}-money`}>What if prices or costs change?</h4>
+          <button
+            type="button"
+            className="link-button"
+            data-testid="price-cost-reset"
+            disabled={isDefaultPriceCost(choices)}
+            onClick={() => onChange({ ...choices, pricePct: 0, costPct: 0 })}
+          >
+            Reset
+          </button>
+        </div>
+        {(
+          [
+            ["price", "Crop prices", choices.pricePct ?? 0],
+            ["cost", "Direct costs", choices.costPct ?? 0],
+          ] as const
+        ).map(([key, label, value]) => (
+          <div className="planner-row planner-row--pct" key={key}>
+            <label htmlFor={`${id}-${key}-pct`}>{label}</label>
+            <input
+              id={`${id}-${key}-pct`}
+              type="range"
+              min={PRICE_COST_MIN}
+              max={PRICE_COST_MAX}
+              step={5}
+              value={value}
+              data-testid={`${key}-pct`}
+              aria-valuetext={`${signedPercent(value)} against today`}
+              onChange={(event) => onChange({ ...choices, [key === "price" ? "pricePct" : "costPct"]: Number(event.target.value) })}
+            />
+            <output className="planner-value tabular" htmlFor={`${id}-${key}-pct`} data-testid={`${key}-pct-value`}>
+              {signedPercent(value)}
+            </output>
+          </div>
+        ))}
+        <p className="planner-hint">
+          We do not predict prices or costs: you pick the change, every crop at once, and the plans are scored again.
+          Dollars are returns over direct costs.
+        </p>
+        {breakEvenLine(sensitivity) && (
+          <p className="planner-breakeven tabular" data-testid="break-even-line">
+            {breakEvenLine(sensitivity)}
+          </p>
+        )}
+      </div>
+
+    </div>
+    </>
   );
 }

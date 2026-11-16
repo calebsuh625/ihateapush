@@ -16,7 +16,28 @@ export interface PlannerChoices {
    * Missing or null = the planner's own limit (nothing is sent).
    */
   limitIn?: number | null;
+  /**
+   * "What if prices or costs change?": percent change on every crop price and on every direct cost,
+   * -50..+100. Missing or 0 = today's numbers (nothing is sent). We never predict prices; the farmer picks.
+   */
+  pricePct?: number;
+  costPct?: number;
 }
+
+export const PRICE_COST_MIN = -50;
+export const PRICE_COST_MAX = 100;
+
+const pctValue = (n: number | undefined): number =>
+  typeof n === "number" && Number.isFinite(n) ? Math.min(PRICE_COST_MAX, Math.max(PRICE_COST_MIN, Math.round(n))) : 0;
+
+export const isDefaultPriceCost = (choices: Pick<PlannerChoices, "pricePct" | "costPct">): boolean =>
+  pctValue(choices.pricePct) === 0 && pctValue(choices.costPct) === 0;
+
+/** 20 → "+20%", -30 → "−30%" (a real minus sign), 0 → "0%" */
+export const signedPercent = (n: number): string => {
+  const v = Math.round(n);
+  return v === 0 ? "0%" : v < 0 ? `\u2212${Math.abs(v)}%` : `+${v}%`;
+};
 
 export const WEIGHT_KEYS: readonly WeightKey[] = ["soil", "water", "money", "risk"];
 export const WEIGHT_LABELS: Record<WeightKey, string> = {
@@ -89,7 +110,32 @@ export function plansQuery(choices: PlannerChoices, irrigated: boolean | null = 
   parts.push(`horizon=${horizonAt(horizonIndex(choices.horizon))}`);
   if (irrigated !== null) parts.push(`irrigated=${irrigated ? "true" : "false"}`);
   if (typeof choices.limitIn === "number" && Number.isFinite(choices.limitIn)) parts.push(`limit_in=${choices.limitIn}`);
+  const price = pctValue(choices.pricePct);
+  const cost = pctValue(choices.costPct);
+  if (price !== 0) parts.push(`price_pct=${price}`);
+  if (cost !== 0) parts.push(`cost_pct=${cost}`);
   return parts.join("&");
+}
+
+/** The break-even block of the plans answer (`sensitivity`). */
+export interface Sensitivity {
+  plan: number;
+  plan_name: string;
+  /** "today": percentages are against today's prices; "your_prices": against the prices as set */
+  basis: "today" | "your_prices";
+  status: "ok" | "stays_above_zero" | "below_zero_now" | "no_revenue";
+  return_now: number;
+  break_even_pct: number | null;
+  low_pct: number | null;
+  high_pct: number | null;
+  range_shown: [number, number];
+  sentence: string;
+  note: string;
+}
+
+/** The one line under the price and cost sliders: the break-even of the top plan, in the API's own words. */
+export function breakEvenLine(sensitivity: Sensitivity | null | undefined): string | null {
+  return sensitivity && typeof sensitivity.sentence === "string" && sensitivity.sentence ? sensitivity.sentence : null;
 }
 
 // ---------------------------------------------------------------------------------------------

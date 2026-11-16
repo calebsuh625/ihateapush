@@ -27,6 +27,9 @@ import { AdvisorButton } from "./AdvisorButton";
 import { ErrorNote } from "./FieldPanel";
 import { inchesWords } from "../lib/water";
 import { PlannerControls } from "./PlannerControls";
+import { FarmPrintSheet } from "./PrintSheet";
+import { ShareBar } from "./ShareBar";
+import { csvFileName, farmCsv } from "../lib/exportplan";
 import "./Farm.css";
 
 /** A solve can take seconds, so wait a little longer after the last change than the field view does. */
@@ -54,9 +57,11 @@ interface FarmPanelProps {
   onClose: () => void;
   /** The "Farm advisor" button: whether the chat is open, and how to toggle it. */
   advisor?: { open: boolean; onToggle: () => void };
+  /** The link that reopens this farm plan: "Copy link" and the printed sheet. */
+  shareUrl: string;
 }
 
-export function FarmPanel({ ids, areaById, choices, onChoices, water, minimum, onLimits, onRemove, onClear, onOpenField, onClose, advisor }: FarmPanelProps) {
+export function FarmPanel({ ids, areaById, choices, onChoices, water, minimum, onLimits, onRemove, onClear, onOpenField, onClose, advisor, shareUrl }: FarmPanelProps) {
   const id = useId();
   const request = farmRequest(ids, choices, water, minimum);
   const body = request === null ? null : JSON.stringify(request);
@@ -82,6 +87,8 @@ export function FarmPanel({ ids, areaById, choices, onChoices, water, minimum, o
   const waterAmount = parseAmount(water);
   const minimumAmount = parseAmount(minimum, true);
   const guide = answer && refusal === null ? answer : null;
+  // What can be printed or exported: the plan on screen, once it is for exactly the fields now picked.
+  const exportable = answer !== null && refusal === null && sameFields ? answer : null;
 
   return (
     <aside className="panel" aria-labelledby="farm-title" data-testid="farm-panel" data-fields={ids.length}>
@@ -104,6 +111,14 @@ export function FarmPanel({ ids, areaById, choices, onChoices, water, minimum, o
       </header>
 
       <div className="panel-body">
+        {ids.length > 0 && (
+          <ShareBar
+            url={shareUrl}
+            printWhat="farm plan"
+            ready={exportable !== null}
+            csv={exportable ? () => ({ text: farmCsv(exportable), name: csvFileName("farm") }) : null}
+          />
+        )}
         <FarmSection
           title="Fields in the farm"
           id={`${id}-fields`}
@@ -253,6 +268,7 @@ export function FarmPanel({ ids, areaById, choices, onChoices, water, minimum, o
           </FarmSection>
         )}
       </div>
+      {exportable && <FarmPrintSheet answer={exportable} url={shareUrl} />}
     </aside>
   );
 }

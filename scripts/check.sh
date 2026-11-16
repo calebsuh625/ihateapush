@@ -32,7 +32,7 @@ step typecheck npm --prefix web run typecheck
 
 if curl -s -o /dev/null -m 5 "http://127.0.0.1:${API_PORT}/health" && curl -s -o /dev/null -m 5 "http://localhost:${WEB_PORT}/"; then
   (cd web && npx playwright install chromium > /dev/null 2>&1) || true
-  for suite in e2e e2e:states e2e:planner e2e:phase4; do
+  for suite in e2e e2e:states e2e:planner e2e:phase4 e2e:phase5; do
     step "$(echo "$suite" | tr ':' '_')" env WEB_URL="http://localhost:${WEB_PORT}" npm --prefix web run "$suite"
   done
 else
