@@ -72,6 +72,7 @@ class County:
         self.port = 0
         self.used = 0.0
         self.lock = asyncio.Lock()
+        self.log: Path | None = None
 
     @property
     def alive(self) -> bool:
@@ -143,19 +144,24 @@ async def _start(c: County, origin: str) -> None:
     env = {
         **base,
         "REGION": c.fips,
-        "PYTHONPATH": os.pathsep.join([str(runtime.HERE), str(runtime.HERE / "_vendor"), str(runtime.ROOT)]),
+        # the platform adds its installed packages to sys.path at run time, so hand the whole path down
+        "PYTHONPATH": os.pathsep.join(dict.fromkeys(
+            [str(runtime.HERE), str(runtime.HERE / "_vendor"), str(runtime.ROOT)] + [p for p in sys.path if p and os.path.isdir(p)])),
         "PLANNER_SOIL_CACHE_PATH": str(tmp / "planner_bare_days.json"),
         "LAYERS_CACHE_DIR": str(tmp / "layers_cache"),
         **(await _county_files(c.fips, origin)),
     }
     c.port = _free_port()
+    c.log = tmp / "api.log"
     c.proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "uvicorn", "region_app:app", "--host", "127.0.0.1", "--port", str(c.port),
         "--log-level", "warning", cwd=str(runtime.HERE), env=env,
+        stdout=asyncio.subprocess.DEVNULL, stderr=open(c.log, "wb"),
     )
     deadline = time.monotonic() + START_TIMEOUT_S
     while time.monotonic() < deadline:
         if not c.alive:
+            print(f"county {c.fips} API exited while starting:\n" + _tail(c.log), file=sys.stderr, flush=True)
             raise RuntimeError(f"the API for county {c.fips} stopped while starting")
         try:
             r = await _client_().get(f"http://127.0.0.1:{c.port}/health", timeout=2)
@@ -166,6 +172,13 @@ async def _start(c: County, origin: str) -> None:
         await asyncio.sleep(0.25)
     await c.stop()
     raise RuntimeError(f"the API for county {c.fips} did not start in {START_TIMEOUT_S} s")
+
+
+def _tail(path: Path, n: int = 3000) -> str:
+    try:
+        return path.read_bytes()[-n:].decode("utf-8", "replace")
+    except OSError:
+        return "(no log)"
 
 
 async def _county(fips: str, origin: str) -> County:
