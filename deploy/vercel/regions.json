@@ -453,6 +453,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20099",
+   "state": "KS",
+   "county": "Labette",
+   "label": "Labette County, KS",
+   "is_default": false,
+   "field_count": 2922,
+   "has_traits": true,
+   "km_from_finney": 488,
+   "borrow_climate": false
+  },
+  {
    "fips": "20101",
    "state": "KS",
    "county": "Lane",
@@ -494,6 +505,17 @@
    "field_count": 3145,
    "has_traits": true,
    "km_from_finney": 403,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20113",
+   "state": "KS",
+   "county": "McPherson",
+   "label": "McPherson County, KS",
+   "is_default": false,
+   "field_count": 7442,
+   "has_traits": true,
+   "km_from_finney": 273,
    "borrow_climate": false
   },
   {
