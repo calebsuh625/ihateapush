@@ -90,6 +90,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20015",
+   "state": "KS",
+   "county": "Butler",
+   "label": "Butler County, KS",
+   "is_default": false,
+   "field_count": 4010,
+   "has_traits": true,
+   "km_from_finney": 343,
+   "borrow_climate": false
+  },
+  {
    "fips": "20017",
    "state": "KS",
    "county": "Chase",
@@ -285,6 +296,17 @@
    "field_count": 4834,
    "has_traits": true,
    "km_from_finney": 157,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20053",
+   "state": "KS",
+   "county": "Ellsworth",
+   "label": "Ellsworth County, KS",
+   "is_default": false,
+   "field_count": 3532,
+   "has_traits": true,
+   "km_from_finney": 232,
    "borrow_climate": false
   },
   {
@@ -538,6 +560,17 @@
    "field_count": 1859,
    "has_traits": true,
    "km_from_finney": 512,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20105",
+   "state": "KS",
+   "county": "Lincoln",
+   "label": "Lincoln County, KS",
+   "is_default": false,
+   "field_count": 4522,
+   "has_traits": true,
+   "km_from_finney": 247,
    "borrow_climate": false
   },
   {
@@ -805,6 +838,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20155",
+   "state": "KS",
+   "county": "Reno",
+   "label": "Reno County, KS",
+   "is_default": false,
+   "field_count": 8745,
+   "has_traits": true,
+   "km_from_finney": 233,
+   "borrow_climate": false
+  },
+  {
    "fips": "20157",
    "state": "KS",
    "county": "Republic",
@@ -992,6 +1036,17 @@
    "borrow_climate": true
   },
   {
+   "fips": "20191",
+   "state": "KS",
+   "county": "Sumner",
+   "label": "Sumner County, KS",
+   "is_default": false,
+   "field_count": 9813,
+   "has_traits": true,
+   "km_from_finney": 301,
+   "borrow_climate": false
+  },
+  {
    "fips": "20193",
    "state": "KS",
    "county": "Thomas",
@@ -1033,6 +1088,17 @@
    "field_count": 3858,
    "has_traits": true,
    "km_from_finney": 132,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20201",
+   "state": "KS",
+   "county": "Washington",
+   "label": "Washington County, KS",
+   "is_default": false,
+   "field_count": 6011,
+   "has_traits": true,
+   "km_from_finney": 370,
    "borrow_climate": false
   },
   {
