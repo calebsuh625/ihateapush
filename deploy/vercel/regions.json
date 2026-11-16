@@ -11,6 +11,24 @@
    "has_traits": false
   },
   {
+   "fips": "20025",
+   "state": "KS",
+   "county": "Clark",
+   "label": "Clark County, KS",
+   "is_default": false,
+   "field_count": 2452,
+   "has_traits": true
+  },
+  {
+   "fips": "20047",
+   "state": "KS",
+   "county": "Edwards",
+   "label": "Edwards County, KS",
+   "is_default": false,
+   "field_count": 4560,
+   "has_traits": true
+  },
+  {
    "fips": "20057",
    "state": "KS",
    "county": "Ford",
@@ -35,6 +53,15 @@
    "label": "Gray County, KS",
    "is_default": false,
    "field_count": 6001,
+   "has_traits": true
+  },
+  {
+   "fips": "20075",
+   "state": "KS",
+   "county": "Hamilton",
+   "label": "Hamilton County, KS",
+   "is_default": false,
+   "field_count": 3881,
    "has_traits": true
   },
   {
@@ -65,6 +92,15 @@
    "has_traits": true
   },
   {
+   "fips": "20109",
+   "state": "KS",
+   "county": "Logan",
+   "label": "Logan County, KS",
+   "is_default": false,
+   "field_count": 3776,
+   "has_traits": true
+  },
+  {
    "fips": "20119",
    "state": "KS",
    "county": "Meade",
@@ -74,12 +110,39 @@
    "has_traits": true
   },
   {
+   "fips": "20129",
+   "state": "KS",
+   "county": "Morton",
+   "label": "Morton County, KS",
+   "is_default": false,
+   "field_count": 3503,
+   "has_traits": true
+  },
+  {
    "fips": "20175",
    "state": "KS",
    "county": "Seward",
    "label": "Seward County, KS",
    "is_default": false,
    "field_count": 3128,
+   "has_traits": true
+  },
+  {
+   "fips": "20189",
+   "state": "KS",
+   "county": "Stevens",
+   "label": "Stevens County, KS",
+   "is_default": false,
+   "field_count": 4596,
+   "has_traits": true
+  },
+  {
+   "fips": "20203",
+   "state": "KS",
+   "county": "Wichita",
+   "label": "Wichita County, KS",
+   "is_default": false,
+   "field_count": 4221,
    "has_traits": true
   }
  ]

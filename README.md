@@ -285,6 +285,26 @@ Borrowed inputs are never passed off as local: `GET /region` lists them and the 
 `soil_health.parquet`: it would fall back to the fake soil table. Field ids keep the `KS-000123` form and
 are unique within a county, not across counties; one API process serves one county.
 
+## Hosted site (Vercel)
+
+https://ihateapush.vercel.app serves the web app and the API from one Vercel project (`vercel.json`).
+
+- **Web:** `web/` is built by Vercel (`npm run build`) and served as static files.
+- **API:** `deploy/vercel/index.py` is one Python function under `/api`. It serves Finney County itself and every other built county from its own API process (`REGION=<fips>`), started the first time someone opens that county (3-5 s), at most 3 at a time. The county picker in the header reloads the page with `?region=<fips>`; the app then calls `/api/r/<fips>/...`.
+- **County data:** each county's `fields.parquet` and `field_traits.parquet` are published as static files (`/data/regions/<fips>/`) and copied to `/tmp` on first use, which keeps the function under Vercel's size limit. `deploy/vercel/regions.json` lists the counties on offer.
+- **Slim packages:** `deploy/vercel/requirements.txt` has only what the API needs at run time. pyarrow is left out (parquet is read with fastparquet, see `deploy/vercel/runtime.py`), geopandas is vendored in `deploy/vercel/_vendor/` without GDAL, and Google OR-Tools is left out, so the whole-farm planner answers 503 with a plain sentence on the hosted site.
+- **Data:** `data/` is not in git, so deploy from a machine that has it. Whatever `data/*.parquet` and `data/*.json` hold is what the site shows; without the climate tables the site uses the basic planner and the Phase 3/4 features stay hidden.
+- **Advisor:** set `GEMINI_API_KEY` in the Vercel project settings (Environment Variables), never in a file.
+
+To deploy (needs a Vercel login, `npx vercel login`):
+
+```bash
+.venv/bin/python deploy/vercel/make_regions.py   # list the built counties
+npx vercel@latest deploy --prod --yes
+```
+
+Locally the same entry runs behind Vite: `cd deploy/vercel && ../../.venv/bin/python -m uvicorn index:app --port 8010`, then `make web`.
+
 ## The API
 
 Base URL `http://127.0.0.1:8010` (interactive docs at `/docs`).

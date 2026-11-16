@@ -144,6 +144,7 @@ async def _start(c: County, origin: str) -> None:
     env = {
         **base,
         "REGION": c.fips,
+        "REGION_NAME": OFFERED[c.fips]["county"],  # the Census name file is not on the host
         # the platform adds its installed packages to sys.path at run time, so hand the whole path down
         "PYTHONPATH": os.pathsep.join(dict.fromkeys(
             [str(runtime.HERE), str(runtime.HERE / "_vendor"), str(runtime.ROOT)] + [p for p in sys.path if p and os.path.isdir(p)])),

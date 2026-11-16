@@ -182,6 +182,8 @@ async function phase4States(context) {
     await page.waitForSelector('[data-testid="neighbors"][data-state="error"]');
     const failed = await textOf('[data-testid="neighbors"] [data-testid="error-note"]');
     check(failed.includes("Could not load neighbors") && failed.includes("Made-up failure for the test."), `neighbors error text: "${failed}"`);
+    // the plans may still be on their way (a hosted API is slower than localhost); they must arrive and stay
+    await page.waitForSelector('[data-testid="plan-card"]', { timeout: TIMEOUT }).catch(() => {});
     check((await page.locator('[data-testid="plan-card"]').count()) >= 1, "neighbors failed: the plan cards must stay");
     const nbShot = await shot("state-p4-neighbors-error.png");
     mode = "ok";
