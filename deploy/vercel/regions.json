@@ -750,6 +750,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20159",
+   "state": "KS",
+   "county": "Rice",
+   "label": "Rice County, KS",
+   "is_default": false,
+   "field_count": 5944,
+   "has_traits": true,
+   "km_from_finney": 224,
+   "borrow_climate": false
+  },
+  {
    "fips": "20163",
    "state": "KS",
    "county": "Rooks",
@@ -780,6 +791,17 @@
    "field_count": 4160,
    "has_traits": true,
    "km_from_finney": 197,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20169",
+   "state": "KS",
+   "county": "Saline",
+   "label": "Saline County, KS",
+   "is_default": false,
+   "field_count": 4683,
+   "has_traits": true,
+   "km_from_finney": 281,
    "borrow_climate": false
   },
   {
@@ -902,6 +924,17 @@
    "has_traits": true,
    "km_from_finney": 72,
    "borrow_climate": true
+  },
+  {
+   "fips": "20209",
+   "state": "KS",
+   "county": "Wyandotte",
+   "label": "Wyandotte County, KS",
+   "is_default": false,
+   "field_count": 135,
+   "has_traits": true,
+   "km_from_finney": 533,
+   "borrow_climate": false
   }
  ]
 }
