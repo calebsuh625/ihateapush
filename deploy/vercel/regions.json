@@ -486,6 +486,17 @@
    "borrow_climate": true
   },
   {
+   "fips": "20095",
+   "state": "KS",
+   "county": "Kingman",
+   "label": "Kingman County, KS",
+   "is_default": false,
+   "field_count": 4438,
+   "has_traits": true,
+   "km_from_finney": 235,
+   "borrow_climate": false
+  },
+  {
    "fips": "20097",
    "state": "KS",
    "county": "Kiowa",
@@ -615,6 +626,17 @@
    "field_count": 2473,
    "has_traits": true,
    "km_from_finney": 518,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20123",
+   "state": "KS",
+   "county": "Mitchell",
+   "label": "Mitchell County, KS",
+   "is_default": false,
+   "field_count": 5411,
+   "has_traits": true,
+   "km_from_finney": 266,
    "borrow_climate": false
   },
   {
@@ -805,6 +827,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20161",
+   "state": "KS",
+   "county": "Riley",
+   "label": "Riley County, KS",
+   "is_default": false,
+   "field_count": 2094,
+   "has_traits": true,
+   "km_from_finney": 374,
+   "borrow_climate": false
+  },
+  {
    "fips": "20163",
    "state": "KS",
    "county": "Rooks",
@@ -858,6 +891,17 @@
    "has_traits": true,
    "km_from_finney": 51,
    "borrow_climate": true
+  },
+  {
+   "fips": "20173",
+   "state": "KS",
+   "county": "Sedgwick",
+   "label": "Sedgwick County, KS",
+   "is_default": false,
+   "field_count": 6518,
+   "has_traits": true,
+   "km_from_finney": 290,
+   "borrow_climate": false
   },
   {
    "fips": "20175",
