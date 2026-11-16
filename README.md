@@ -287,18 +287,21 @@ are unique within a county, not across counties; one API process serves one coun
 
 ## Hosted site (Vercel)
 
-https://ihateapush.vercel.app serves the web app and the API from one Vercel project (`vercel.json`).
+https://dust-bowl-rotator.vercel.app serves the web app and the API from one Vercel project (`vercel.json`).
 
 - **Web:** `web/` is built by Vercel (`npm run build`) and served as static files.
 - **API:** `deploy/vercel/index.py` is one Python function under `/api`. It serves Finney County itself and every other built county from its own API process (`REGION=<fips>`), started the first time someone opens that county (3-5 s), up to 10 at a time (the function has 8 GB). The county picker in the header reloads the page with `?region=<fips>`; the app then calls `/api/r/<fips>/...`.
+- **Climate:** counties more than 120 km from Finney County do not borrow its climate futures or county yields; their planner answers with the basic engine.
 - **County data:** each county's `fields.parquet` and `field_traits.parquet` are published as static files (`/data/regions/<fips>/`) and copied to `/tmp` on first use, which keeps the function under Vercel's size limit. `deploy/vercel/regions.json` lists the counties on offer.
-- **Slim packages:** `deploy/vercel/requirements.txt` has only what the API needs at run time. pyarrow is left out (parquet is read with fastparquet, see `deploy/vercel/runtime.py`), geopandas is vendored in `deploy/vercel/_vendor/` without GDAL, and Google OR-Tools is left out, so the whole-farm planner answers 503 with a plain sentence on the hosted site.
+- **Packages:** `deploy/vercel/build_site.sh` builds `deploy/vercel/_site` (git-ignored): Linux wheels from `deploy/vercel/site-requirements.txt` with tests removed, 218 MB, shipped inside the function so it stays under Vercel's 250 MB bundle size with Google OR-Tools (the whole-farm planner) included. Run it once before deploying.
+- **Slim packages:** `site-requirements.txt` has only what the API needs at run time (`deploy/vercel/requirements.txt` is left empty on purpose). pyarrow is left out (parquet is read with fastparquet, see `deploy/vercel/runtime.py`), geopandas is vendored in `deploy/vercel/_vendor/` without GDAL, and scipy's one function the API uses (`theilslopes`) is reimplemented in numpy (`deploy/vercel/scipy_shim.py`).
 - **Data:** `data/` is not in git, so deploy from a machine that has it. Whatever `data/*.parquet` and `data/*.json` hold is what the site shows; without the climate tables the site uses the basic planner and the Phase 3/4 features stay hidden.
 - **Advisor:** set `GEMINI_API_KEY` in the Vercel project settings (Environment Variables), never in a file.
 
 To deploy (needs a Vercel login, `npx vercel login`):
 
 ```bash
+deploy/vercel/build_site.sh                       # once: the function's Linux packages
 .venv/bin/python deploy/vercel/make_regions.py   # list the built counties
 npx vercel@latest deploy --prod --yes
 ```

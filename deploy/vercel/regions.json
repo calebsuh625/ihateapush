@@ -365,6 +365,17 @@
    "borrow_climate": true
   },
   {
+   "fips": "20073",
+   "state": "KS",
+   "county": "Greenwood",
+   "label": "Greenwood County, KS",
+   "is_default": false,
+   "field_count": 1253,
+   "has_traits": true,
+   "km_from_finney": 395,
+   "borrow_climate": false
+  },
+  {
    "fips": "20075",
    "state": "KS",
    "county": "Hamilton",
@@ -396,6 +407,17 @@
    "has_traits": true,
    "km_from_finney": 74,
    "borrow_climate": true
+  },
+  {
+   "fips": "20085",
+   "state": "KS",
+   "county": "Jackson",
+   "label": "Jackson County, KS",
+   "is_default": false,
+   "field_count": 2891,
+   "has_traits": true,
+   "km_from_finney": 455,
+   "borrow_climate": false
   },
   {
    "fips": "20091",
@@ -442,6 +464,17 @@
    "borrow_climate": true
   },
   {
+   "fips": "20103",
+   "state": "KS",
+   "county": "Leavenworth",
+   "label": "Leavenworth County, KS",
+   "is_default": false,
+   "field_count": 1859,
+   "has_traits": true,
+   "km_from_finney": 512,
+   "borrow_climate": false
+  },
+  {
    "fips": "20109",
    "state": "KS",
    "county": "Logan",
@@ -451,6 +484,17 @@
    "has_traits": true,
    "km_from_finney": 103,
    "borrow_climate": true
+  },
+  {
+   "fips": "20111",
+   "state": "KS",
+   "county": "Lyon",
+   "label": "Lyon County, KS",
+   "is_default": false,
+   "field_count": 3145,
+   "has_traits": true,
+   "km_from_finney": 403,
+   "borrow_climate": false
   },
   {
    "fips": "20119",
@@ -464,6 +508,17 @@
    "borrow_climate": true
   },
   {
+   "fips": "20121",
+   "state": "KS",
+   "county": "Miami",
+   "label": "Miami County, KS",
+   "is_default": false,
+   "field_count": 2473,
+   "has_traits": true,
+   "km_from_finney": 518,
+   "borrow_climate": false
+  },
+  {
    "fips": "20129",
    "state": "KS",
    "county": "Morton",
@@ -472,6 +527,17 @@
    "field_count": 3503,
    "has_traits": true,
    "km_from_finney": 133,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20133",
+   "state": "KS",
+   "county": "Neosho",
+   "label": "Neosho County, KS",
+   "is_default": false,
+   "field_count": 2584,
+   "has_traits": true,
+   "km_from_finney": 480,
    "borrow_climate": false
   },
   {
@@ -484,6 +550,17 @@
    "has_traits": true,
    "km_from_finney": 86,
    "borrow_climate": true
+  },
+  {
+   "fips": "20137",
+   "state": "KS",
+   "county": "Norton",
+   "label": "Norton County, KS",
+   "is_default": false,
+   "field_count": 4611,
+   "has_traits": true,
+   "km_from_finney": 207,
+   "borrow_climate": false
   },
   {
    "fips": "20141",

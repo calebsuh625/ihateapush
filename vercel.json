@@ -14,7 +14,8 @@
           "deploy/vercel/_vendor/**",
           "deploy/vercel/regions.geojson",
           "deploy/vercel/_site/**"
-        ]
+        ],
+        "excludeFiles": "{data/regions/**,web/**,tests/**,data/backup*/**,data/logs/**,deploy/vercel/regions_tmp/**,**/__pycache__/**}"
       }
     },
     {
