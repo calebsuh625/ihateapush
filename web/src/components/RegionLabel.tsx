@@ -86,11 +86,17 @@ export function RegionLabel() {
 
   useEffect(() => {
     const ctrl = new AbortController();
-    getJson<RegionInfo>("/region", looksRight, ctrl.signal).then(setInfo, () => setInfo(null));
+    const load = (left: number): void => {
+      getJson<RegionInfo>("/region", looksRight, ctrl.signal).then(setInfo, () => {
+        // a county's API can take a few seconds to start: try again rather than show the wrong name
+        if (left > 0 && !ctrl.signal.aborted) window.setTimeout(() => load(left - 1), 3000);
+      });
+    };
+    load(3);
     return () => ctrl.abort();
   }, []);
 
-  if (!info) return <>{REGION_LABEL}</>;
+  if (!info) return <>{SELECTED_REGION ? "loading county…" : REGION_LABEL}</>;
   if (info.borrowed.length === 0) return <span data-testid="region-label">{info.label}</span>;
   const notes = info.borrowed.map((b) => b.note).join("\n");
   return (
