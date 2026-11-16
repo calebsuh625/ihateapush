@@ -92,6 +92,15 @@
    "has_traits": true
   },
   {
+   "fips": "20027",
+   "state": "KS",
+   "county": "Clay",
+   "label": "Clay County, KS",
+   "is_default": false,
+   "field_count": 5027,
+   "has_traits": true
+  },
+  {
    "fips": "20029",
    "state": "KS",
    "county": "Cloud",
@@ -152,6 +161,15 @@
    "label": "Edwards County, KS",
    "is_default": false,
    "field_count": 4560,
+   "has_traits": true
+  },
+  {
+   "fips": "20049",
+   "state": "KS",
+   "county": "Elk",
+   "label": "Elk County, KS",
+   "is_default": false,
+   "field_count": 595,
    "has_traits": true
   },
   {
@@ -332,6 +350,15 @@
    "label": "Pratt County, KS",
    "is_default": false,
    "field_count": 5518,
+   "has_traits": true
+  },
+  {
+   "fips": "20153",
+   "state": "KS",
+   "county": "Rawlins",
+   "label": "Rawlins County, KS",
+   "is_default": false,
+   "field_count": 5118,
    "has_traits": true
   },
   {
