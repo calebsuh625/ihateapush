@@ -123,6 +123,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20023",
+   "state": "KS",
+   "county": "Cheyenne",
+   "label": "Cheyenne County, KS",
+   "is_default": false,
+   "field_count": 4447,
+   "has_traits": true,
+   "km_from_finney": 212,
+   "borrow_climate": false
+  },
+  {
    "fips": "20025",
    "state": "KS",
    "county": "Clark",
@@ -398,6 +409,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20079",
+   "state": "KS",
+   "county": "Harvey",
+   "label": "Harvey County, KS",
+   "is_default": false,
+   "field_count": 4794,
+   "has_traits": true,
+   "km_from_finney": 290,
+   "borrow_climate": false
+  },
+  {
    "fips": "20081",
    "state": "KS",
    "county": "Haskell",
@@ -497,6 +519,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20107",
+   "state": "KS",
+   "county": "Linn",
+   "label": "Linn County, KS",
+   "is_default": false,
+   "field_count": 2314,
+   "has_traits": true,
+   "km_from_finney": 516,
+   "borrow_climate": false
+  },
+  {
    "fips": "20109",
    "state": "KS",
    "county": "Logan",
@@ -582,6 +615,17 @@
    "field_count": 3503,
    "has_traits": true,
    "km_from_finney": 133,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20131",
+   "state": "KS",
+   "county": "Nemaha",
+   "label": "Nemaha County, KS",
+   "is_default": false,
+   "field_count": 5072,
+   "has_traits": true,
+   "km_from_finney": 452,
    "borrow_climate": false
   },
   {
