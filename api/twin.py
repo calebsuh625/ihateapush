@@ -451,7 +451,9 @@ def build_twin(store: CausalStore, records: dict[str, Any], field_id: str) -> di
                 "difference_in_change": diff_in_change,
                 "from_crops": from_crops,
                 "beyond_crops": beyond,
-                "years_used": {"before": int(best["n_pre"]), "after": int(best["n_post"])},
+                # null with a pairs.parquet written before these columns existed (as did_crops above)
+                "years_used": {k: int(best[c]) if pd.notna(best.get(c)) else None
+                               for k, c in (("before", "n_pre"), ("after", "n_post"))},
                 "sentence": sentence,
             },
             "comparison": comparison,
