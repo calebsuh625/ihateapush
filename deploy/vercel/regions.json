@@ -110,6 +110,15 @@
    "has_traits": true
   },
   {
+   "fips": "20035",
+   "state": "KS",
+   "county": "Cowley",
+   "label": "Cowley County, KS",
+   "is_default": false,
+   "field_count": 3750,
+   "has_traits": true
+  },
+  {
    "fips": "20039",
    "state": "KS",
    "county": "Decatur",
