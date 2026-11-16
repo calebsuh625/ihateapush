@@ -1014,6 +1014,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20207",
+   "state": "KS",
+   "county": "Woodson",
+   "label": "Woodson County, KS",
+   "is_default": false,
+   "field_count": 1499,
+   "has_traits": true,
+   "km_from_finney": 438,
+   "borrow_climate": false
+  },
+  {
    "fips": "20209",
    "state": "KS",
    "county": "Wyandotte",
