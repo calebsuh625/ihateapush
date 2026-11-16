@@ -453,6 +453,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20087",
+   "state": "KS",
+   "county": "Jefferson",
+   "label": "Jefferson County, KS",
+   "is_default": false,
+   "field_count": 2270,
+   "has_traits": true,
+   "km_from_finney": 483,
+   "borrow_climate": false
+  },
+  {
    "fips": "20091",
    "state": "KS",
    "county": "Johnson",
@@ -596,6 +607,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20125",
+   "state": "KS",
+   "county": "Montgomery",
+   "label": "Montgomery County, KS",
+   "is_default": false,
+   "field_count": 1998,
+   "has_traits": true,
+   "km_from_finney": 450,
+   "borrow_climate": false
+  },
+  {
    "fips": "20127",
    "state": "KS",
    "county": "Morris",
@@ -659,6 +681,17 @@
    "field_count": 4611,
    "has_traits": true,
    "km_from_finney": 207,
+   "borrow_climate": false
+  },
+  {
+   "fips": "20139",
+   "state": "KS",
+   "county": "Osage",
+   "label": "Osage County, KS",
+   "is_default": false,
+   "field_count": 3297,
+   "has_traits": true,
+   "km_from_finney": 442,
    "borrow_climate": false
   },
   {
