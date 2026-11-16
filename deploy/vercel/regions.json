@@ -739,6 +739,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20149",
+   "state": "KS",
+   "county": "Pottawatomie",
+   "label": "Pottawatomie County, KS",
+   "is_default": false,
+   "field_count": 2168,
+   "has_traits": true,
+   "km_from_finney": 409,
+   "borrow_climate": false
+  },
+  {
    "fips": "20151",
    "state": "KS",
    "county": "Pratt",
@@ -836,6 +847,17 @@
    "has_traits": true,
    "km_from_finney": 95,
    "borrow_climate": true
+  },
+  {
+   "fips": "20177",
+   "state": "KS",
+   "county": "Shawnee",
+   "label": "Shawnee County, KS",
+   "is_default": false,
+   "field_count": 1817,
+   "has_traits": true,
+   "km_from_finney": 447,
+   "borrow_climate": false
   },
   {
    "fips": "20179",
