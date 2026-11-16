@@ -23,7 +23,9 @@ import sys
 import time
 from pathlib import Path
 
-import runtime
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # Vercel does not put the entry's folder on the path
+
+import runtime  # noqa: E402
 
 runtime.setup()
 
