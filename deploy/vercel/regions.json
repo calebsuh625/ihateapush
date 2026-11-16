@@ -20,6 +20,15 @@
    "has_traits": true
   },
   {
+   "fips": "20003",
+   "state": "KS",
+   "county": "Anderson",
+   "label": "Anderson County, KS",
+   "is_default": false,
+   "field_count": 3084,
+   "has_traits": true
+  },
+  {
    "fips": "20005",
    "state": "KS",
    "county": "Atchison",
@@ -107,6 +116,15 @@
    "label": "Decatur County, KS",
    "is_default": false,
    "field_count": 4724,
+   "has_traits": true
+  },
+  {
+   "fips": "20041",
+   "state": "KS",
+   "county": "Dickinson",
+   "label": "Dickinson County, KS",
+   "is_default": false,
+   "field_count": 7239,
    "has_traits": true
   },
   {
