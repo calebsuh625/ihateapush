@@ -585,6 +585,17 @@
    "borrow_climate": false
   },
   {
+   "fips": "20117",
+   "state": "KS",
+   "county": "Marshall",
+   "label": "Marshall County, KS",
+   "is_default": false,
+   "field_count": 6495,
+   "has_traits": true,
+   "km_from_finney": 413,
+   "borrow_climate": false
+  },
+  {
    "fips": "20119",
    "state": "KS",
    "county": "Meade",
@@ -924,6 +935,17 @@
    "has_traits": true,
    "km_from_finney": 72,
    "borrow_climate": true
+  },
+  {
+   "fips": "20205",
+   "state": "KS",
+   "county": "Wilson",
+   "label": "Wilson County, KS",
+   "is_default": false,
+   "field_count": 2674,
+   "has_traits": true,
+   "km_from_finney": 442,
+   "borrow_climate": false
   },
   {
    "fips": "20209",
