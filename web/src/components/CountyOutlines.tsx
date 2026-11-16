@@ -9,6 +9,7 @@ import { useEffect } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
 import { API_ROOT, SELECTED_REGION } from "../api";
+import { countyShapes } from "./countyShapes";
 import { goTo } from "./RegionLabel";
 
 interface CountyProps {
@@ -36,10 +37,9 @@ export function CountyOutlines() {
       pane.style.pointerEvents = "none"; // only the outlines themselves take clicks
     }
 
-    fetch(`${API_ROOT}/regions/shapes`, { signal: ctrl.signal })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((shapes: GeoJSON.FeatureCollection | null) => {
-        if (!shapes || !Array.isArray(shapes.features) || shapes.features.length < 2) return;
+    countyShapes()
+      .then((shapes) => {
+        if (ctrl.signal.aborted || !shapes || !Array.isArray(shapes.features) || shapes.features.length < 2) return;
         const current = SELECTED_REGION;
         const defaultFips = "20055";
         const here = (p: CountyProps) => p.fips === (current ?? defaultFips);
@@ -63,7 +63,7 @@ export function CountyOutlines() {
               className: "county-tip",
             });
             if (!here(p)) {
-              lyr.on("click", () => goTo(p.fips, defaultFips));
+              lyr.on("click", () => goTo(p.fips, defaultFips, { label: p.label }));
               lyr.on("mouseover", () => (lyr as L.Path).setStyle({ fillOpacity: 0.18, weight: 2 }));
               lyr.on("mouseout", () => (lyr as L.Path).setStyle({ fillOpacity: 0.06, weight: 1.2 }));
             }

@@ -10,9 +10,87 @@
     />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Crop Rotation Planner</title>
+    <style>
+      /* The loading card (components/BootLoader.tsx). Its styles live here so it shows before the app's
+         code and stylesheet have downloaded; React keeps using them. Plain colours: the app's tokens are
+         not loaded yet. The motion never stops on purpose (it says "not frozen"); reduced motion slows it. */
+      html { background: #e8ebe6; }
+      .boot { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 16px;
+        background: rgb(232 235 230 / 55%); pointer-events: none;
+        font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #1a1f1c; }
+      .boot-card { width: min(340px, 100%); padding: 18px 20px; background: #fff; border: 1px solid rgb(16 24 20 / 14%);
+        border-radius: 6px; box-shadow: 0 1px 2px rgb(16 24 20 / 8%), 0 8px 24px rgb(16 24 20 / 10%); }
+      .boot-head { display: flex; align-items: center; gap: 14px; }
+      .boot-head p { margin: 0; }
+      .boot-pivot { flex: none; width: 52px; height: 52px; }
+      .boot-pivot-field { fill: #e3f0e8; stroke: #1f6f4a; stroke-width: 1.5; }
+      .boot-pivot-ring { fill: none; stroke: #b9d6c4; stroke-width: 1; }
+      .boot-pivot-wet { fill: #1f6f4a; opacity: 0.22; }
+      .boot-pivot-arm { transform-origin: 32px 32px; animation: boot-spin 1.6s linear infinite; }
+      .boot-pivot-arm line { stroke: #17573a; stroke-width: 2.5; stroke-linecap: round; }
+      .boot-pivot-hub { fill: #17573a; }
+      .boot-title { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
+      .boot-time { color: #5c6660; font-size: 13px; font-variant-numeric: tabular-nums; }
+      .boot-steps { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+      .boot-step { display: flex; align-items: center; gap: 8px; color: #8a948d; }
+      .boot-step.is-done { color: #3f4843; }
+      .boot-step.is-now { color: #1a1f1c; font-weight: 600; }
+      .boot-mark { flex: none; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
+        border: 1.5px solid #c9d0ca; font-size: 10px; font-weight: 700; color: #fff; }
+      .boot-step.is-done .boot-mark { background: #1f6f4a; border-color: #1f6f4a; }
+      .boot-step.is-now .boot-mark { border-color: #d3e5da; border-top-color: #1f6f4a; animation: boot-spin 0.8s linear infinite; }
+      .boot-bar { position: relative; height: 4px; margin-top: 14px; overflow: hidden; background: #e3f0e8; border-radius: 2px; }
+      .boot-bar span { position: absolute; top: 0; bottom: 0; width: 35%; background: #1f6f4a; border-radius: 2px;
+        animation: boot-slide 1.3s ease-in-out infinite; }
+      .boot-hint { margin: 12px 0 0; font-size: 12.5px; color: #3f4843; }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      @keyframes boot-slide { from { left: -35%; } to { left: 100%; } }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-pivot-arm { animation-duration: 6s; }
+        .boot-step.is-now .boot-mark { animation-duration: 3s; }
+        .boot-bar span { animation-duration: 4s; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot" role="status" aria-live="polite">
+        <div class="boot-card">
+          <div class="boot-head">
+            <svg class="boot-pivot" viewBox="0 0 64 64" aria-hidden="true">
+              <circle cx="32" cy="32" r="29" class="boot-pivot-field" />
+              <circle cx="32" cy="32" r="19" class="boot-pivot-ring" />
+              <g class="boot-pivot-arm">
+                <path d="M32 32 L32 3 A29 29 0 0 1 52.5 11.5 Z" class="boot-pivot-wet" />
+                <line x1="32" y1="32" x2="32" y2="3" />
+              </g>
+              <circle cx="32" cy="32" r="3" class="boot-pivot-hub" />
+            </svg>
+            <div>
+              <p class="boot-title">Loading the map</p>
+              <p class="boot-time"><span class="boot-seconds" id="boot-seconds">0</span> s</p>
+            </div>
+          </div>
+          <ol class="boot-steps">
+            <li class="boot-step is-now"><span class="boot-mark" aria-hidden="true"></span>Load the app</li>
+            <li class="boot-step"><span class="boot-mark" aria-hidden="true"></span>Wake up the data server</li>
+            <li class="boot-step"><span class="boot-mark" aria-hidden="true"></span>Download the fields</li>
+            <li class="boot-step"><span class="boot-mark" aria-hidden="true"></span>Draw them on the map</li>
+          </ol>
+          <div class="boot-bar" aria-hidden="true"><span></span></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // count the seconds until React replaces this card with its own (which keeps the same count)
+      (function () {
+        var el = document.getElementById("boot-seconds");
+        var id = setInterval(function () {
+          if (!el || !el.isConnected) return clearInterval(id);
+          el.textContent = String(Math.floor(performance.now() / 1000));
+        }, 500);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

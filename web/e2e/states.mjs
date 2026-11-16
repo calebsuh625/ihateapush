@@ -385,9 +385,9 @@ async function main() {
       else await route.continue();
     });
     await page.goto(`${WEB_URL}/`, { waitUntil: "domcontentloaded" });
-    await page.waitForSelector('.masthead-note[role="status"]');
-    equal((await page.textContent('.masthead-note[role="status"]')).trim(), "Loading fields…", "loading note");
-    log(`  ✓ loading: "Loading fields…" while GET /fields is pending → ${await shot("state-1-loading.png")}`);
+    await page.waitForSelector('[data-testid="boot"] .boot-step[data-state="now"]');
+    check((await page.textContent('[data-testid="boot"]')).includes("Download"), "loading card shows the download step");
+    log(`  ✓ loading: the loading card shows its steps while GET /fields is pending → ${await shot("state-1-loading.png")}`);
 
     await page.waitForSelector('[data-testid="fields-error"]');
     const errorText = (await page.textContent('[data-testid="fields-error"]')).replace(/\s+/g, " ").trim();

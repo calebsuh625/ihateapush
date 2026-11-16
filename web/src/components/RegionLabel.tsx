@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { API_ROOT, SELECTED_REGION, getJson } from "../api";
 import { REGION_LABEL } from "../config";
+import { showLeaving } from "./BootLoader";
 
 interface Borrowed {
   kind: string;
@@ -41,11 +42,16 @@ async function offeredRegions(signal: AbortSignal): Promise<Offered[]> {
     typeof r === "object" && r !== null && typeof (r as Offered).fips === "string" && typeof (r as Offered).label === "string");
 }
 
-export function goTo(fips: string, defaultFips: string) {
+/** Open another county: the page reloads with ?region=<fips>, and ?at=lat,lon when a search picked a
+ * place in it (the map then starts there instead of framing the whole county). */
+export function goTo(fips: string, defaultFips: string, opts: { label?: string; at?: [number, number] } = {}) {
   const url = new URL(window.location.href);
   if (fips === defaultFips) url.searchParams.delete("region");
   else url.searchParams.set("region", fips);
+  if (opts.at) url.searchParams.set("at", `${opts.at[0].toFixed(5)},${opts.at[1].toFixed(5)}`);
+  else url.searchParams.delete("at");
   url.hash = ""; // a field id from one county means nothing in another
+  showLeaving(`Opening ${opts.label?.replace(/, KS$/, "") ?? "the county"}`);
   window.location.assign(url.toString());
 }
 
@@ -69,7 +75,7 @@ export function RegionPicker({ current = SELECTED_REGION }: { current?: string |
       aria-label="Switch county"
       title="Switch county"
       value={value}
-      onChange={(e) => goTo(e.target.value, defaultFips)}
+      onChange={(e) => goTo(e.target.value, defaultFips, { label: offered.find((r) => r.fips === e.target.value)?.label })}
     >
       {offered.map((r) => (
         <option key={r.fips} value={r.fips}>

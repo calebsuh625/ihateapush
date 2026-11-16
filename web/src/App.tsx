@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { API_BASE, api, apiUrl, getJson } from "./api";
+import { API_BASE, SELECTED_REGION, api, apiUrl, getJson } from "./api";
+import type L from "leaflet";
+import { BootLoader } from "./components/BootLoader";
+import { PlaceSearch } from "./components/PlaceSearch";
 import { AdvisorPanel } from "./components/AdvisorPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FarmPanel } from "./components/FarmPanel";
@@ -90,6 +93,7 @@ export default function App() {
   const [health, retryHealth] = useResource("health", loadHealth);
   const { selection, select, clear } = useSelection();
   const [drawn, setDrawn] = useState<number | null>(null);
+  const [leafletMap, setLeafletMap] = useState<L.Map | null>(null);
   // The planner sliders, future and scenario live here so they carry over from field to field,
   // and between a field and the farm.
   const [plannerChoices, setPlannerChoices] = useState<PlannerChoices>(() => (linked ? choicesFromShare(linked.choices) : DEFAULT_CHOICES));
@@ -310,18 +314,14 @@ export default function App() {
           twinCover={twinHeight}
           fills={layers.fills}
           onView={layers.setViewFields}
+          onMap={setLeafletMap}
         />
 
         <div className="masthead">
           <h1>{APP_NAME}</h1>
           {fields.status !== "error" && <DataBadge health={health} fieldCount={fieldCount} />}
           <RegionPicker />
-          {fields.status === "loading" && (
-            <p className="masthead-note" role="status">
-              <span className="spinner" aria-hidden="true" />
-              Loading fields…
-            </p>
-          )}
+          <PlaceSearch map={leafletMap} />
           {fieldData && !selection && !farmMode && (
             <p className="masthead-note" data-testid="hint">
               {fieldCount === 0
@@ -383,6 +383,16 @@ export default function App() {
         </div>
 
         {fieldData && fieldCount !== 0 && <LayerControl state={layers} />}
+
+        {(fields.status === "loading" || (fieldData !== null && drawn === null)) && (
+          <BootLoader
+            county={SELECTED_REGION !== null}
+            healthReady={health.status === "ready"}
+            fieldCount={health.status === "ready" && !health.data.is_fake ? health.data.field_count : fieldCount}
+            fieldsReady={fieldData !== null}
+            drawn={drawn !== null}
+          />
+        )}
 
         {fields.status === "error" && (
           <div className="map-error" data-testid="fields-error">

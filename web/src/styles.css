@@ -1224,3 +1224,95 @@ button {
 .county-tip {
   font-size: 12px;
 }
+
+/* Search box in the masthead (PlaceSearch.tsx) and the pin it drops on the map. */
+.place-search {
+  position: relative;
+  width: 100%;
+  min-width: 240px;
+}
+
+.place-search-input {
+  width: 100%;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+}
+
+.place-search-input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.place-search-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  max-height: min(60vh, 360px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid rgb(16 24 20 / 18%);
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+}
+
+.place-search-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: 7px 10px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.place-search-option.is-active {
+  background: var(--accent-soft);
+}
+
+.place-search-option[data-kind="search"] .place-search-name {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.place-search-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-search-detail {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.place-search-note {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 7px 10px;
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+}
+
+.search-pin {
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: var(--focus);
+  box-shadow: 0 0 0 2px var(--focus), 0 2px 6px rgb(0 0 0 / 30%);
+}
+
+.search-pin-label {
+  font-weight: 600;
+}

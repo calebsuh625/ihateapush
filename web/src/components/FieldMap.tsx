@@ -3,6 +3,8 @@ import L from "leaflet";
 import { MapContainer, TileLayer, ZoomControl, useMap } from "react-leaflet";
 import { REGION_CENTER, REGION_ZOOM } from "../config";
 import { CountyOutlines } from "./CountyOutlines";
+import { showPin } from "./PlaceSearch";
+import { parseAt } from "../lib/places";
 import type { Selection } from "../hooks/useSelection";
 import { boxLoop, fieldsInside, loopArea } from "../lib/farm";
 import { collectionBounds, pointInRings, ringBounds } from "../lib/geo";
@@ -505,6 +507,7 @@ function Fields({ fields, selection, onSelect, onRendered, farm, tool, onLasso, 
     const linked = current ? layer.bounds(current.id) : null;
     const all = collectionBounds(fields);
     if (linked) map.fitBounds(linked, { ...FIT_FIELD, animate: false });
+    else if (START_AT) map.setView(START_AT, START_AT_ZOOM, { animate: false }); // opened from a search: stay at the place
     else if (all) map.fitBounds(all, { ...FIT_ALL, animate: false });
     layer.show();
 
@@ -637,6 +640,26 @@ function KeepSized() {
   return null;
 }
 
+/** Where a search sent this page (?at=lat,lon), or null. */
+const START_AT = (() => {
+  try {
+    return parseAt(window.location.search);
+  } catch {
+    return null;
+  }
+})();
+const START_AT_ZOOM = 14;
+
+/** Hands the Leaflet map to the app (the search box lives outside the map), and pins a searched place. */
+function MapReady({ onMap }: { onMap?: (map: L.Map) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    onMap?.(map);
+    if (START_AT) showPin(map, START_AT[0], START_AT[1]);
+  }, [map, onMap]);
+  return null;
+}
+
 function ExposeMap() {
   const map = useMap();
   useEffect(() => {
@@ -664,14 +687,16 @@ interface FieldMapProps {
   /** One colour per field from the chosen map layer; null (the default) for the plain map. */
   fills?: readonly string[] | null;
   onView?: (indexes: Uint32Array) => void;
+  /** Called once with the Leaflet map, for controls that live outside it. */
+  onMap?: (map: L.Map) => void;
 }
 
-export function FieldMap({ fields, selection, onSelect, onRendered, farm = null, tool = "click", onLasso, twin = null, twinCover = 0, fills = null, onView }: FieldMapProps) {
+export function FieldMap({ fields, selection, onSelect, onRendered, farm = null, tool = "click", onLasso, twin = null, twinCover = 0, fills = null, onView, onMap }: FieldMapProps) {
   return (
     <MapContainer
       className="map"
-      center={REGION_CENTER}
-      zoom={REGION_ZOOM}
+      center={START_AT ?? REGION_CENTER}
+      zoom={START_AT ? START_AT_ZOOM : REGION_ZOOM}
       minZoom={4}
       maxZoom={18}
       zoomControl={false}
@@ -685,6 +710,7 @@ export function FieldMap({ fields, selection, onSelect, onRendered, farm = null,
       <ZoomControl position="topright" />
       <KeepSized />
       <ExposeMap />
+      <MapReady onMap={onMap} />
       <CountyOutlines />
       {fields && (
         <Fields
